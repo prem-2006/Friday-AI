@@ -27,7 +27,10 @@ const weatherTool = {
     parameters: {
       type: 'object',
       properties: {
-        city: { type: 'string', description: 'City name, for example Bengaluru' },
+        city: {
+          type: 'string',
+          description: 'City name, for example Bengaluru',
+        },
         unit: { type: 'string', enum: ['celsius', 'fahrenheit'] },
       },
       required: ['city'],
@@ -155,7 +158,9 @@ function textLeak(content) {
 function thinkingNote(result) {
   if (/<think>/.test(result.content))
     return ' Reasoning leaked into the reply text (<think>).';
-  return result.reasoning ? ` Reasoning: ${result.reasoning.length} chars.` : '';
+  return result.reasoning
+    ? ` Reasoning: ${result.reasoning.length} chars.`
+    : '';
 }
 
 function expectWeatherCall(result, city) {
@@ -272,7 +277,8 @@ const tests = [
         result = await stream({ ...body, max_completion_tokens: 2200 });
       } catch (error) {
         if (!(error instanceof HttpError) || error.status !== 400) throw error;
-        note = ' Endpoint rejected max_completion_tokens (OpenDots sends it), so this retried with max_tokens.';
+        note =
+          ' Endpoint rejected max_completion_tokens (OpenDots sends it), so this retried with max_tokens.';
         result = await stream({ ...body, max_tokens: 2200 });
       }
       const verdict = expectWeatherCall(result, /bengal|bangal/i);
@@ -306,7 +312,10 @@ const tests = [
       const result = await complete({
         messages: [
           system,
-          { role: 'user', content: 'What is 2 + 2? Answer with just the number.' },
+          {
+            role: 'user',
+            content: 'What is 2 + 2? Answer with just the number.',
+          },
         ],
         tools: [weatherTool],
         tool_choice: 'auto',

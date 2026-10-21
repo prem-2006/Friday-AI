@@ -15,6 +15,7 @@ import {
   intelligenceWsUrlFromEnv,
   type PlatformConfig,
 } from './platform-config.js';
+import { fridayModelFromEnv } from '../friday/server/config.js';
 const host = process.env.HOST ?? '127.0.0.1';
 const port = Number(process.env.PORT ?? 4310);
 const ownerToken = process.env.OWNER_TOKEN;
@@ -35,9 +36,8 @@ const config: PlatformConfig = {
   intelligenceKey: intelligenceApiKeyFromEnv(process.env),
   intelligenceApiUrl: process.env.INTELLIGENCE_API_URL || undefined,
   intelligenceWsUrl: intelligenceWsUrlFromEnv(process.env),
-  apiKey: process.env.OPENAI_API_KEY,
-  model: process.env.OPENAI_MODEL,
-  baseUrl: process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1',
+  // FRIDAY: EVON_* settings, when present, replace OPENAI_* for the model.
+  ...fridayModelFromEnv(process.env),
   agentRunTimeoutMs: agentRunTimeoutMsFromEnv(process.env),
   webSearchProvider: webSearchProvider(process.env.WEB_SEARCH_PROVIDER),
   parallelApiKey: process.env.PARALLEL_API_KEY,

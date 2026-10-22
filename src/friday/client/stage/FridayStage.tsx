@@ -175,6 +175,11 @@ const NARRATION_GAP_MS = 3500;
 
 type Phase =
   'off' | 'listening' | 'hearing' | 'transcribing' | 'thinking' | 'speaking';
+// Waiting for more of a sentence from Gnani's stream: after a pause while
+// hands-free, and after Caps Lock is let go (its 1 s silence tail + network).
+const HEARD_PAUSE_MS = 700;
+const RELEASE_WAIT_MS = 1800;
+
 interface Caption {
   who: 'you' | 'friday';
   text: string;
@@ -851,14 +856,28 @@ function StageSession({
     return liveConnecting.current;
   };
 
-  // Clears a "Got it…" that never got an answer (e.g. silence was held).
+  // Gnani's stream sends a sentence in pieces when you pause ("open" ...
+  // "youtube"), so pieces are joined into one request: everything heard while
+  // Caps Lock is held and shortly after, or within a short pause hands-free.
   const heardTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const heardSoFar = useRef<string[]>([]);
+  const finishHearing = () => {
+    clearTimeout(heardTimer.current);
+    const text = heardSoFar.current.join(' ').trim();
+    heardSoFar.current = [];
+    const startedOverFriday = overFriday.current;
+    overFriday.current = false;
+    void respond(text, startedOverFriday);
+  };
+  const finishHearingIn = (ms: number) => {
+    clearTimeout(heardTimer.current);
+    heardTimer.current = setTimeout(finishHearing, ms);
+  };
   liveEventRef.current = (event) => {
     if (event.event === 'heard') {
-      clearTimeout(heardTimer.current);
-      const startedOverFriday = overFriday.current;
-      overFriday.current = false;
-      void respond(event.text, startedOverFriday);
+      heardSoFar.current.push(event.text);
+      // While Caps Lock is held, wait for the release; otherwise for a pause.
+      if (!holding.current) finishHearingIn(HEARD_PAUSE_MS);
     } else if (event.event === 'speech_start') {
       // Hands-free: the owner talking over Friday interrupts it at once.
       overFriday.current = fridayTalking();
@@ -916,17 +935,8 @@ function StageSession({
       if (live.current?.connected) {
         live.current.pushToTalk(false);
         setPhase('transcribing');
-        heardTimer.current = setTimeout(
-          () =>
-            setPhase((phase) =>
-              phase === 'transcribing'
-                ? handsFreeOn()
-                  ? 'listening'
-                  : 'off'
-                : phase,
-            ),
-          5000,
-        );
+        // Gnani sends the last piece after the trailing second of silence.
+        finishHearingIn(RELEASE_WAIT_MS);
       } else handsFree.current?.release();
       return;
     }

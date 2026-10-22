@@ -18,9 +18,14 @@ const MAX_MESSAGES = 40;
 const message = z
   .object({
     id: z.string().min(1).max(200),
-    role: z.enum(['user', 'assistant', 'tool']),
+    // Other roles (e.g. "reasoning" from models that think out loud) are
+    // accepted here and left out below.
+    role: z.string().min(1).max(40),
   })
   .passthrough();
+const CONVERSATION_ROLES = new Set(['user', 'assistant', 'tool']);
+const conversational = <T extends { role: string }>(items: T[]) =>
+  items.filter((item) => CONVERSATION_ROLES.has(item.role));
 
 type Run = typeof runDotDirectly;
 
@@ -52,13 +57,15 @@ export function fridayRunRoutes(
     const thread = localThread(platform, friday.id, VOICE_THREAD_TITLE);
     const started = performance.now();
     try {
-      const newMessages = await run(
+      const ran = await run(
         platform,
         friday.id,
         thread.id,
-        input.data.messages as unknown as Message[],
+        conversational(input.data.messages) as unknown as Message[],
         { approvals: true, signal: c.req.raw.signal },
       );
+      // The screen keeps only the conversation itself, not a model's notes.
+      const newMessages = conversational(ran);
       let said = newMessages
         .filter((item) => item.role === 'assistant')
         .map((item) => (typeof item.content === 'string' ? item.content : ''))

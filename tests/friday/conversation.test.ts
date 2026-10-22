@@ -114,3 +114,33 @@ it('refuses bad input, and says so when Friday is paused', async () => {
   expect((await paused.json()).error).toContain('paused');
   expect(run).not.toHaveBeenCalled();
 });
+
+it('leaves a model’s reasoning notes out of the conversation, both ways', async () => {
+  const notes = { id: 'r1', role: 'reasoning', content: 'The user wants…' };
+  const run = vi.fn(async () => [
+    notes as unknown as Message,
+    reply('a1', 'Calculator is open.'),
+  ]);
+  const app = fridayRunRoutes(fakePlatform(), run);
+  const first = await (
+    await post(app, { messages: [user('u1', 'open calculator')] })
+  ).json();
+  expect(first.newMessages.map((m: Message) => m.role)).toEqual(['assistant']);
+  // A history saved before this fix, still holding reasoning notes, works.
+  const second = await post(app, {
+    messages: [
+      user('u1', 'open calculator'),
+      notes,
+      reply('a1', 'Calculator is open.'),
+      user('u2', 'thanks'),
+    ],
+  });
+  expect(second.status).toBe(200);
+  const sent = run.mock.calls[1] as unknown as [
+    unknown,
+    unknown,
+    unknown,
+    Message[],
+  ];
+  expect(sent[3].map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
+});

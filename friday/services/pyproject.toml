@@ -1,0 +1,45 @@
+[project]
+name = "friday-services"
+version = "0.1.0"
+description = "Friday's side services: phone calls (Pipecat + Gnani + Twilio), Telegram, and the demo calendar page, exposed to OpenDots over MCP."
+requires-python = ">=3.12,<3.13"
+license = "MIT"
+dependencies = [
+    "fastapi>=0.159.1",
+    "gnani-vachana>=0.7.3,<0.8",
+    "httpx>=0.28.1",
+    "mcp>=2.3.0",
+    "pipecat-ai[openai,silero,websocket]>=1.5,<1.6",
+    "pipecat-gnani>=0.5.12",
+    "python-dotenv>=1.2.4",
+    "tzdata>=2026.5",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["friday_services"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.17.1",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+# Long lines are prompt and description text; ruff format handles code width.
+ignore = ["E501"]

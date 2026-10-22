@@ -30,6 +30,7 @@ import {
 import { browserResponse } from './research.js';
 import { answerObserver, type SetupTelemetry } from './setup-telemetry.js';
 import { fridayLocalTime } from '../friday/server/time.js';
+import { fridayToolRounds } from '../friday/server/agent-limits.js';
 const channelError = () => ({
   type: EventType.RUN_ERROR,
   message:
@@ -397,12 +398,15 @@ export class DotAgent extends AbstractAgent {
                 threadId: ctx.input.threadId,
                 runId: ctx.input.runId,
                 modelOptions: { max_completion_tokens: 2200 },
+                // FRIDAY: more tool rounds for chained tasks and call waits.
                 agentLoopStrategy: maxIterations(
-                  appTools.length ||
-                    (dot.skillDeliveryEnabled &&
-                      conversation.learningContainerId)
-                    ? 10
-                    : 5,
+                  fridayToolRounds(
+                    appTools.length ||
+                      (dot.skillDeliveryEnabled &&
+                        conversation.learningContainerId)
+                      ? 10
+                      : 5,
+                  ),
                 ),
                 tools: [
                   ...tanstackTools(serverTools),

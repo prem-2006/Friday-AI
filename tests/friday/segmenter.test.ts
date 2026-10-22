@@ -142,3 +142,38 @@ it('splits replies so the first sentence can play early', () => {
   ]);
   expect(speechParts('हाँ, हो गया। प्रिया को मैसेज भेज दिया।')).toHaveLength(1);
 });
+
+it('push-to-talk records only while held, whatever the level', () => {
+  const segments: Float32Array[] = [];
+  let started = 0;
+  const segmenter = new SpeechSegmenter(RATE, {
+    onStart: () => (started += 1),
+    onSegment: (s) => segments.push(s),
+  });
+  segmenter.auto = false;
+  // Loud speech without the key: nothing is recorded.
+  feed(segmenter, [
+    [false, 300],
+    [true, 600],
+    [false, 1000],
+  ]);
+  expect(segments).toHaveLength(0);
+  // Held: a pause inside the turn does not end it; letting go sends it.
+  segmenter.hold();
+  feed(segmenter, [
+    [true, 300],
+    [false, 1500],
+    [true, 300],
+  ]);
+  expect(segments).toHaveLength(0);
+  segmenter.release();
+  expect(segments).toHaveLength(1);
+  expect(started).toBe(1);
+  const ms = (segments[0].length / RATE) * 1000;
+  expect(ms).toBeGreaterThan(2000);
+  // Held in silence: nothing worth sending.
+  segmenter.hold();
+  feed(segmenter, [[false, 800]]);
+  segmenter.release();
+  expect(segments).toHaveLength(1);
+});

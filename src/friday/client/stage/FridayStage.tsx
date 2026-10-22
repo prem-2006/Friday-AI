@@ -93,9 +93,29 @@ function StageDemo({ onExit }: { onExit: () => void }) {
         ),
     [],
   );
+  // A made-up voice, so the visualiser moves in the demo too.
+  const talking = scene.mode === 'listening' || scene.mode === 'speaking';
+  const spectrum = useCallback(() => {
+    if (!talking) return null;
+    const now = performance.now() / 1000;
+    return Uint8Array.from({ length: 64 }, (_, i) =>
+      Math.max(
+        0,
+        220 *
+          Math.exp(-i / 14) *
+          (0.55 + 0.45 * Math.sin(now * 9 + i * 0.7)) *
+          (0.6 + 0.4 * Math.sin(now * 2.3)),
+      ),
+    );
+  }, [talking]);
   return (
     <div className={`friday-stage mode-${scene.mode}`}>
-      <Orb mode={scene.mode} level={level} helpers={scene.helpers} />
+      <Orb
+        mode={scene.mode}
+        level={level}
+        spectrum={spectrum}
+        helpers={scene.helpers}
+      />
       <Header
         status={{ tone: 'ok', label: 'Demo' }}
         clock={`00:${String(step * 4 + 2).padStart(2, '0')}`}
@@ -356,8 +376,13 @@ function StageSession({
   const [subtitle, setSubtitle] = useState('');
   const [error, setError] = useState('');
   const [events, setEvents] = useState<ActivityEvent[]>([]);
+  const controlRef = useRef<(action: string) => void>(() => {});
 
   const handsFree = useRef<HandsFree | null>(null);
+  // Hands-free: the mic is open and turns start by voice. For push-to-talk
+  // alone the mic may stay open, but nothing is heard until Caps Lock is held.
+  const handsFreeOn = () =>
+    !!handsFree.current?.active && handsFree.current.auto;
   const audio = useRef<HTMLAudioElement | null>(null);
   const audioContext = useRef<AudioContext | null>(null);
   const ttsAnalyser = useRef<AnalyserNode | null>(null);
@@ -396,10 +421,11 @@ function StageSession({
     void voiceConfig()
       .then((config) => setVoiceReady(config.ready))
       .catch(() => setVoiceReady(false));
-    const unfollow = followActivity(
-      (event) => setEvents((list) => [...list.slice(-40), event]),
-      setHelpersOnline,
-    );
+    const unfollow = followActivity((event) => {
+      // Caps Lock and clap signals from friday/services, not helper activity.
+      if (event.actor === 'control') return controlRef.current(event.action);
+      setEvents((list) => [...list.slice(-40), event]);
+    }, setHelpersOnline);
     return () => {
       unfollow();
       handsFree.current?.stop();
@@ -422,6 +448,17 @@ function StageSession({
       return Math.min(1, (sum / data.length / 255) * 3);
     }
     return handsFree.current?.level ?? 0;
+  }, []);
+
+  // Frequency bars for the orb: Friday's voice while it speaks, else the mic.
+  const spectrum = useCallback(() => {
+    const analyser = ttsAnalyser.current;
+    if ((speakingMain.current || audio.current) && analyser) {
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(data);
+      return data;
+    }
+    return handsFree.current?.spectrum() ?? null;
   }, []);
 
   // Gnani allows one transcription at a time, so clips wait their turn.
@@ -488,7 +525,7 @@ function StageSession({
         audio.current = null;
         if (main) {
           speakingMain.current = false;
-          setPhase(handsFree.current?.active ? 'listening' : 'off');
+          setPhase(handsFreeOn() ? 'listening' : 'off');
         }
       }
     }
@@ -551,11 +588,7 @@ function StageSession({
         await setStopped(false);
       }
       setPhase((current) =>
-        current === 'speaking'
-          ? current
-          : handsFree.current?.active
-            ? 'listening'
-            : 'off',
+        current === 'speaking' ? current : handsFreeOn() ? 'listening' : 'off',
       );
     }
   };
@@ -583,7 +616,7 @@ function StageSession({
         };
       } catch (e) {
         setRunning(false);
-        setPhase(handsFree.current?.active ? 'listening' : 'off');
+        setPhase(handsFreeOn() ? 'listening' : 'off');
         setError(friendlyError(e, 'Could not do that. Try again.'));
         return;
       }
@@ -649,7 +682,8 @@ function StageSession({
       setError(friendlyError(e, 'Could not hear that.'));
     }
     if (!text) {
-      if (!overFriday) setPhase(running ? 'thinking' : 'listening');
+      if (!overFriday)
+        setPhase(running ? 'thinking' : handsFreeOn() ? 'listening' : 'off');
       return;
     }
     const intent = intentOf(text);
@@ -671,39 +705,107 @@ function StageSession({
   const heardRef = useRef(heard);
   heardRef.current = heard;
 
-  const toggleListening = async () => {
-    if (starting.current) return; // a second tap while the mic is opening
-    setError('');
-    if (handsFree.current?.active) {
-      stopSpeaking();
-      handsFree.current.stop();
-      handsFree.current = null;
-      setPhase(running ? 'thinking' : 'off');
-      return;
+  // Opens the mic. auto: turns start by voice (hands-free); otherwise only
+  // push-to-talk records, so nothing is heard until Caps Lock is held.
+  const openMic = async (auto: boolean) => {
+    const current = handsFree.current;
+    if (current?.active) {
+      if (auto) current.auto = true;
+      return current;
     }
+    if (starting.current) return null;
     let overFriday = false;
     const next = new HandsFree({
       onSpeechStart: () => {
         overFriday = !!audio.current;
-        setPhase((current) => (current === 'listening' ? 'hearing' : current));
+        setPhase((phase) => (phase === 'listening' ? 'hearing' : phase));
       },
       onUtterance: (wav, endedAt) =>
         void heardRef.current(wav, endedAt, overFriday),
       onError: setError,
       isFridaySpeaking: () => !!audio.current,
+      auto,
     });
     starting.current = true;
     try {
       await next.start();
     } catch {
       setError('Allow microphone access so Friday can hear you.');
-      return;
+      return null;
     } finally {
       starting.current = false;
     }
     handsFree.current = next;
+    return next;
+  };
+
+  const toggleListening = async () => {
+    if (starting.current) return; // a second tap while the mic is opening
+    setError('');
+    if (handsFreeOn()) {
+      stopSpeaking();
+      handsFree.current?.stop();
+      handsFree.current = null;
+      setPhase(running ? 'thinking' : 'off');
+      return;
+    }
+    if (!(await openMic(true))) return;
     setPhase(running ? 'thinking' : 'listening');
   };
+
+  // Hold Caps Lock to talk: recording runs while it is held and is sent when
+  // it is let go. Signals come from the page itself or, in any app, from the
+  // services' keyboard hook.
+  const holding = useRef(false);
+  const pushToTalk = async (down: boolean) => {
+    if (!down) {
+      holding.current = false;
+      handsFree.current?.release();
+      return;
+    }
+    if (holding.current || !loaded || voiceReady === false || paused) return;
+    holding.current = true;
+    stopSpeaking();
+    setError('');
+    const mic = await openMic(false);
+    if (!mic || !holding.current) return;
+    mic.hold();
+    setPhase('hearing');
+  };
+  const pushRef = useRef(pushToTalk);
+  pushRef.current = pushToTalk;
+  const toggleRef = useRef(toggleListening);
+  toggleRef.current = toggleListening;
+  controlRef.current = (action) => {
+    if (action === 'ptt_down') void pushRef.current(true);
+    else if (action === 'ptt_up') void pushRef.current(false);
+    else if (action === 'wake' && !handsFreeOn()) void toggleRef.current();
+  };
+
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.code === 'CapsLock' && !e.repeat) void pushRef.current(true);
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.code === 'CapsLock') void pushRef.current(false);
+    };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+    };
+  }, []);
+
+  // A double clap opens this page with ?wake=1: start listening at once.
+  const woke = useRef(false);
+  useEffect(() => {
+    if (!loaded || woke.current) return;
+    if (!new URLSearchParams(location.search).has('wake')) return;
+    woke.current = true;
+    history.replaceState(null, '', location.pathname + location.hash);
+    void toggleRef.current();
+  }, [loaded]);
 
   // Narrate helper activity while a task runs.
   const narrated = useRef(0);
@@ -735,7 +837,7 @@ function StageSession({
     ),
   ];
   const screenshot = [...recent].reverse().find((event) => event.image)?.image;
-  const listening = !!handsFree.current?.active;
+  const listening = handsFreeOn();
   const clock = useClock(listening || running);
 
   const mode: OrbMode =
@@ -772,7 +874,7 @@ function StageSession({
         : subtitle ||
           (listening
             ? 'Go ahead. Tap the orb again to stop.'
-            : 'Friday listens until you tap it again.'));
+            : 'Or hold Caps Lock while you speak.'));
   const status =
     voiceReady === false
       ? { tone: 'warn' as const, label: 'Voice needs GNANI_API_KEY' }
@@ -782,7 +884,12 @@ function StageSession({
 
   return (
     <div className={`friday-stage mode-${mode}`}>
-      <Orb mode={mode} level={level} helpers={busyHelpers} />
+      <Orb
+        mode={mode}
+        level={level}
+        spectrum={spectrum}
+        helpers={busyHelpers}
+      />
       <Header
         status={status}
         clock={clock}

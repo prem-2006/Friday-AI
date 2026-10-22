@@ -256,8 +256,9 @@
   position: absolute;
   left: 50%;
   top: 52%;
-  width: min(36vmin, 340px);
-  height: min(36vmin, 340px);
+  /* The whole drawn orb, out to its HUD ticks (3 x its radius in Orb.tsx). */
+  width: clamp(192px, 45vmin, 510px);
+  height: clamp(192px, 45vmin, 510px);
   transform: translate(-50%, -50%);
   border-radius: 50%;
   border: 0;

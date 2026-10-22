@@ -54,6 +54,7 @@ def create_app(
     desktop: DesktopApps | None = None,
     look: Callable[[str], str] | None = None,
     snap: Callable[[str, str], dict] | None = None,
+    wake: bool = False,
     whatsapp_ui: WhatsAppUI | None = None,
 ) -> FastAPI:
     settings = settings or Settings.from_env()
@@ -110,6 +111,8 @@ def create_app(
             # The first "open an app" should not wait for the Start menu list.
             warming = asyncio.ensure_future(desktop_worker.run(desktop.warm))
             warming.add_done_callback(lambda task: task.cancelled() or task.exception())
+            if wake:
+                stack.callback(start_wake(settings, feed, asyncio.get_running_loop()))
             # Starting Chrome takes about five seconds; do it before the first request.
             if settings.browser_prewarm:
                 opening = asyncio.ensure_future(browser_worker.run(browser.warm))
@@ -255,12 +258,58 @@ def create_app(
     return app
 
 
+def start_wake(settings: Settings, feed: ActivityFeed, loop) -> Callable[[], None]:
+    """Caps Lock push-to-talk and double-clap wake; returns how to stop them."""
+    import logging
+    import webbrowser
+
+    from friday_services.wake import ClapCounter, ClapListener, PushToTalkKey
+
+    log = logging.getLogger("friday.wake")
+    stops: list[Callable[[], None]] = []
+
+    def signal(action: str) -> None:
+        loop.call_soon_threadsafe(feed.signal, action)
+
+    def clapped() -> None:
+        if feed.watched:
+            signal("wake")
+        else:
+            webbrowser.open(settings.stage_url)
+
+    if settings.push_to_talk:
+        try:
+            key = PushToTalkKey(signal)
+            key.start()
+            stops.append(key.stop)
+            print("Push-to-talk: hold Caps Lock and speak.")
+        except Exception:
+            log.exception("Caps Lock push-to-talk is unavailable")
+    if settings.clap_wake:
+        try:
+            clap = ClapListener(clapped, ClapCounter(min_peak=settings.clap_level))
+            clap.start()
+            stops.append(clap.stop)
+            print("Clap wake: clap twice to call Friday.")
+        except Exception:
+            log.exception("Clap wake is unavailable (no microphone?)")
+
+    def stop() -> None:
+        for halt in stops:
+            try:
+                halt()
+            except Exception:
+                pass
+
+    return stop
+
+
 def main() -> None:
     import uvicorn
 
     load_dotenv(REPO_ROOT / ".env")
     settings = Settings.from_env()
-    uvicorn.run(create_app(settings), host=settings.host, port=settings.port)
+    uvicorn.run(create_app(settings, wake=True), host=settings.host, port=settings.port)
 
 
 if __name__ == "__main__":

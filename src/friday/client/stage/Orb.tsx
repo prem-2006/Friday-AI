@@ -74,18 +74,31 @@ function paletteGradient(
   return gradient;
 }
 
+const BARS = 64;
+
 export function Orb({
   mode,
   level,
+  spectrum,
   helpers,
 }: {
   mode: OrbMode;
   /** 0..1 voice level, read every frame. */
   level: () => number;
+  /** Frequency bars (0..255) of the voice being heard or spoken, read every frame. */
+  spectrum?: () => Uint8Array | null;
   helpers: string[];
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
-  const state = useRef({ mode, helpers, energy: 0.12, spin: 0, voice: 0 });
+  const state = useRef({
+    mode,
+    helpers,
+    energy: 0.12,
+    spin: 0,
+    voice: 0,
+    bass: 0,
+    bars: new Float32Array(BARS),
+  });
   state.current.mode = mode;
   state.current.helpers = helpers;
 
@@ -115,6 +128,25 @@ export function Orb({
       const s = state.current;
       const voice = level();
       s.voice += (voice - s.voice) * 0.25;
+      // Music-style bars: mirror the lower half of the spectrum (where the
+      // voice is) around the orb, rising fast and falling slowly.
+      const bins = spectrum?.() ?? null;
+      let bass = 0;
+      for (let i = 0; i < BARS; i++) {
+        const half = BARS / 2;
+        const step = (i < half ? i : BARS - 1 - i) / half; // 0 top .. 1 bottom
+        // Higher bars are boosted: a voice is quieter there than in the lows.
+        const bin = bins
+          ? Math.min(
+              1,
+              ((bins[1 + Math.floor(step * bins.length * 0.5)] ?? 0) / 255) *
+                (1 + step * 2.2),
+            )
+          : 0;
+        s.bars[i] = bin > s.bars[i] ? bin : s.bars[i] * 0.86;
+        if (i < 4) bass += bin / 4;
+      }
+      s.bass += (bass - s.bass) * 0.3;
       const target =
         MODE_ENERGY[s.mode] +
         (s.mode === 'listening' || s.mode === 'speaking' ? s.voice * 1.25 : 0);
@@ -257,7 +289,7 @@ export function Orb({
       const turn = t * (0.25 + MODE_SPIN[s.mode] * 0.5);
       const tilt = 0.38 + Math.sin(t * 0.3) * 0.08;
       const swirl = s.mode === 'thinking' || s.mode === 'working' ? 1.4 : 0.25;
-      const radius = R * (0.7 + e * 0.12 + s.voice * 0.18);
+      const radius = R * (0.7 + e * 0.12 + s.voice * 0.18 + s.bass * 0.12);
       for (const point of SPHERE) {
         const twist = turn + point.y * swirl * Math.sin(t * 0.7);
         const x1 = point.x * Math.cos(twist) - point.z * Math.sin(twist);
@@ -290,6 +322,25 @@ export function Orb({
       ctx.beginPath();
       ctx.arc(cx, cy, R * 0.9, 0, Math.PI * 2);
       ctx.fill();
+
+      // The visualiser bars between the rings and the HUD.
+      ctx.lineCap = 'round';
+      for (let i = 0; i < BARS; i++) {
+        const value = s.bars[i];
+        if (value < 0.04) continue;
+        const a = (i / BARS) * Math.PI * 2 - Math.PI / 2;
+        const inner = R * 1.1;
+        const outer = inner + R * 0.34 * value;
+        ctx.strokeStyle = `rgba(${i % 2 ? far : near},${0.35 + value * 0.6})`;
+        ctx.lineWidth = Math.max(1.5, R * 0.035);
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = `rgba(${near},0.8)`;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
+        ctx.lineTo(cx + Math.cos(a) * outer, cy + Math.sin(a) * outer);
+        ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
 
       // HUD rings: ticks, dashes and arc segments turning at their own speeds.
       ctx.lineCap = 'round';
@@ -368,7 +419,7 @@ export function Orb({
       cancelAnimationFrame(frame);
       window.removeEventListener('resize', resize);
     };
-  }, [level]);
+  }, [level, spectrum]);
 
   return <canvas ref={canvas} className="friday-orb-canvas" aria-hidden />;
 }

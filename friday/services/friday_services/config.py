@@ -78,6 +78,25 @@ class Settings:
         return int(self.get("FRIDAY_BROWSER_CDP_PORT", "9333"))
 
     @property
+    def push_to_talk(self) -> bool:
+        return self.get("FRIDAY_PUSH_TO_TALK", "true").lower() != "false"
+
+    @property
+    def clap_wake(self) -> bool:
+        return self.get("FRIDAY_CLAP_WAKE", "true").lower() != "false"
+
+    @property
+    def clap_level(self) -> float:
+        # How loud a clap's peak must be (0 to 1); lower it for a quiet mic.
+        return float(self.get("FRIDAY_CLAP_LEVEL", "0.25"))
+
+    @property
+    def stage_url(self) -> str:
+        # Opened by a double clap when no voice screen is open; ?wake=1 makes
+        # it start listening.
+        return self.get("FRIDAY_STAGE_URL", "http://localhost:5173/?wake=1#/friday")
+
+    @property
     def browser_prewarm(self) -> bool:
         return self.get("FRIDAY_BROWSER_PREWARM", "true").lower() != "false"
 

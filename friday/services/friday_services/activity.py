@@ -40,6 +40,18 @@ class ActivityFeed:
             queue.put_nowait(event)
         return event
 
+    def signal(self, action: str) -> None:
+        """Tell the voice screen to do something (e.g. ptt_down, wake). Not kept
+        in the history, so a page that connects later never replays it."""
+        event = Activity(next(self._ids), "control", action, "", state="done")
+        for queue in list(self._listeners):
+            queue.put_nowait(event)
+
+    @property
+    def watched(self) -> bool:
+        """Whether a voice screen is connected right now."""
+        return bool(self._listeners)
+
     def recent(self, limit: int = 30) -> list[dict]:
         return [event.public() for event in list(self._events)[-limit:]]
 

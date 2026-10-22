@@ -16,6 +16,7 @@ export const SEGMENTER = {
   keepSilenceMs: 250, // trailing silence kept at the end
   maxMs: 20_000, // Prisma clips stay short
   minSpeechMs: 300, // ignore coughs and clicks
+  minHeldSpeechMs: 120, // push-to-talk: you meant to speak, so less is enough
   voiceLowHz: 150,
   voiceHighHz: 3800,
   minVoiceShare: 0.4, // of a chunk's energy inside the voice band
@@ -24,6 +25,9 @@ export const SEGMENTER = {
 export class SpeechSegmenter {
   /** Smoothed level 0..1, for the orb. */
   level = 0;
+  /** Start turns by voice. Off for push-to-talk only: then hold() starts them. */
+  auto = true;
+  private held = false;
   private floor = 0.01;
   private preRoll: Float32Array[] = [];
   private preRollMs = 0;
@@ -94,7 +98,7 @@ export class SpeechSegmenter {
       )
         this.preRollMs -= msOf(this.preRoll.shift()!);
       this.loudMs = loud ? this.loudMs + ms : 0;
-      if (this.loudMs >= SEGMENTER.startMs) {
+      if (this.auto && this.loudMs >= SEGMENTER.startMs) {
         this.segment = this.preRoll;
         this.totalMs = this.preRollMs;
         this.speechMs = this.loudMs;
@@ -108,6 +112,17 @@ export class SpeechSegmenter {
     }
 
     this.totalMs += ms;
+    if (this.held) {
+      // Push-to-talk: keep everything until the key is let go.
+      this.segment.push(...this.trailing, chunk);
+      this.trailing = [];
+      if (loud) this.speechMs += ms;
+      if (this.totalMs >= SEGMENTER.maxMs) {
+        this.held = false;
+        this.finish(SEGMENTER.minHeldSpeechMs);
+      }
+      return;
+    }
     if (loud) {
       this.segment.push(...this.trailing, chunk);
       this.trailing = [];
@@ -121,8 +136,31 @@ export class SpeechSegmenter {
       this.finish();
   }
 
+  /** Push-to-talk pressed: record from now (plus the pre-roll), whatever the level. */
+  hold() {
+    if (this.held) return;
+    this.held = true;
+    if (this.segment) return; // already hearing you: keep that start
+    this.segment = this.preRoll;
+    this.totalMs = this.preRollMs;
+    this.speechMs = 0;
+    this.quietMs = 0;
+    this.trailing = [];
+    this.preRoll = [];
+    this.preRollMs = 0;
+    this.events.onStart();
+  }
+
+  /** Push-to-talk let go: send what was said. */
+  release() {
+    if (!this.held) return;
+    this.held = false;
+    if (this.segment) this.finish(SEGMENTER.minHeldSpeechMs);
+  }
+
   /** Drop any half-heard turn, e.g. when listening is switched off. */
   reset() {
+    this.held = false;
     this.segment = null;
     this.trailing = [];
     this.preRoll = [];
@@ -131,7 +169,7 @@ export class SpeechSegmenter {
     this.level = 0;
   }
 
-  private finish() {
+  private finish(minSpeechMs = SEGMENTER.minSpeechMs) {
     const segment = this.segment!;
     // Keep a little of the closing silence so the last word is not cut.
     let keptMs = 0;
@@ -140,7 +178,7 @@ export class SpeechSegmenter {
       segment.push(chunk);
       keptMs += (chunk.length / this.sampleRate) * 1000;
     }
-    const enough = this.speechMs >= SEGMENTER.minSpeechMs;
+    const enough = this.speechMs >= minSpeechMs;
     this.segment = null;
     this.trailing = [];
     this.loudMs = 0;

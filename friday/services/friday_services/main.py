@@ -19,6 +19,7 @@ from pipecat.runner.utils import parse_telephony_websocket
 from friday_services.activity import ActivityFeed
 from friday_services.auth import BearerAuth
 from friday_services.browser import OnScreenBrowser
+from friday_services.browser_agent import BrowserAgent, agent_from_settings
 from friday_services.calendar.page import add_calendar_page
 from friday_services.calendar.store import CalendarStore
 from friday_services.calls.bot import run_call
@@ -47,6 +48,7 @@ def create_app(
     dialer: Dialer | None = None,
     call_runner: CallRunner = run_call,
     browser: OnScreenBrowser | None = None,
+    browser_agent: BrowserAgent | None = None,
     desktop: DesktopApps | None = None,
     whatsapp_ui: WhatsAppUI | None = None,
 ) -> FastAPI:
@@ -59,12 +61,17 @@ def create_app(
     store = CallStore(settings.data_dir)
     calendar = CalendarStore(settings.data_dir / "calendar.json")
     feed = ActivityFeed()
-    browser = browser or OnScreenBrowser(settings.data_dir / "browser-profile")
+    browser = browser or OnScreenBrowser(
+        settings.data_dir / "browser-profile", cdp_port=settings.browser_cdp_port
+    )
+    browser_agent = browser_agent or agent_from_settings(
+        settings.browser_agent_dir, settings.data_dir
+    )
     browser_worker = Worker("friday-browser")
     desktop_worker = Worker("friday-desktop", initializer=com_thread)
     whatsapp = WhatsApp(whatsapp_ui or DesktopWhatsAppUI(), settings.owner_name)
     servers = {
-        "/browser": build_browser_server(browser, browser_worker, feed),
+        "/browser": build_browser_server(browser, browser_worker, feed, browser_agent),
         "/desktop": build_desktop_server(desktop or DesktopApps(), desktop_worker, feed),
         "/whatsapp": build_whatsapp_server(whatsapp, desktop_worker, feed),
         "/calendar": build_calendar_server(calendar, settings.calendar_url),

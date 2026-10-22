@@ -19,3 +19,16 @@ it('rejects nonsense values', () => {
       fridayToolRounds(5, { FRIDAY_MAX_TOOL_ROUNDS: value }),
     ).toThrow('FRIDAY_MAX_TOOL_ROUNDS');
 });
+
+it('gives helper tools five minutes unless FRIDAY_TOOL_TIMEOUT_MS says otherwise', async () => {
+  const { fridayToolTimeoutMs } =
+    await import('../../src/friday/server/agent-limits.js');
+  expect(fridayToolTimeoutMs({})).toBe(300_000);
+  expect(fridayToolTimeoutMs({ FRIDAY_TOOL_TIMEOUT_MS: '120000' })).toBe(
+    120_000,
+  );
+  for (const bad of ['5', 'soon', '1000000'])
+    expect(() => fridayToolTimeoutMs({ FRIDAY_TOOL_TIMEOUT_MS: bad })).toThrow(
+      /FRIDAY_TOOL_TIMEOUT_MS/,
+    );
+});

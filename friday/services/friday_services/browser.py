@@ -120,8 +120,12 @@ class OnScreenBrowser:
         channel: str = "chrome",
         headless: bool = False,
         user_agent: str | None = None,
+        cdp_port: int | None = None,
     ):
         self._profile_dir = profile_dir
+        # The browser-use agent attaches to this same window over Chrome's
+        # debugging port, which Chrome serves on 127.0.0.1 only.
+        self._cdp_port = cdp_port
         self._channel = channel
         self._headless = headless  # tests only; the owner should see the window
         self._user_agent = user_agent  # tests only
@@ -139,13 +143,23 @@ class OnScreenBrowser:
                 channel=self._channel,
                 headless=self._headless,
                 no_viewport=True,
-                args=["--start-maximized"],
+                args=[
+                    "--start-maximized",
+                    *([f"--remote-debugging-port={self._cdp_port}"] if self._cdp_port else []),
+                ],
                 **({"user_agent": self._user_agent} if self._user_agent else {}),
             )
         pages = [page for page in self._context.pages if not page.is_closed()]
         page = pages[-1] if pages else self._context.new_page()
         page.bring_to_front()
         return page
+
+    def cdp_url(self) -> str:
+        """Opens the window if needed and returns where the agent can attach."""
+        if not self._cdp_port:
+            raise BrowserError("This browser was started without a debugging port.")
+        self._page()
+        return f"http://127.0.0.1:{self._cdp_port}"
 
     def _describe(self, page) -> dict:
         page.wait_for_load_state("domcontentloaded", timeout=15_000)

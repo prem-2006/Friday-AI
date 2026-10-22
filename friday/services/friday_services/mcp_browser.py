@@ -11,6 +11,7 @@ from pydantic import Field
 
 from friday_services.activity import ActivityFeed
 from friday_services.browser import BrowserError, OnScreenBrowser
+from friday_services.browser_agent import BrowserAgent, BrowserAgentError
 from friday_services.worker import Worker
 
 ACT = ToolAnnotations(read_only_hint=False, destructive_hint=False)
@@ -18,7 +19,12 @@ LOOK = ToolAnnotations(read_only_hint=True)
 Ref = Annotated[int, Field(description="Element number from the latest page description.", ge=1)]
 
 
-def build_browser_server(browser: OnScreenBrowser, worker: Worker, feed: ActivityFeed) -> MCPServer:
+def build_browser_server(
+    browser: OnScreenBrowser,
+    worker: Worker,
+    feed: ActivityFeed,
+    agent: BrowserAgent | None = None,
+) -> MCPServer:
     server = MCPServer(
         name="friday-browser",
         instructions=(
@@ -77,6 +83,54 @@ def build_browser_server(browser: OnScreenBrowser, worker: Worker, feed: Activit
         return await act(
             "browser_search", f'Searching {name} for "{query}".', browser.search, site, query
         )
+
+    @server.tool(
+        name="browser_task",
+        description=(
+            "Hand a whole multi-step web task to the browser agent, which plans, clicks, "
+            "types and reads in the on-screen browser by itself and returns its answer. "
+            "Use it for anything beyond a single search: comparing, filling forms, finding "
+            "details across pages. Describe the goal in one or two plain sentences."
+        ),
+        annotations=ACT,
+    )
+    async def browser_task(
+        task: Annotated[str, Field(min_length=3, max_length=1000)],
+        max_steps: Annotated[int, Field(ge=1, le=30)] = 15,
+    ) -> dict:
+        if agent is None:
+            raise ToolError("The browser agent is not set up; use the other browser tools.")
+        feed.guard()
+        feed.emit("navigator", "browser_task", f"Working on: {task[:160]}")
+
+        async def on_step(step: dict) -> None:
+            feed.emit(
+                "navigator",
+                "browser_step",
+                (step.get("goal") or "Working in the browser.")[:200],
+                state="done",
+                image=await worker.run(browser.screenshot) or None,
+            )
+
+        try:
+            cdp_url = await worker.run(browser.cdp_url)
+            outcome = await agent.run(task, cdp_url, max_steps, on_step, lambda: feed.stopped)
+        except (BrowserError, BrowserAgentError) as error:
+            feed.emit("navigator", "browser_task", str(error), state="failed")
+            raise ToolError(str(error)) from error
+        feed.emit(
+            "navigator",
+            "browser_task",
+            ("Finished: " if outcome.get("ok") else "Stopped: ") + outcome.get("result", "")[:160],
+            state="done" if outcome.get("ok") else "failed",
+            image=await worker.run(browser.screenshot) or None,
+        )
+        return {
+            "done": bool(outcome.get("ok")),
+            "answer": outcome.get("result", ""),
+            "pages": outcome.get("urls", []),
+            "steps": outcome.get("steps", 0),
+        }
 
     @server.tool(
         name="browser_snapshot",

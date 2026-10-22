@@ -1,5 +1,6 @@
 import { ComputerService } from './computer-service.js';
 import { ConnectionService } from './connections.js';
+import { fridayToolTimeoutMs } from '../friday/server/agent-limits.js';
 import { PageService } from './page-service.js';
 import { randomUUID } from 'node:crypto';
 import {
@@ -46,7 +47,11 @@ export class Platform {
       config,
       () => store.settings().paused,
     );
-    this.connections = new ConnectionService(workspace.connections);
+    this.connections = new ConnectionService(
+      workspace.connections,
+      undefined,
+      fridayToolTimeoutMs(),
+    ); /* FRIDAY: longer tool limit */
     this.pages = new PageService(workspace, () => {
       this.requireReady();
       return this.intelligence!;

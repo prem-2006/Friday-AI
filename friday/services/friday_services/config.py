@@ -73,6 +73,15 @@ class Settings:
         return self.get("FRIDAY_CALENDAR_URL", f"http://127.0.0.1:{self.port}/calendar").rstrip("/")
 
     @property
+    def browser_cdp_port(self) -> int:
+        # Chrome's debugging port for the on-screen window, on 127.0.0.1 only.
+        return int(self.get("FRIDAY_BROWSER_CDP_PORT", "9333"))
+
+    @property
+    def browser_agent_dir(self) -> Path:
+        return Path(self.get("FRIDAY_BROWSER_AGENT_DIR") or REPO_ROOT / "friday" / "browser-agent")
+
+    @property
     def evon_disable_thinking(self) -> bool:
         # Evon reasons before answering by default, which is too slow on a phone
         # line. Set EVON_DISABLE_THINKING=false if the endpoint rejects

@@ -13,6 +13,7 @@ export interface ActivityEvent {
 
 const SPOKEN = new Set([
   'browser_search',
+  'browser_task',
   'browser_open',
   'browser_type',
   'browser_read',

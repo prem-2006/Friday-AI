@@ -135,8 +135,33 @@ class FakeBrowser:
     def screenshot(self):
         return "aW1hZ2U="
 
+    def cdp_url(self):
+        return "http://127.0.0.1:9333"
+
     def close(self):
         pass
+
+
+class FakeBrowserAgent:
+    """Stands in for browser-use: reports two steps and an answer."""
+
+    def __init__(self):
+        self.tasks: list[tuple] = []
+        self.error: Exception | None = None
+
+    async def run(self, task, cdp_url, max_steps, on_step, stopped):
+        self.tasks.append((task, cdp_url, max_steps))
+        if self.error:
+            raise self.error
+        await on_step({"type": "step", "n": 1, "goal": "Open the Python docs."})
+        await on_step({"type": "step", "n": 2, "goal": "Read the release notes."})
+        return {
+            "type": "done",
+            "ok": True,
+            "result": "Python 3.14 is the latest.",
+            "urls": ["https://docs.python.org/"],
+            "steps": 2,
+        }
 
 
 def free_port() -> int:
@@ -148,9 +173,14 @@ def free_port() -> int:
 @pytest.fixture
 def server(settings: Settings):
     dialer, call = FakeDialer(), FakeCall()
-    browser, whatsapp = FakeBrowser(), FakeWhatsAppUI()
+    browser, whatsapp, agent = FakeBrowser(), FakeWhatsAppUI(), FakeBrowserAgent()
     app = create_app(
-        settings, dialer=dialer, call_runner=call, browser=browser, whatsapp_ui=whatsapp
+        settings,
+        dialer=dialer,
+        call_runner=call,
+        browser=browser,
+        browser_agent=agent,
+        whatsapp_ui=whatsapp,
     )
     port = free_port()
     uv = uvicorn.Server(
@@ -169,6 +199,7 @@ def server(settings: Settings):
         call=call,
         settings=settings,
         browser=browser,
+        browser_agent=agent,
         whatsapp=whatsapp,
     )
     uv.should_exit = True

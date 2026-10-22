@@ -30,7 +30,10 @@ import {
 import { browserResponse } from './research.js';
 import { answerObserver, type SetupTelemetry } from './setup-telemetry.js';
 import { fridayLocalTime } from '../friday/server/time.js';
-import { fridayToolRounds } from '../friday/server/agent-limits.js';
+import {
+  fridayToolRounds,
+  fridayToolTimeoutMs,
+} from '../friday/server/agent-limits.js';
 import { delegateTool, type Delegate } from '../friday/server/delegate.js';
 import {
   fridayModelOptions,
@@ -321,7 +324,11 @@ export class DotAgent extends AbstractAgent {
           (tool) => tool.name === connectionActionTool.name,
         );
         const connected = connectionTools(
-          new ConnectionService(this.workspace.connections),
+          new ConnectionService(
+            this.workspace.connections,
+            undefined,
+            fridayToolTimeoutMs(),
+          ) /* FRIDAY: longer tool limit */,
           dot.id,
           input.threadId,
           check,

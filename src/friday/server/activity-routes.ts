@@ -1,6 +1,7 @@
 // Friday: brings friday-services' live activity (what Navigator and Operator
 // are doing, with screenshots) to the voice screen, and relays the owner's
-// stop button. The services token never reaches the browser.
+// stop button. It also passes the voice screen's WebRTC offer to the live
+// voice pipeline. The services token never reaches the browser.
 import { Hono } from 'hono';
 
 export function fridayActivityRoutes({
@@ -23,13 +24,21 @@ export function fridayActivityRoutes({
       },
       { status: 503 },
     );
-  const relay = async (path: string, method = 'GET', signal?: AbortSignal) => {
+  const relay = async (
+    path: string,
+    method = 'GET',
+    signal?: AbortSignal,
+    body?: string,
+  ) => {
     if (!token) return unavailable();
     try {
       const response = await fetch(`${base}${path}`, {
         method,
-        headers,
+        headers: body
+          ? { ...headers, 'Content-Type': 'application/json' }
+          : headers,
         signal,
+        body,
       });
       return new Response(response.body, {
         status: response.status,
@@ -50,5 +59,8 @@ export function fridayActivityRoutes({
   );
   app.post('/friday/activity/stop', () => relay('/activity/stop', 'POST'));
   app.post('/friday/activity/resume', () => relay('/activity/resume', 'POST'));
+  app.post('/friday/voice/offer', async (c) =>
+    relay('/voice/offer', 'POST', undefined, await c.req.text()),
+  );
   return app;
 }

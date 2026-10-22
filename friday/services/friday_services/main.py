@@ -118,6 +118,10 @@ def create_app(
                 opening = asyncio.ensure_future(browser_worker.run(browser.warm))
                 opening.add_done_callback(lambda task: task.cancelled() or task.exception())
             yield
+        for task in list(live["tasks"]):
+            task.cancel()
+        if live["handler"]:
+            await live["handler"].close()
         try:
             await asyncio.wait_for(browser_worker.run(browser.close), 10)
         except Exception:
@@ -157,6 +161,43 @@ def create_app(
                 feed.unlisten(queue)
 
         return StreamingResponse(events(), media_type="text/event-stream")
+
+    live: dict[str, Any] = {"handler": None, "tasks": set()}
+
+    @app.post("/voice/offer", dependencies=[Depends(owner)])
+    async def voice_offer(request: Request) -> dict:
+        """WebRTC offer from the voice screen: starts a live voice pipeline."""
+        from pipecat.transports.smallwebrtc.request_handler import (
+            SmallWebRTCRequest,
+            SmallWebRTCRequestHandler,
+        )
+
+        from friday_services.live_voice import LiveVoiceSession
+        from friday_services.voices import DEFAULT_LANGUAGE, voice_for
+
+        api_key = settings.get("GNANI_API_KEY")
+        if not api_key:
+            raise HTTPException(503, "Set GNANI_API_KEY in .env for Friday's live voice.")
+        body = await request.json()
+        if not isinstance(body, dict) or "sdp" not in body or "type" not in body:
+            raise HTTPException(400, "Send a WebRTC offer (sdp and type).")
+        wanted = (body.get("request_data") or {}).get("language") or DEFAULT_LANGUAGE
+        try:
+            voice = voice_for(wanted)
+        except ValueError:
+            voice = voice_for(DEFAULT_LANGUAGE)
+        live["handler"] = live["handler"] or SmallWebRTCRequestHandler()
+
+        async def started(connection) -> None:
+            session = LiveVoiceSession(connection, api_key, voice.code, voice.voice)
+            task = asyncio.create_task(session.run(), name="friday-live-voice")
+            live["tasks"].add(task)
+            task.add_done_callback(live["tasks"].discard)
+
+        return await live["handler"].handle_web_request(
+            SmallWebRTCRequest(sdp=body["sdp"], type=body["type"], pc_id=body.get("pc_id")),
+            started,
+        )
 
     @app.post("/activity/stop", dependencies=[Depends(owner)])
     async def activity_stop() -> dict[str, bool]:
@@ -309,7 +350,13 @@ def main() -> None:
 
     load_dotenv(REPO_ROOT / ".env")
     settings = Settings.from_env()
-    uvicorn.run(create_app(settings, wake=True), host=settings.host, port=settings.port)
+    uvicorn.run(
+        create_app(settings, wake=True),
+        host=settings.host,
+        port=settings.port,
+        # The voice screen's live streams never end by themselves; do not wait on them.
+        timeout_graceful_shutdown=3,
+    )
 
 
 if __name__ == "__main__":

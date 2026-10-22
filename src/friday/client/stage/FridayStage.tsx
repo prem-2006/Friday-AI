@@ -29,6 +29,7 @@ import {
 import { HandsFree } from './handsFree';
 import { friendlyError } from './errors';
 import { intentOf, isEcho } from './intent';
+import { LiveVoice, type LiveEvent } from './liveVoice';
 import { ACTOR_NAMES, narrate, type ActivityEvent } from './narration';
 import { Orb, type OrbMode } from './Orb';
 import './stage.css';
@@ -385,12 +386,22 @@ function StageSession({
   const turnDone = useRef<Promise<void>>(Promise.resolve());
   // Whether the turn being heard began while Friday was talking.
   const overFriday = useRef(false);
+  // The live voice pipeline (friday/services over WebRTC). When it is not
+  // available, Friday falls back to sending recorded clips to Gnani.
+  const live = useRef<LiveVoice | null>(null);
+  const liveConnecting = useRef<Promise<LiveVoice | null> | null>(null);
+  const liveHandsFree = useRef(false);
+  const liveEventRef = useRef<(event: LiveEvent) => void>(() => {});
+  const spokenWaiter = useRef<(() => void) | null>(null);
   // What Friday said lately, to tell its echo from the owner talking over it.
   const spokenLately = useRef<{ text: string; at: number }[]>([]);
   // Hands-free: the mic is open and turns start by voice. For push-to-talk
   // alone the mic may stay open, but nothing is heard until Caps Lock is held.
   const handsFreeOn = () =>
-    !!handsFree.current?.active && handsFree.current.auto;
+    liveHandsFree.current ||
+    (!!handsFree.current?.active && handsFree.current.auto);
+  // Whether Friday's voice is playing, by either path.
+  const fridayTalking = () => !!audio.current || !!live.current?.speaking;
   const audio = useRef<HTMLAudioElement | null>(null);
   const audioContext = useRef<AudioContext | null>(null);
   const ttsAnalyser = useRef<AnalyserNode | null>(null);
@@ -436,6 +447,7 @@ function StageSession({
     }, setHelpersOnline);
     return () => {
       unfollow();
+      live.current?.stop();
       handsFree.current?.stop();
       audio.current?.pause();
       void audioContext.current?.close();
@@ -446,6 +458,7 @@ function StageSession({
     setCaptions((list) => [...list.slice(-3), { who, text }]);
 
   const level = useCallback(() => {
+    if (live.current) return live.current.level();
     if (speakingMain.current || audio.current) {
       const analyser = ttsAnalyser.current;
       if (!analyser) return 0.3;
@@ -460,6 +473,7 @@ function StageSession({
 
   // Frequency bars for the orb: Friday's voice while it speaks, else the mic.
   const spectrum = useCallback(() => {
+    if (live.current) return live.current.spectrum();
     const analyser = ttsAnalyser.current;
     if ((speakingMain.current || audio.current) && analyser) {
       const data = new Uint8Array(analyser.frequencyBinCount);
@@ -477,6 +491,10 @@ function StageSession({
     speechToken.current += 1; // cancels any parts still queued
     audio.current?.pause();
     audio.current = null;
+    if (live.current?.speaking || spokenWaiter.current)
+      live.current?.interrupt();
+    spokenWaiter.current?.();
+    spokenWaiter.current = null;
     speakingMain.current = false;
   };
 
@@ -506,7 +524,7 @@ function StageSession({
   // still being synthesised, so the first word comes much sooner.
   const speak = async (text: string, main: boolean, startedAt?: number) => {
     if (!text || !voiceReady) return;
-    if (!main && (speakingMain.current || audio.current)) return; // never talk over a reply
+    if (!main && (speakingMain.current || fridayTalking())) return; // never talk over a reply
     stopSpeaking();
     const token = speechToken.current;
     speakingMain.current = main;
@@ -516,6 +534,31 @@ function StageSession({
       ...spokenLately.current.filter((item) => now - item.at < 30_000),
       { text, at: now },
     ];
+    const voice = live.current;
+    if (voice?.connected) {
+      // The live pipeline streams Friday's voice; wait until it has finished
+      // (or was interrupted), with a cap in case a message is lost.
+      try {
+        await new Promise<void>((resolve) => {
+          const cap = setTimeout(resolve, 4000 + text.length * 90);
+          spokenWaiter.current = () => {
+            clearTimeout(cap);
+            resolve();
+          };
+          if (main) logTiming();
+          voice.say(text);
+        });
+      } finally {
+        if (token === speechToken.current) {
+          spokenWaiter.current = null;
+          if (main) {
+            speakingMain.current = false;
+            setPhase(handsFreeOn() ? 'listening' : 'off');
+          }
+        }
+      }
+      return;
+    }
     const parts = speechParts(text);
     const clips = parts.map(() => null as Promise<Blob> | null);
     const clip = (index: number) =>
@@ -708,9 +751,16 @@ function StageSession({
     } catch (e) {
       setError(friendlyError(e, 'Could not hear that.'));
     }
+    await respond(text, startedOverFriday);
+  };
+
+  // What to do with something the owner said (from either voice path).
+  const respond = async (text: string, startedOverFriday: boolean) => {
     if (!text) {
       if (!startedOverFriday)
-        setPhase(running ? 'thinking' : handsFreeOn() ? 'listening' : 'off');
+        setPhase(
+          runningRef.current ? 'thinking' : handsFreeOn() ? 'listening' : 'off',
+        );
       return;
     }
     const intent = intentOf(text);
@@ -753,7 +803,7 @@ function StageSession({
     if (starting.current) return null;
     const next = new HandsFree({
       onSpeechStart: () => {
-        overFriday.current = !!audio.current;
+        overFriday.current = fridayTalking();
         setPhase((phase) => (phase === 'listening' ? 'hearing' : phase));
       },
       onUtterance: (wav, endedAt) =>
@@ -775,9 +825,75 @@ function StageSession({
     return next;
   };
 
+  // Connects the live voice pipeline once; null when it is unavailable.
+  const ensureLive = async () => {
+    if (live.current?.connected) return live.current;
+    liveConnecting.current ??= (async () => {
+      const voice = new LiveVoice({
+        language: languageRef.current,
+        onEvent: (event) => liveEventRef.current(event),
+        onClosed: () => {
+          if (live.current === voice) live.current = null;
+          liveHandsFree.current = false;
+        },
+      });
+      try {
+        await voice.start();
+        live.current = voice;
+        return voice;
+      } catch {
+        voice.stop();
+        return null;
+      } finally {
+        liveConnecting.current = null;
+      }
+    })();
+    return liveConnecting.current;
+  };
+
+  // Clears a "Got it…" that never got an answer (e.g. silence was held).
+  const heardTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  liveEventRef.current = (event) => {
+    if (event.event === 'heard') {
+      clearTimeout(heardTimer.current);
+      const startedOverFriday = overFriday.current;
+      overFriday.current = false;
+      void respond(event.text, startedOverFriday);
+    } else if (event.event === 'speech_start') {
+      // Hands-free: the owner talking over Friday interrupts it at once.
+      overFriday.current = fridayTalking();
+      if (overFriday.current) stopSpeaking();
+      setPhase((phase) =>
+        phase === 'listening' || phase === 'speaking' ? 'hearing' : phase,
+      );
+    } else if (event.event === 'speaking') {
+      if (event.on) setPhase('speaking');
+      else {
+        spokenWaiter.current?.();
+        spokenWaiter.current = null;
+      }
+    } else if (event.event === 'error') {
+      setError(friendlyError(new Error(event.message), 'Voice problem.'));
+    }
+  };
+
   const toggleListening = async () => {
     if (starting.current) return; // a second tap while the mic is opening
     setError('');
+    const voice = await ensureLive();
+    if (voice) {
+      if (liveHandsFree.current) {
+        stopSpeaking();
+        liveHandsFree.current = false;
+        voice.handsFree(false);
+        setPhase(running ? 'thinking' : 'off');
+      } else {
+        liveHandsFree.current = true;
+        voice.handsFree(true);
+        setPhase(running ? 'thinking' : 'listening');
+      }
+      return;
+    }
     if (handsFreeOn()) {
       stopSpeaking();
       handsFree.current?.stop();
@@ -795,14 +911,37 @@ function StageSession({
   const holding = useRef(false);
   const pushToTalk = async (down: boolean) => {
     if (!down) {
+      if (!holding.current) return;
       holding.current = false;
-      handsFree.current?.release();
+      if (live.current?.connected) {
+        live.current.pushToTalk(false);
+        setPhase('transcribing');
+        heardTimer.current = setTimeout(
+          () =>
+            setPhase((phase) =>
+              phase === 'transcribing'
+                ? handsFreeOn()
+                  ? 'listening'
+                  : 'off'
+                : phase,
+            ),
+          5000,
+        );
+      } else handsFree.current?.release();
       return;
     }
     if (holding.current || !loaded || voiceReady === false || paused) return;
     holding.current = true;
     stopSpeaking();
     setError('');
+    overFriday.current = false;
+    const voice = await ensureLive();
+    if (voice) {
+      if (!holding.current) return; // let go while connecting
+      voice.pushToTalk(true);
+      setPhase('hearing');
+      return;
+    }
     const mic = await openMic(false);
     if (!mic || !holding.current) return;
     mic.hold();
@@ -832,6 +971,34 @@ function StageSession({
       window.removeEventListener('keyup', up);
     };
   }, []);
+
+  // Connect the live voice at once when the mic is already allowed, so the
+  // first Caps Lock press is heard from its first word.
+  useEffect(() => {
+    if (!loaded || voiceReady === false) return;
+    void navigator.permissions
+      ?.query({ name: 'microphone' as PermissionName })
+      .then((state) => {
+        if (state.state === 'granted') void ensureLive();
+      })
+      .catch(() => {});
+  }, [loaded, voiceReady]);
+
+  // Gnani hears one language per connection: reconnect when it changes.
+  useEffect(() => {
+    const voice = live.current;
+    if (!voice || !loaded) return;
+    voice.stop();
+    live.current = null;
+    const wasHandsFree = liveHandsFree.current;
+    liveHandsFree.current = false;
+    void ensureLive().then((next) => {
+      if (next && wasHandsFree) {
+        liveHandsFree.current = true;
+        next.handsFree(true);
+      }
+    });
+  }, [language]);
 
   // A double clap opens this page with ?wake=1: start listening at once.
   const woke = useRef(false);

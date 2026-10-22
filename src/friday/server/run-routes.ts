@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { Message } from '@ag-ui/core';
 import { FRIDAY_DOT_NAME } from './delegate.js';
 import { voiceLog } from './voice-log.js';
+import { fallbackReply } from './quick-finish.js';
 import {
   localThread,
   runDotDirectly,
@@ -58,11 +59,22 @@ export function fridayRunRoutes(
         input.data.messages as unknown as Message[],
         { approvals: true, signal: c.req.raw.signal },
       );
-      const said = newMessages
+      let said = newMessages
         .filter((item) => item.role === 'assistant')
         .map((item) => (typeof item.content === 'string' ? item.content : ''))
         .filter(Boolean)
         .at(-1);
+      // A quick action ended the turn, or the model went quiet after a
+      // helper's report: say what the tool reported.
+      const reported = fallbackReply(newMessages);
+      if (reported && newMessages.at(-1)?.role === 'tool') {
+        newMessages.push({
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: reported,
+        } as Message);
+        said = reported;
+      }
       voiceLog('answered', {
         ms: Math.round(performance.now() - started),
         tools: newMessages.flatMap((item) =>

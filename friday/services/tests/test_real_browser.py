@@ -73,3 +73,33 @@ def test_search_types_in_youtubes_box_and_ranks_results(tmp_path):
             browser.search("bing", "x")
     finally:
         browser.close()
+
+
+def test_play_youtube_opens_the_first_full_video(tmp_path):
+    browser = OnScreenBrowser(tmp_path / "profile", headless=True)
+    try:
+        browser._page()
+        opened: list[str] = []
+
+        def serve(route):
+            url = route.request.url
+            opened.append(url)
+            if "/watch" in url:
+                html = "<!doctype html><title>Python full course - YouTube</title>"
+            else:
+                html = FAKE_RESULTS
+            route.fulfill(status=200, content_type="text/html", body=html)
+
+        browser._context.route("https://www.youtube.com/**", serve)
+        played = browser.play_youtube("python course")
+        assert played == {
+            "title": "Python full course for beginners",
+            "url": "https://www.youtube.com/watch?v=v1",
+        }
+        # Straight to the results page, then the video: no home page, no Short.
+        assert [u.split("?")[0] for u in opened] == [
+            "https://www.youtube.com/results",
+            "https://www.youtube.com/watch",
+        ]
+    finally:
+        browser.close()

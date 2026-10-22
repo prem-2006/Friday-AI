@@ -13,6 +13,7 @@ import uvicorn
 
 from friday_services.calls.store import CallRecord, CallStore
 from friday_services.config import Settings
+from friday_services.desktop import DesktopApps
 from friday_services.main import create_app
 
 TOKEN = "test-token-0123456789abcdef"
@@ -135,6 +136,26 @@ class FakeBrowser:
     def screenshot(self):
         return "aW1hZ2U="
 
+    def search(self, site, query):
+        self.log.append(("search", site, query))
+        return {
+            "site": "YouTube" if site == "youtube" else "Google",
+            "query": query,
+            "results": [
+                {"title": "Lo-fi beats to study to", "url": "https://yt.test/1", "kind": "video"},
+                {"title": "Lo-fi channel", "url": "https://yt.test/@lofi", "kind": "channel"},
+                {"title": "Rain sounds", "url": "https://yt.test/2", "kind": "video"},
+                {"title": "Short clip", "url": "https://yt.test/s", "kind": "short"},
+            ],
+        }
+
+    def play_youtube(self, query):
+        self.log.append(("play", query))
+        return {"title": "Lo-fi beats to study to", "url": "https://yt.test/1"}
+
+    def warm(self):
+        pass
+
     def cdp_url(self):
         return "http://127.0.0.1:9333"
 
@@ -174,12 +195,30 @@ def free_port() -> int:
 def server(settings: Settings):
     dialer, call = FakeDialer(), FakeCall()
     browser, whatsapp, agent = FakeBrowser(), FakeWhatsAppUI(), FakeBrowserAgent()
+    launched, looked, snapped = [], [], []
+    desktop = DesktopApps(
+        list_apps=lambda: [{"name": "Notepad", "app_id": "notepad"}],
+        launch=launched.append,
+        window_titles=lambda: ["Untitled - Notepad"] if launched else [],
+    )
+
+    def look(question):
+        looked.append(question)
+        return "A code editor with a Python file open."
+
+    def snap(window, position):
+        snapped.append((window, position))
+        return {"window": "Untitled - Notepad", "position": position}
+
     app = create_app(
         settings,
         dialer=dialer,
         call_runner=call,
         browser=browser,
         browser_agent=agent,
+        desktop=desktop,
+        look=look,
+        snap=snap,
         whatsapp_ui=whatsapp,
     )
     port = free_port()
@@ -201,6 +240,9 @@ def server(settings: Settings):
         browser=browser,
         browser_agent=agent,
         whatsapp=whatsapp,
+        launched=launched,
+        looked=looked,
+        snapped=snapped,
     )
     uv.should_exit = True
     thread.join(10)

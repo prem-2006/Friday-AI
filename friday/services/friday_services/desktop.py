@@ -102,6 +102,31 @@ def start_menu_apps() -> list[dict[str, str]]:
     return [{"name": row["Name"], "app_id": row["AppID"]} for row in rows if row.get("Name")]
 
 
+def visible_window_titles() -> list[str]:
+    """Titles of visible top-level windows, straight from Win32: about 2 ms,
+    where walking UI Automation takes most of a second."""
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    titles: list[str] = []
+
+    def add(hwnd, _param):
+        if user32.IsWindowVisible(hwnd):
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length:
+                buffer = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(hwnd, buffer, length + 1)
+                title = buffer.value.strip()
+                if title and title not in titles:
+                    titles.append(title)
+        return True
+
+    callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(add)
+    user32.EnumWindows(callback, 0)
+    return titles
+
+
 def launch_app(app_id: str) -> None:
     subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{app_id}"])
 
@@ -123,8 +148,11 @@ class DesktopApps:
         launch: Callable[[str], None] = launch_app,
         desktop: Any = None,
         send_keys: Callable[..., None] | None = None,
+        window_titles: Callable[[], list[str]] | None = None,
     ):
         self._list_apps = list_apps
+        # Tests that pass a fake desktop read its windows instead.
+        self._titles = window_titles or (visible_window_titles if desktop is None else None)
         self._launch = launch
         self._desktop = desktop
         self._send_keys = send_keys
@@ -145,6 +173,11 @@ class DesktopApps:
 
             self._send_keys = send_keys
         self._send_keys(keys, **kwargs)
+
+    def warm(self) -> None:
+        """Load the Start menu list ahead of the first request (about 2 s)."""
+        if self._apps is None:
+            self._apps = self._list_apps()
 
     def apps(self, query: str = "") -> list[str]:
         if self._apps is None:
@@ -167,6 +200,8 @@ class DesktopApps:
         return matches[0]
 
     def windows(self) -> list[str]:
+        if self._titles:
+            return self._titles()
         titles = []
         for window in self._uia().windows():
             title = (window.window_text() or "").strip()
@@ -195,10 +230,12 @@ class DesktopApps:
         before = set(self.windows())
         self._launch(app["app_id"])
         deadline = time.time() + wait_seconds
+        first_word = app["name"].split()[0].casefold()
         while time.time() < deadline:
-            time.sleep(0.5)
-            new = [t for t in self.windows() if t not in before]
-            match = [t for t in self.windows() if app["name"].split()[0].casefold() in t.casefold()]
+            time.sleep(0.2)
+            titles = self.windows()
+            new = [t for t in titles if t not in before]
+            match = [t for t in titles if first_word in t.casefold()]
             if new or match:
                 return {"opened": app["name"], "window": (new or match)[0]}
         return {"opened": app["name"], "window": None, "note": "Started; no new window seen yet."}

@@ -78,6 +78,10 @@ class Settings:
         return int(self.get("FRIDAY_BROWSER_CDP_PORT", "9333"))
 
     @property
+    def browser_prewarm(self) -> bool:
+        return self.get("FRIDAY_BROWSER_PREWARM", "true").lower() != "false"
+
+    @property
     def browser_agent_dir(self) -> Path:
         return Path(self.get("FRIDAY_BROWSER_AGENT_DIR") or REPO_ROOT / "friday" / "browser-agent")
 

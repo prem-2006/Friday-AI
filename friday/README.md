@@ -8,11 +8,11 @@ Built for the Gnani AI #GreatIndianAIInternshipChallenge on top of [OpenDots](ht
 
 OpenDots calls each agent a **Dot**. Friday uses three:
 
-| Dot           | What it does                                                                                                                                                                     | Its tools (from `friday/services`)                                                      |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| **Friday**    | The one you talk to. Understands you, answers quick questions with web sources, hands bigger jobs to the helpers.                                                                | `delegate_to_dot`, web research, WhatsApp: find a chat, send a message, start a call    |
-| **Navigator** | Drives a real Chrome window on your screen. Multi-step jobs go to its browser agent ([browser-use](https://github.com/browser-use/browser-use)), which plans and acts by itself. | `browser_task`, `browser_search`, `browser_open`, `browser_click`, `browser_type`, …    |
-| **Operator**  | Opens and works Windows apps like Notepad or Calculator through Windows UI Automation.                                                                                           | `list_apps`, `open_app`, `window_snapshot`, `window_click`, `window_type`, `press_keys` |
+| Dot           | What it does                                                                                                                                                                     | Its tools (from `friday/services`)                                                                                                                                               |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Friday**    | The one you talk to. Does one-step jobs itself at once, hands bigger jobs to the helpers.                                                                                        | Quick actions: `open_app`, `open_website`, `play_youtube`, `web_search`, `look_at_screen`, `snap_window`; `delegate_to_dot`; WhatsApp: find a chat, send a message, start a call |
+| **Navigator** | Drives a real Chrome window on your screen. Multi-step jobs go to its browser agent ([browser-use](https://github.com/browser-use/browser-use)), which plans and acts by itself. | `browser_task`, `browser_search`, `browser_open`, `browser_click`, `browser_type`, …                                                                                             |
+| **Operator**  | Opens and works Windows apps like Notepad or Calculator through Windows UI Automation.                                                                                           | `list_apps`, `open_app`, `window_snapshot`, `window_click`, `window_type`, `press_keys`                                                                                          |
 
 When you ask for something, Friday says what it is handing over and calls `delegate_to_dot`. The helper then works in its own "Tasks from Friday" conversation. Each action it takes streams to the voice screen with a screenshot, Friday narrates the important ones out loud, and when the helper finishes, Friday sums up.
 
@@ -79,6 +79,7 @@ Try saying:
 ## How the voice stage works
 
 - **Fast turns:** the voice stage runs Friday directly on the app server and keeps its own short conversation (the circular-arrow button starts a new one). The hosted conversation service is skipped there because it added 4–6 s per turn; the classic dashboard still uses it. Helper Dots also run directly.
+- **Quick actions:** one-step requests ("open Notepad", "play Arijit Singh", "what's on my screen", "put Chrome on the left") run as Friday's own tools, with no helper hand-off. Each returns the sentence to speak, which ends the turn without another model call: "Open Notepad" takes about 1.5 s instead of 17 s. "Look at my screen" and window snapping come from Julian Ivanov's jarvis-voice-assistant (MIT), rebuilt on Win32 and the EVON_* model. A screenshot goes to that model only when you ask Friday to look.
 - **Gemini speed:** with Gemini as the brain, `FRIDAY_MODEL_OPTIONS='{"reasoning_effort":"none"}'` skips its thinking step and halves the wait.
 - **Paused:** if the dashboard's Pause button is on, Friday shows "Friday is paused" with a Resume button; nothing runs while paused.
 - **Timings:** each turn logs `[Friday] heard … · answered … · voice …` in the browser console.
@@ -128,6 +129,7 @@ cd friday/browser-agent; python -m uv run pytest
 - **Echo:** echo cancellation and a raised threshold while Friday speaks keep it from hearing itself, but headphones work best.
 - **Phone calls over Twilio** (the earlier calling service) are parked; the code remains under `friday/services/friday_services/calls`.
 - **The browser agent** (browser-use, `friday/browser-agent`) runs in its own Python environment because it pins exact library versions; it attaches to Navigator's Chrome window through Chrome's debugging port on 127.0.0.1 (`FRIDAY_BROWSER_CDP_PORT`). Every step is one model call, so a free Gemini key runs out quickly; its log is `friday/services/data/browser-agent.log`.
+- **Playing on YouTube** takes 4–7 s, mostly YouTube's own page load; the services open Chrome at start (`FRIDAY_BROWSER_PREWARM`) so the first request skips Chrome's startup.
 - **Conversations live in CopilotKit's cloud** (its local version is macOS-only). Telegram was dropped.
 
 ## Credit and license

@@ -145,6 +145,8 @@ class OnScreenBrowser:
                 no_viewport=True,
                 args=[
                     "--start-maximized",
+                    # "Play X on YouTube" should start playing, with sound.
+                    "--autoplay-policy=no-user-gesture-required",
                     *([f"--remote-debugging-port={self._cdp_port}"] if self._cdp_port else []),
                 ],
                 **({"user_agent": self._user_agent} if self._user_agent else {}),
@@ -153,6 +155,10 @@ class OnScreenBrowser:
         page = pages[-1] if pages else self._context.new_page()
         page.bring_to_front()
         return page
+
+    def warm(self) -> None:
+        """Start Chrome now, so the first request does not wait for it."""
+        self._page()
 
     def cdp_url(self) -> str:
         """Opens the window if needed and returns where the agent can attach."""
@@ -252,6 +258,37 @@ class OnScreenBrowser:
             if results
             else "No results could be read; use browser_read or browser_snapshot.",
         }
+
+    def play_youtube(self, query: str) -> dict:
+        """Start the first full video (not a Short) YouTube finds for the query.
+
+        Goes straight to the results page: for playing, typing into the home
+        page's search box would only add a page load."""
+        page = self._page()
+        page.goto(
+            SEARCH_SITES["youtube"]["results"] + quote_plus(query),
+            wait_until="domcontentloaded",
+            timeout=20_000,
+        )
+        try:
+            page.wait_for_selector('a[href*="/watch?v="]', timeout=10_000)
+        except Exception:
+            pass
+        results = page.evaluate(RESULTS_JS, "youtube")
+        videos = [r for r in results if r["kind"] == "video"] or [
+            r for r in results if r["kind"] == "short"
+        ]
+        if not videos:
+            raise BrowserError(f'YouTube showed no video for "{query}".')
+        video = videos[0]
+        path = video["url"].split("youtube.com", 1)[-1]
+        try:
+            # Clicking lets YouTube switch pages itself, far quicker than a reload.
+            page.locator(f'a[href^="{path.split("&")[0]}"]').first.click(timeout=3_000)
+            page.wait_for_url("**/watch**", timeout=8_000)
+        except Exception:
+            page.goto(video["url"], wait_until="domcontentloaded", timeout=20_000)
+        return {"title": video["title"], "url": page.url}
 
     def _search_on(self, page, site: str, query: str) -> str:
         config = SEARCH_SITES[site]

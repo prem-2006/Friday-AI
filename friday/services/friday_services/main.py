@@ -36,6 +36,8 @@ from friday_services.mcp_browser import build_browser_server
 from friday_services.mcp_calendar import build_calendar_server
 from friday_services.mcp_desktop import build_desktop_server, build_whatsapp_server
 from friday_services.mcp_phone import Dialer, build_phone_server
+from friday_services.mcp_quick import build_quick_server
+from friday_services.screen import capture_screen, describe_screen, snap_window
 from friday_services.whatsapp import DesktopWhatsAppUI, WhatsApp, WhatsAppUI
 from friday_services.worker import Worker, com_thread
 
@@ -50,6 +52,8 @@ def create_app(
     browser: OnScreenBrowser | None = None,
     browser_agent: BrowserAgent | None = None,
     desktop: DesktopApps | None = None,
+    look: Callable[[str], str] | None = None,
+    snap: Callable[[str, str], dict] | None = None,
     whatsapp_ui: WhatsAppUI | None = None,
 ) -> FastAPI:
     settings = settings or Settings.from_env()
@@ -69,11 +73,22 @@ def create_app(
     )
     browser_worker = Worker("friday-browser")
     desktop_worker = Worker("friday-desktop", initializer=com_thread)
+    desktop = desktop or DesktopApps()
     whatsapp = WhatsApp(whatsapp_ui or DesktopWhatsAppUI(), settings.owner_name)
     servers = {
         "/browser": build_browser_server(browser, browser_worker, feed, browser_agent),
-        "/desktop": build_desktop_server(desktop or DesktopApps(), desktop_worker, feed),
+        "/desktop": build_desktop_server(desktop, desktop_worker, feed),
         "/whatsapp": build_whatsapp_server(whatsapp, desktop_worker, feed),
+        "/quick": build_quick_server(
+            browser,
+            browser_worker,
+            desktop,
+            desktop_worker,
+            feed,
+            look=look
+            or (lambda question: describe_screen(capture_screen(), question, settings.values)),
+            snap=snap or snap_window,
+        ),
         "/calendar": build_calendar_server(calendar, settings.calendar_url),
         "/phone": build_phone_server(store, dialer or TwilioDialer(settings), settings),
     }
@@ -92,6 +107,13 @@ def create_app(
         async with AsyncExitStack() as stack:
             for server, _asgi in mcp_apps.values():
                 await stack.enter_async_context(server.session_manager.run())
+            # The first "open an app" should not wait for the Start menu list.
+            warming = asyncio.ensure_future(desktop_worker.run(desktop.warm))
+            warming.add_done_callback(lambda task: task.cancelled() or task.exception())
+            # Starting Chrome takes about five seconds; do it before the first request.
+            if settings.browser_prewarm:
+                opening = asyncio.ensure_future(browser_worker.run(browser.warm))
+                opening.add_done_callback(lambda task: task.cancelled() or task.exception())
             yield
         try:
             await asyncio.wait_for(browser_worker.run(browser.close), 10)

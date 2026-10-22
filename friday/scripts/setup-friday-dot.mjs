@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Friday: sets up the three Dots and their tools from friday/services.
 //
-//   Friday     the one you talk to; WhatsApp tools (each send or call asks you
-//              first) and delegate_to_dot to hand work to the helpers
+//   Friday     the one you talk to; quick one-step actions (open an app or site,
+//              play on YouTube, search, look at the screen, arrange windows),
+//              WhatsApp tools (each send or call asks you first) and
+//              delegate_to_dot to hand bigger work to the helpers
 //   Navigator  drives a Chrome window on your screen (browser tools)
 //   Operator   opens and works desktop apps (desktop tools)
 //
@@ -29,7 +31,11 @@ const CALENDAR_URL =
 const reconnect = process.argv.includes('--reconnect');
 
 const DOTS = [
-  { name: 'Friday', persona: '../persona.md', connections: ['whatsapp'] },
+  {
+    name: 'Friday',
+    persona: '../persona.md',
+    connections: ['whatsapp', 'quick'],
+  },
   {
     name: 'Navigator',
     persona: '../dots/navigator.md',
@@ -43,6 +49,8 @@ const DOTS = [
 ];
 // Parked skills that older setups connected to Friday.
 const RETIRED = ['phone', 'calendar', 'telegram'];
+// Run without an approval card: one-step actions that send nothing and buy nothing.
+const NO_APPROVAL = ['quick'];
 
 async function api(path, method = 'GET', body) {
   const response = await fetch(`${APP_URL}/api${path}`, {
@@ -145,7 +153,11 @@ for (const spec of DOTS) {
     }
   for (const name of spec.connections)
     try {
-      const connection = await connect(dot, name, spec.name !== 'Friday');
+      const connection = await connect(
+        dot,
+        name,
+        spec.name !== 'Friday' || NO_APPROVAL.includes(name),
+      );
       console.log(
         `  Connected ${name}: ${connection.tools.map((tool) => `${tool.name}${tool.requiresApproval ? ' (asks first)' : ''}`).join(', ')}`,
       );

@@ -340,16 +340,52 @@
   left: 50%;
   bottom: 170px;
   transform: translateX(-50%);
-  width: min(520px, calc(100% - 32px));
+  width: min(460px, calc(100% - 32px));
   z-index: 5;
-  padding: 6px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.96);
-  color: #333641;
-  box-shadow:
-    0 0 0 1px rgba(139, 123, 255, 0.5),
-    0 0 50px rgba(139, 123, 255, 0.45);
+  padding: 18px 20px;
+  border-radius: 20px;
+  background: rgba(12, 16, 46, 0.92);
+  border: 1px solid rgba(139, 123, 255, 0.55);
+  box-shadow: 0 0 50px rgba(139, 123, 255, 0.35);
+  backdrop-filter: blur(14px);
   animation: stage-rise 0.35s ease both;
+}
+.stage-approval-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: #b9a8ff;
+}
+.stage-approval-text {
+  margin: 0 0 16px;
+  font-size: 16px;
+  line-height: 1.45;
+  color: #f2f3ff;
+}
+.stage-approval-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.friday-stage .stage-approval-actions button {
+  padding: 9px 20px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #cfd5ff !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(120, 135, 255, 0.35) !important;
+}
+.friday-stage .stage-approval-actions button.approve {
+  color: #fff !important;
+  border: 0 !important;
+  background: linear-gradient(135deg, #22c38e, #4f6bff) !important;
+}
+.friday-stage .stage-approval-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .stage-footer {
@@ -456,5 +492,44 @@
   .friday-stage::before {
     animation: none !important;
   }
+}
+/* The app's dark theme restyles every button, input and select with more
+   specific rules; the stage's own controls must keep their look. */
+.friday-stage .stage-orb-hit {
+  background: transparent !important;
+  border: 0 !important;
+}
+.friday-stage .stage-icon,
+.friday-stage .stage-controls select {
+  background: rgba(14, 18, 48, 0.7) !important;
+  color: #cfd5ff !important;
+  border: 1px solid rgba(120, 135, 255, 0.25) !important;
+}
+.friday-stage .stage-icon.stop {
+  color: #ff6b8b !important;
+  border-color: rgba(255, 107, 139, 0.45) !important;
+}
+.friday-stage .stage-input input {
+  background: transparent !important;
+  color: #e8ebff !important;
+  border: 0 !important;
+}
+.friday-stage .stage-input button {
+  background: linear-gradient(135deg, #4f6bff, #8b5cf6) !important;
+  color: #fff !important;
+  border: 0 !important;
+}
+.friday-stage .stage-resume {
+  margin-top: 18px;
+  padding: 10px 26px;
+  border-radius: 999px;
+  border: 0 !important;
+  color: #fff !important;
+  font-size: 15px;
+  font-weight: 600;
+  background: linear-gradient(135deg, #4f6bff, #8b5cf6) !important;
+  box-shadow: 0 8px 28px rgba(79, 107, 255, 0.45);
+  cursor: pointer;
+  pointer-events: auto;
 }
 /* theme: end */

@@ -68,3 +68,23 @@ it('stays quiet for small steps and finished steps, but reports problems', () =>
     ),
   ).toBe('Operator hit a snag: No app called Paint.');
 });
+
+it('never names the platform underneath in voice-screen errors', async () => {
+  const { friendlyError } =
+    await import('../../src/friday/client/stage/errors.js');
+  expect(
+    friendlyError(
+      new Error(
+        'Setup required: CPK_INTELLIGENCE_API_KEY. Conversations require CopilotKit Intelligence.',
+      ),
+      'x',
+    ),
+  ).not.toMatch(/copilotkit|opendots|intelligence/i);
+  expect(friendlyError(new Error('This operation was aborted'), 'x')).toBe(
+    'That was interrupted. Please say it again.',
+  );
+  expect(friendlyError(new Error('Gnani rate limit'), 'x')).toBe(
+    'Gnani rate limit',
+  );
+  expect(friendlyError('weird', 'Try again.')).toBe('Try again.');
+});

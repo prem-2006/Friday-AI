@@ -977,7 +977,8 @@ export function App() {
     <FridayStage
       workspace={workspace}
       configured={configured}
-      refresh={refresh}
+      paused={!!state?.settings.paused}
+      onResume={() => void mutate('/settings', 'PATCH', { paused: false })}
       onExit={() => {
         location.hash = '#/chat';
       }}
@@ -989,7 +990,12 @@ export function App() {
     </>
   );
   return configured ? (
-    <CopilotKitProvider runtimeUrl="/api/copilotkit" headers={authHeaders()}>
+    <CopilotKitProvider
+      runtimeUrl="/api/copilotkit"
+      headers={authHeaders()}
+      // FRIDAY: no CopilotKit inspector on the voice stage.
+      enableInspector={!stage}
+    >
       {screen}
     </CopilotKitProvider>
   ) : (

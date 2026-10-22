@@ -77,8 +77,13 @@ Try saying:
 
 ## How the voice stage works
 
-- **Hands-free:** the mic stays open, but a voice-activity detector records only while you speak, so silence never spends Gnani credits. Each stretch of speech (up to 20 s) goes to Prisma, and the text goes to Friday as a chat message.
-- **Talking back:** Timbre speaks the reply in your chosen language. If you talk while Friday is speaking, it stops and listens. Saying "stop", "ruko" or "bas", or pressing the red button, stops the current task and every on-screen action.
+- **Fast turns:** the voice stage runs Friday directly on the app server and keeps its own short conversation (the circular-arrow button starts a new one). The hosted conversation service is skipped there because it added 4–6 s per turn; the classic dashboard still uses it. Helper Dots also run directly.
+- **Gemini speed:** with Gemini as the brain, `FRIDAY_MODEL_OPTIONS='{"reasoning_effort":"none"}'` skips its thinking step and halves the wait.
+- **Paused:** if the dashboard's Pause button is on, Friday shows "Friday is paused" with a Resume button; nothing runs while paused.
+- **Timings:** each turn logs `[Friday] heard … · answered … · voice …` in the browser console.
+
+- **Hands-free:** the mic stays open, but a voice-activity detector records only while you speak (with half a second of pre-roll so your first word is kept, ending 0.7 s after you stop), so silence never spends Gnani credits. Each stretch of speech (up to 20 s) goes to Prisma.
+- **Talking back:** Timbre speaks the reply sentence by sentence, starting while the rest is still being made. While Friday is speaking, only "stop", "yes" or "no" count, so its own voice coming back through the mic is ignored; "stop", "ruko", "bas" or the red button stops the task and every on-screen action.
 - **Narration:** helper actions arrive live and Friday speaks the important ones, at most one line every few seconds. Small steps like clicks are shown but not spoken.
 - **Approvals:** a WhatsApp send or call shows OpenDots' approval card, and Friday asks out loud. Short answers like "yes", "haan" or "theek hai", or "no" and "nahin", press the real Approve or Decline button. You can also tap them.
 - **The orb:** it reacts to your voice while listening, swirls while thinking, pulses with Friday's voice, and shows each busy helper Dot orbiting it.

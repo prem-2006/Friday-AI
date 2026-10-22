@@ -26,6 +26,7 @@ import {
   HELPER_THREAD_TITLE,
   type Delegate,
 } from '../friday/server/delegate.js';
+import { runHelperTask } from '../friday/server/direct-run.js';
 export class Platform {
   private channelStartupFailed = false;
   readonly setupTelemetry: SetupTelemetry;
@@ -212,17 +213,10 @@ export class Platform {
     }
     return this.handler.fetch(request);
   }
-  // FRIDAY: a helper Dot works in its own "Tasks from Friday" conversation.
-  readonly delegate: Delegate = async (helper, task, signal) => {
-    const thread =
-      this.workspace
-        .conversations()
-        .find(
-          (item) =>
-            item.dotId === helper.id && item.title === HELPER_THREAD_TITLE,
-        ) ?? (await this.createConversation(helper.id, HELPER_THREAD_TITLE));
-    return this.turn(thread.id, task, signal);
-  };
+  // FRIDAY: a helper Dot works in its own "Tasks from Friday" conversation,
+  // run directly here (no remote round trips) so delegation stays quick.
+  readonly delegate: Delegate = (helper, task, signal) =>
+    runHelperTask(this, helper.id, HELPER_THREAD_TITLE, task, signal);
   async turn(
     threadId: string,
     prompt: string,

@@ -3,33 +3,32 @@
 // Operator), narrates what they do, and asks for a spoken yes before sending
 // or calling on WhatsApp.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  CopilotChatToolCallsView,
-  useAgent,
-  useCopilotKit,
-  useHumanInTheLoop,
-} from '@copilotkit/react-core/v2';
+import type { Message } from '@ag-ui/core';
 import {
   CircleCheck,
   CircleX,
   Loader2,
   MessageSquare,
   OctagonX,
+  RotateCcw,
   Send,
 } from 'lucide-react';
-import { api } from '../../../client/api';
-import { ConnectionActionCard } from '../../../client/ConnectionActionCard';
-import {
-  connectionActionSchema,
-  connectionActionTool,
-} from '../../../shared/connection-types';
-import type { Conversation, Dot, WorkspaceState } from '../../../shared/types';
+import type { Dot, WorkspaceState } from '../../../shared/types';
 import { FRIDAY_DEFAULT_LANGUAGE, FRIDAY_LANGUAGES } from '../../shared/voices';
-import { lastReplyText } from '../speech';
+import { lastReplyText, speechParts } from '../speech';
 import { toBase64 } from '../wav';
 import { speechAudio, transcribeClip, voiceConfig } from '../voice-api';
 import { followActivity, setStopped } from './activity';
+import {
+  loadHistory,
+  pendingApprovalOf,
+  runApprovedAction,
+  runFriday,
+  saveHistory,
+  toolAnswer,
+} from './conversation';
 import { HandsFree } from './handsFree';
+import { friendlyError } from './errors';
 import { intentOf } from './intent';
 import { ACTOR_NAMES, narrate, type ActivityEvent } from './narration';
 import { Orb, type OrbMode } from './Orb';
@@ -151,7 +150,6 @@ function StageDemo({ onExit }: { onExit: () => void }) {
     </div>
   );
 }
-const THREAD_TITLE = 'Friday voice';
 const LANGUAGE_KEY = 'friday-voice-language';
 const NARRATION_GAP_MS = 3500;
 
@@ -191,6 +189,7 @@ function Header({
   onLanguage,
   onExit,
   onStop,
+  onNewChat,
 }: {
   status: { tone: 'ok' | 'warn'; label: string };
   clock: string;
@@ -198,6 +197,7 @@ function Header({
   onLanguage: (code: string) => void;
   onExit: () => void;
   onStop?: () => void;
+  onNewChat?: () => void;
 }) {
   return (
     <header className="stage-header">
@@ -239,6 +239,17 @@ function Header({
             <OctagonX size={18} />
           </button>
         )}
+        {onNewChat && (
+          <button
+            type="button"
+            className="stage-icon"
+            onClick={onNewChat}
+            aria-label="Start a new conversation"
+            title="New conversation"
+          >
+            <RotateCcw size={17} />
+          </button>
+        )}
         <button
           type="button"
           className="stage-icon"
@@ -255,18 +266,18 @@ function Header({
 export function FridayStage({
   workspace,
   configured,
-  refresh,
+  paused = false,
+  onResume = () => {},
   onExit,
 }: {
   workspace?: WorkspaceState;
   configured: boolean;
-  refresh: () => Promise<void> | void;
+  /** Everything is paused from the dashboard; Friday cannot act until resumed. */
+  paused?: boolean;
+  onResume?: () => void;
   onExit: () => void;
 }) {
   const friday = workspace?.dots.find((dot) => dot.name === 'Friday');
-  const thread = workspace?.conversations.find(
-    (item) => item.dotId === friday?.id && item.title === THREAD_TITLE,
-  );
   const [language, setLanguage] = useState(savedLanguage);
   const chooseLanguage = (code: string) => {
     setLanguage(code);
@@ -276,31 +287,18 @@ export function FridayStage({
       // Applies for this visit.
     }
   };
-  const creating = useRef(false);
-  useEffect(() => {
-    if (!configured || !friday || thread || creating.current) return;
-    creating.current = true;
-    void api<Conversation>('/conversations', 'POST', {
-      dotId: friday.id,
-      title: THREAD_TITLE,
-    })
-      .then(() => refresh())
-      .finally(() => {
-        creating.current = false;
-      });
-  }, [configured, friday, thread, refresh]);
-
   if (typeof location !== 'undefined' && location.hash === STAGE_DEMO_HASH)
     return <StageDemo onExit={onExit} />;
-  if (configured && friday && thread)
+  if (configured && friday)
     return (
       <StageSession
-        key={thread.id}
+        key={friday.id}
         friday={friday}
-        thread={thread}
         language={language}
         onLanguage={chooseLanguage}
         onExit={onExit}
+        paused={paused}
+        onResume={onResume}
       />
     );
 
@@ -308,9 +306,7 @@ export function FridayStage({
     ? 'Connecting…'
     : !friday
       ? 'Run friday/scripts/setup-friday-dot.mjs to create Friday and its helper Dots.'
-      : !configured
-        ? `Add to .env, then restart: ${workspace.setup.missing.join(', ')}.`
-        : 'Opening Friday’s voice conversation…';
+      : `Add to .env, then restart: ${workspace.setup.missing.join(', ')}.`;
   return (
     <div className="friday-stage">
       <Orb mode="idle" level={() => 0} helpers={[]} />
@@ -331,24 +327,28 @@ export function FridayStage({
 
 function StageSession({
   friday,
-  thread,
   language,
   onLanguage,
   onExit,
+  paused,
+  onResume,
 }: {
   friday: Dot;
-  thread: Conversation;
   language: string;
   onLanguage: (code: string) => void;
   onExit: () => void;
+  paused: boolean;
+  onResume: () => void;
 }) {
-  const { agent, isReady } = useAgent({
-    agentId: `stage-${thread.id}`,
-    runtimeAgentId: friday.id,
-    threadId: thread.id,
-  });
-  const { copilotkit } = useCopilotKit();
-  const [loaded, setLoaded] = useState(false);
+  // Friday's voice conversation lives here and runs directly on the server.
+  const [messages, setMessages] = useState<Message[]>(
+    () => loadHistory().messages,
+  );
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const threadId = useRef<string | undefined>(loadHistory().threadId);
+  const turn = useRef<AbortController | null>(null);
+  const loaded = !!friday;
   const [running, setRunning] = useState(false);
   const [phase, setPhase] = useState<Phase>('off');
   const [voiceReady, setVoiceReady] = useState<boolean>();
@@ -358,7 +358,6 @@ function StageSession({
   const [error, setError] = useState('');
   const [draft, setDraft] = useState('');
   const [events, setEvents] = useState<ActivityEvent[]>([]);
-  const [, rerender] = useState(0);
 
   const handsFree = useRef<HandsFree | null>(null);
   const audio = useRef<HTMLAudioElement | null>(null);
@@ -367,22 +366,28 @@ function StageSession({
   const speakingMain = useRef(false);
   const lastNarration = useRef(0);
   const stopping = useRef(false);
-  const approvalBox = useRef<HTMLDivElement>(null);
   const spokenApproval = useRef('');
   const languageRef = useRef(language);
   languageRef.current = language;
-
-  useHumanInTheLoop(
-    {
-      name: connectionActionTool.name,
-      description: connectionActionTool.description,
-      parameters: connectionActionSchema,
-      render: (props) => (
-        <ConnectionActionCard {...props} threadId={thread.id} />
-      ),
-    },
-    [thread.id],
-  );
+  // How long each step took for the last thing you said, in ms.
+  const timing = useRef<{
+    endedAt?: number;
+    heard?: number;
+    reply?: number;
+    firstAudio?: number;
+  }>({});
+  const logTiming = () => {
+    const t = timing.current;
+    const ms = (value?: number) =>
+      value === undefined ? '–' : `${(value / 1000).toFixed(1)} s`;
+    const total =
+      t.endedAt !== undefined && t.firstAudio !== undefined
+        ? (t.heard ?? 0) + (t.reply ?? 0) + t.firstAudio
+        : undefined;
+    console.info(
+      `[Friday] heard ${ms(t.heard)} · answered ${ms(t.reply)} · voice ${ms(t.firstAudio)} · you stopped → Friday spoke ${ms(total)}`,
+    );
+  };
 
   useEffect(() => {
     void voiceConfig()
@@ -400,22 +405,6 @@ function StageSession({
     };
   }, []);
 
-  useEffect(() => {
-    if (!isReady) return;
-    let active = true;
-    void copilotkit
-      .connectAgent({ agent })
-      .then(() => active && setLoaded(true))
-      .catch(
-        (e) =>
-          active &&
-          setError(e instanceof Error ? e.message : 'Could not connect.'),
-      );
-    return () => {
-      active = false;
-    };
-  }, [agent, copilotkit, isReady]);
-
   const caption = (who: Caption['who'], text: string) =>
     setCaptions((list) => [...list.slice(-3), { who, text }]);
 
@@ -432,125 +421,124 @@ function StageSession({
     return handsFree.current?.level ?? 0;
   }, []);
 
+  const speechToken = useRef(0);
   const stopSpeaking = () => {
+    speechToken.current += 1; // cancels any parts still queued
     audio.current?.pause();
     audio.current = null;
     speakingMain.current = false;
   };
 
-  const speak = async (text: string, main: boolean) => {
+  const playPart = async (blob: Blob, token: number) => {
+    if (token !== speechToken.current) return;
+    const url = URL.createObjectURL(blob);
+    const player = new Audio(url);
+    audio.current = player;
+    try {
+      audioContext.current ??= new AudioContext();
+      const analyser = audioContext.current.createAnalyser();
+      analyser.fftSize = 256;
+      audioContext.current.createMediaElementSource(player).connect(analyser);
+      analyser.connect(audioContext.current.destination);
+      ttsAnalyser.current = analyser;
+    } catch {
+      ttsAnalyser.current = null;
+    }
+    await new Promise<void>((resolve) => {
+      player.onended = player.onerror = player.onpause = () => resolve();
+      void player.play().catch(() => resolve());
+    });
+    URL.revokeObjectURL(url);
+  };
+
+  // Speaks sentence by sentence: the first part plays while the next ones are
+  // still being synthesised, so the first word comes much sooner.
+  const speak = async (text: string, main: boolean, startedAt?: number) => {
     if (!text || !voiceReady) return;
     if (!main && (speakingMain.current || audio.current)) return; // never talk over a reply
     stopSpeaking();
+    const token = speechToken.current;
     speakingMain.current = main;
     if (main) setPhase('speaking');
+    const parts = speechParts(text);
+    const clips = parts.map(() => null as Promise<Blob> | null);
+    const clip = (index: number) =>
+      (clips[index] ??= speechAudio(parts[index], languageRef.current));
     try {
-      const url = URL.createObjectURL(
-        await speechAudio(text, languageRef.current),
-      );
-      const player = new Audio(url);
-      audio.current = player;
-      try {
-        audioContext.current ??= new AudioContext();
-        const analyser = audioContext.current.createAnalyser();
-        analyser.fftSize = 256;
-        audioContext.current.createMediaElementSource(player).connect(analyser);
-        analyser.connect(audioContext.current.destination);
-        ttsAnalyser.current = analyser;
-      } catch {
-        ttsAnalyser.current = null;
+      for (let index = 0; index < parts.length; index++) {
+        const next = clip(index);
+        if (index + 1 < parts.length) void clip(index + 1).catch(() => {});
+        const blob = await next;
+        if (token !== speechToken.current) break;
+        if (index === 0 && startedAt)
+          timing.current.firstAudio = performance.now() - startedAt;
+        if (index === 0 && main) logTiming();
+        await playPart(blob, token);
       }
-      await new Promise<void>((resolve) => {
-        player.onended = player.onerror = player.onpause = () => resolve();
-        void player.play().catch(() => resolve());
-      });
-      URL.revokeObjectURL(url);
     } catch (e) {
-      if (main)
-        setError(e instanceof Error ? e.message : 'Friday could not speak.');
+      if (main) setError(friendlyError(e, 'Friday could not speak.'));
     } finally {
-      if (audio.current) audio.current = null;
-      if (main) {
-        speakingMain.current = false;
-        setPhase(handsFree.current?.active ? 'listening' : 'off');
+      if (token === speechToken.current) {
+        audio.current = null;
+        if (main) {
+          speakingMain.current = false;
+          setPhase(handsFree.current?.active ? 'listening' : 'off');
+        }
       }
     }
   };
 
-  const pendingApproval = useMemo(() => {
-    const results = new Set(
-      agent.messages
-        .filter((message) => message.role === 'tool')
-        .map((message) => (message as { toolCallId?: string }).toolCallId),
-    );
-    for (let i = agent.messages.length - 1; i >= 0; i--) {
-      const message = agent.messages[i];
-      if (message.role === 'user') break;
-      if (message.role !== 'assistant') continue;
-      const call = message.toolCalls?.find(
-        (item) =>
-          item.function.name === connectionActionTool.name &&
-          !results.has(item.id),
-      );
-      if (call) return { message, call };
-    }
-    return undefined;
-    // agent.messages mutates in place; `running` and `events` re-run this.
-  }, [agent.messages, agent.messages.length, running, events]);
+  const pendingApproval = useMemo(
+    () => pendingApprovalOf(messages),
+    [messages],
+  );
 
   useEffect(() => {
-    if (!pendingApproval || spokenApproval.current === pendingApproval.call.id)
+    if (
+      !pendingApproval ||
+      spokenApproval.current === pendingApproval.toolCallId
+    )
       return;
-    spokenApproval.current = pendingApproval.call.id;
-    let summary = 'this action';
-    try {
-      summary =
-        JSON.parse(pendingApproval.call.function.arguments ?? '{}').summary ||
-        summary;
-    } catch {
-      // Keep the generic wording.
-    }
-    void speak(`I need your OK: ${summary}. Say yes or no.`, true);
+    spokenApproval.current = pendingApproval.toolCallId;
+    void speak(
+      `I need your OK: ${pendingApproval.summary}. Say yes or no.`,
+      true,
+    );
   }, [pendingApproval]);
 
-  const pressApproval = (approve: boolean) => {
-    const buttons = [
-      ...(approvalBox.current?.querySelectorAll('button') ?? []),
-    ];
-    const button = buttons.find((item) =>
-      approve
-        ? /approve/i.test(item.textContent ?? '')
-        : /decline/i.test(item.textContent ?? ''),
-    );
-    button?.click();
-    caption('friday', approve ? 'Approved.' : 'Declined.');
+  const setHistory = (next: Message[]) => {
+    messagesRef.current = next;
+    setMessages(next);
+    saveHistory(next, threadId.current);
   };
 
-  const send = async (text: string) => {
-    if (!text.trim() || running || !loaded) return;
-    caption('you', text);
-    setSubtitle(text);
-    setError('');
+  // One run of Friday on the server; afterwards either speak the reply or
+  // wait for the owner's OK on a WhatsApp send or call.
+  const runTurn = async (history: Message[]) => {
     setRunning(true);
     setPhase('thinking');
-    agent.addMessage({
-      id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
-      role: 'user',
-      content: text,
-    });
+    setError('');
+    const controller = new AbortController();
+    turn.current = controller;
     try {
-      await copilotkit.runAgent({ agent });
-      const reply = lastReplyText(agent.messages);
+      const asked = performance.now();
+      const result = await runFriday(history, controller.signal);
+      timing.current.reply = performance.now() - asked;
+      threadId.current = result.threadId;
+      const next = [...history, ...result.newMessages];
+      setHistory(next);
+      if (pendingApprovalOf(next)) return;
+      const reply = lastReplyText(next);
       if (reply) {
         caption('friday', reply);
         setSubtitle(reply);
-        await speak(reply, true);
-      }
+        await speak(reply, true, performance.now());
+      } else logTiming();
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : 'That did not work. Try again.',
-      );
+      if (!controller.signal.aborted)
+        setError(friendlyError(e, 'That did not work. Try again.'));
     } finally {
+      turn.current = null;
       setRunning(false);
       if (stopping.current) {
         stopping.current = false;
@@ -563,8 +551,58 @@ function StageSession({
             ? 'listening'
             : 'off',
       );
-      rerender((n) => n + 1);
     }
+  };
+
+  const decide = async (approve: boolean) => {
+    const pending = pendingApproval;
+    if (!pending || running) return;
+    caption('friday', approve ? 'Approved.' : 'Declined.');
+    let answer: Record<string, unknown> = {
+      approved: false,
+      message:
+        'The owner declined this action. Do not perform it or try another way.',
+    };
+    if (approve) {
+      if (!threadId.current) {
+        setError('That request expired. Please ask again.');
+        return;
+      }
+      setRunning(true);
+      setPhase('thinking');
+      try {
+        answer = {
+          approved: true,
+          ...(await runApprovedAction(threadId.current, pending)),
+        };
+      } catch (e) {
+        setRunning(false);
+        setPhase(handsFree.current?.active ? 'listening' : 'off');
+        setError(friendlyError(e, 'Could not do that. Try again.'));
+        return;
+      }
+    }
+    await runTurn([...messagesRef.current, toolAnswer(pending, answer)]);
+  };
+
+  const send = async (text: string) => {
+    if (!text.trim() || running || !loaded) return;
+    if (paused) {
+      setError('Friday is paused. Tap Resume to continue.');
+      return;
+    }
+    caption('you', text);
+    setSubtitle(text);
+    const history = [
+      ...messagesRef.current,
+      {
+        id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+        role: 'user',
+        content: text,
+      } as Message,
+    ];
+    setHistory(history);
+    await runTurn(history);
   };
 
   const stopEverything = async () => {
@@ -573,28 +611,45 @@ function StageSession({
     if (running) {
       stopping.current = true;
       await setStopped(true);
-      copilotkit.stopAgent({ agent });
+      turn.current?.abort();
     }
   };
 
-  const heard = async (wav: Uint8Array) => {
-    setPhase('transcribing');
+  const newConversation = () => {
+    if (running) return;
+    stopSpeaking();
+    setHistory([]);
+    setCaptions([]);
+    setSubtitle('');
+    setError('');
+  };
+
+  const heard = async (
+    wav: Uint8Array,
+    endedAt: number,
+    overFriday: boolean,
+  ) => {
+    if (!overFriday) setPhase('transcribing');
+    timing.current = { endedAt };
     let text = '';
     try {
       text = (await transcribeClip(toBase64(wav), languageRef.current)).trim();
+      timing.current.heard = performance.now() - endedAt;
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not hear that.');
+      setError(friendlyError(e, 'Could not hear that.'));
     }
     if (!text) {
-      setPhase(running ? 'thinking' : 'listening');
+      if (!overFriday) setPhase(running ? 'thinking' : 'listening');
       return;
     }
     const intent = intentOf(text);
     if (intent === 'stop') return stopEverything();
+    // Speech that began while Friday was talking is most likely Friday's own
+    // voice coming back through the mic; only stop / yes / no count then.
+    if (overFriday && intent === 'request') return;
     if (pendingApproval) {
       caption('you', text);
-      if (intent === 'yes' || intent === 'no')
-        return pressApproval(intent === 'yes');
+      if (intent === 'yes' || intent === 'no') return decide(intent === 'yes');
       return speak('Please say yes or no first.', true);
     }
     if (running) {
@@ -614,12 +669,14 @@ function StageSession({
       setPhase(running ? 'thinking' : 'off');
       return;
     }
+    let overFriday = false;
     const next = new HandsFree({
       onSpeechStart: () => {
-        if (audio.current) stopSpeaking(); // talk over Friday to interrupt
+        overFriday = !!audio.current;
         setPhase((current) => (current === 'listening' ? 'hearing' : current));
       },
-      onUtterance: (wav) => void heardRef.current(wav),
+      onUtterance: (wav, endedAt) =>
+        void heardRef.current(wav, endedAt, overFriday),
       onError: setError,
       isFridaySpeaking: () => !!audio.current,
     });
@@ -676,25 +733,29 @@ function StageSession({
           : phase === 'listening' || phase === 'hearing'
             ? 'listening'
             : 'idle';
-  const title = pendingApproval
-    ? 'I need your OK'
-    : phase === 'speaking'
-      ? 'Speaking…'
-      : running && busyHelpers.length
-        ? `Working with ${busyHelpers.join(' & ')}…`
-        : phase === 'thinking'
-          ? 'Thinking…'
-          : phase === 'transcribing'
-            ? 'Got it…'
-            : listening
-              ? 'I’m listening…'
-              : 'Tap the orb to talk';
+  const title = paused
+    ? 'Friday is paused'
+    : pendingApproval
+      ? 'I need your OK'
+      : phase === 'speaking'
+        ? 'Speaking…'
+        : running && busyHelpers.length
+          ? `Working with ${busyHelpers.join(' & ')}…`
+          : phase === 'thinking'
+            ? 'Thinking…'
+            : phase === 'transcribing'
+              ? 'Got it…'
+              : listening
+                ? 'I’m listening…'
+                : 'Tap the orb to talk';
   const line =
     error ||
-    (pendingApproval
-      ? 'Say yes or no, or use the buttons.'
-      : subtitle ||
-        (listening ? 'Go ahead, I’m here.' : 'Or type a task below.'));
+    (paused
+      ? 'Nothing runs while paused. Tap Resume to continue.'
+      : pendingApproval
+        ? 'Say yes or no, or use the buttons.'
+        : subtitle ||
+          (listening ? 'Go ahead, I’m here.' : 'Or type a task below.'));
   const status =
     voiceReady === false
       ? { tone: 'warn' as const, label: 'Voice needs GNANI_API_KEY' }
@@ -716,10 +777,23 @@ function StageSession({
             ? () => void stopEverything()
             : undefined
         }
+        onNewChat={messages.length && !running ? newConversation : undefined}
       />
       <section className="stage-title" aria-live="polite">
         <h1>{title}</h1>
         <p className={error ? 'error' : ''}>{line}</p>
+        {paused && (
+          <button
+            type="button"
+            className="stage-resume"
+            onClick={() => {
+              setError('');
+              onResume();
+            }}
+          >
+            Resume
+          </button>
+        )}
       </section>
       <button
         type="button"
@@ -767,11 +841,30 @@ function StageSession({
         </aside>
       )}
       {pendingApproval && (
-        <div className="stage-approval" ref={approvalBox}>
-          <CopilotChatToolCallsView
-            message={pendingApproval.message}
-            messages={agent.messages}
-          />
+        <div
+          className="stage-approval"
+          role="dialog"
+          aria-label="Friday needs your OK"
+        >
+          <p className="stage-approval-title">Friday needs your OK</p>
+          <p className="stage-approval-text">{pendingApproval.summary}</p>
+          <div className="stage-approval-actions">
+            <button
+              type="button"
+              disabled={running}
+              onClick={() => void decide(false)}
+            >
+              Decline
+            </button>
+            <button
+              type="button"
+              className="approve"
+              disabled={running}
+              onClick={() => void decide(true)}
+            >
+              Approve
+            </button>
+          </div>
         </div>
       )}
       <footer className="stage-footer">

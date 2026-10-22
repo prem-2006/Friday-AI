@@ -32,6 +32,7 @@ import { answerObserver, type SetupTelemetry } from './setup-telemetry.js';
 import { fridayLocalTime } from '../friday/server/time.js';
 import { fridayToolRounds } from '../friday/server/agent-limits.js';
 import { delegateTool, type Delegate } from '../friday/server/delegate.js';
+import { fridayModelOptions } from '../friday/server/model-options.js';
 const channelError = () => ({
   type: EventType.RUN_ERROR,
   message:
@@ -409,7 +410,10 @@ export class DotAgent extends AbstractAgent {
                 abortController: ctx.abortController,
                 threadId: ctx.input.threadId,
                 runId: ctx.input.runId,
-                modelOptions: { max_completion_tokens: 2200 },
+                // FRIDAY: extra model options, e.g. no thinking for fast voice replies.
+                modelOptions: fridayModelOptions({
+                  max_completion_tokens: 2200,
+                }),
                 // FRIDAY: more tool rounds for chained tasks and call waits.
                 agentLoopStrategy: maxIterations(
                   fridayToolRounds(

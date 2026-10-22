@@ -1,0 +1,108 @@
+import { expect, it } from 'vitest';
+import {
+  SEGMENTER,
+  SpeechSegmenter,
+} from '../../src/friday/client/stage/segmenter.js';
+import { downsample } from '../../src/friday/client/wav.js';
+import { speechParts } from '../../src/friday/client/speech.js';
+
+const RATE = 48_000;
+const CHUNK = 1024; // what the audio worklet sends, ~21 ms
+const chunkMs = (CHUNK / RATE) * 1000;
+
+// A chunk of silence (tiny noise) or "speech" (a loud tone).
+function chunk(loud: boolean) {
+  const data = new Float32Array(CHUNK);
+  for (let i = 0; i < CHUNK; i++)
+    data[i] = loud ? 0.3 * Math.sin(i / 3) : 0.001 * Math.sin(i);
+  return data;
+}
+
+function feed(segmenter: SpeechSegmenter, pattern: [boolean, number][]) {
+  for (const [loud, ms] of pattern)
+    for (let t = 0; t < ms; t += chunkMs) segmenter.push(chunk(loud));
+}
+
+it('cuts out one utterance, keeping the moment before speech started', () => {
+  const starts: number[] = [];
+  const segments: Float32Array[] = [];
+  const segmenter = new SpeechSegmenter(RATE, {
+    onStart: () => starts.push(Date.now()),
+    onSegment: (samples) => segments.push(samples),
+  });
+  feed(segmenter, [
+    [false, 1000],
+    [true, 800],
+    [false, 1000],
+  ]);
+  expect(starts).toHaveLength(1);
+  expect(segments).toHaveLength(1);
+  const ms = (segments[0].length / RATE) * 1000;
+  // Pre-roll + speech + a little closing silence, never the whole second of silence.
+  expect(ms).toBeGreaterThan(800 + SEGMENTER.preRollMs - 2 * chunkMs);
+  expect(ms).toBeLessThan(
+    800 + SEGMENTER.preRollMs + SEGMENTER.keepSilenceMs + 3 * chunkMs,
+  );
+});
+
+it('ends a turn after a short pause, not a long one', () => {
+  const segments: Float32Array[] = [];
+  const segmenter = new SpeechSegmenter(RATE, {
+    onStart: () => {},
+    onSegment: (samples) => segments.push(samples),
+  });
+  feed(segmenter, [
+    [false, 600],
+    [true, 500],
+    [false, SEGMENTER.endMs - 150], // a mid-sentence breath: same turn
+    [true, 500],
+    [false, SEGMENTER.endMs + 100],
+  ]);
+  expect(segments).toHaveLength(1);
+});
+
+it('ignores clicks and needs a louder voice while Friday is talking', () => {
+  const segments: Float32Array[] = [];
+  let fridayTalking = false;
+  const segmenter = new SpeechSegmenter(
+    RATE,
+    { onStart: () => {}, onSegment: (samples) => segments.push(samples) },
+    () => (fridayTalking ? 50 : 1),
+  );
+  feed(segmenter, [
+    [false, 600],
+    [true, 120], // a click or cough
+    [false, 1000],
+  ]);
+  expect(segments).toHaveLength(0);
+  fridayTalking = true;
+  feed(segmenter, [
+    [true, 800],
+    [false, 1000],
+  ]);
+  expect(segments).toHaveLength(0);
+});
+
+it('downsamples 48 kHz to 16 kHz', () => {
+  const samples = new Float32Array(4800).fill(0.5);
+  const out = downsample(samples, 48_000);
+  expect(out.length).toBe(1600);
+  expect(out[10]).toBeCloseTo(0.5);
+  expect(downsample(samples, 16_000)).toBe(samples);
+});
+
+it('splits replies so the first sentence can play early', () => {
+  expect(
+    speechParts(
+      'Apollo Dental is open till 9 PM tonight. It is 1.2 km away on 100 Feet Road. Shall I message Priya?',
+    ),
+  ).toEqual([
+    'Apollo Dental is open till 9 PM tonight.',
+    // Short sentences are merged, so there are fewer voice requests.
+    'It is 1.2 km away on 100 Feet Road. Shall I message Priya?',
+  ]);
+  expect(speechParts('Okay. Done. Anything else?')).toEqual([
+    'Okay. Done. Anything else?',
+  ]);
+  expect(speechParts('हाँ, हो गया। प्रिया को मैसेज भेज दिया।')).toHaveLength(1);
+});

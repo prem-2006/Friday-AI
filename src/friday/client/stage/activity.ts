@@ -3,7 +3,7 @@
 // can be sent when OpenDots is protected with OWNER_TOKEN.
 import type { ActivityEvent } from './narration';
 
-function ownerHeaders(): Record<string, string> {
+export function ownerHeaders(): Record<string, string> {
   try {
     const token = sessionStorage.getItem('opendots-token');
     return token ? { Authorization: `Bearer ${token}` } : {};

@@ -1,0 +1,124 @@
+// Friday: finds where you start and stop speaking in a live audio stream.
+// It keeps a short pre-roll so the first word is never clipped, and ends a
+// turn after a brief silence. Pure logic, so it can be tested with numbers.
+export interface SegmenterEvents {
+  onStart: () => void;
+  onSegment: (samples: Float32Array) => void;
+}
+
+export const SEGMENTER = {
+  preRollMs: 450, // audio kept from just before speech is detected
+  startMs: 100, // this much speech starts a turn
+  endMs: 700, // this much silence ends it
+  keepSilenceMs: 250, // trailing silence kept at the end
+  maxMs: 20_000, // Prisma clips stay short
+  minSpeechMs: 250, // ignore coughs and clicks
+};
+
+export class SpeechSegmenter {
+  /** Smoothed level 0..1, for the orb. */
+  level = 0;
+  private floor = 0.01;
+  private preRoll: Float32Array[] = [];
+  private preRollMs = 0;
+  private segment: Float32Array[] | null = null;
+  private loudMs = 0;
+  private quietMs = 0;
+  private speechMs = 0;
+  private totalMs = 0;
+  private trailing: Float32Array[] = [];
+
+  constructor(
+    private sampleRate: number,
+    private events: SegmenterEvents,
+    /** Multiplies the threshold, e.g. while Friday's own voice is playing. */
+    private boost: () => number = () => 1,
+  ) {}
+
+  get speaking() {
+    return this.segment !== null;
+  }
+
+  push(chunk: Float32Array) {
+    const ms = (chunk.length / this.sampleRate) * 1000;
+    let sum = 0;
+    for (const sample of chunk) sum += sample * sample;
+    const rms = Math.sqrt(sum / chunk.length);
+    this.level = this.level * 0.7 + Math.min(1, rms * 8) * 0.3;
+    if (!this.segment && rms < this.floor * 2)
+      this.floor = this.floor * 0.95 + rms * 0.05; // learn the room's noise
+    const threshold = Math.max(0.012, this.floor * 3) * this.boost();
+    const loud = rms > threshold;
+
+    if (!this.segment) {
+      this.preRoll.push(chunk);
+      this.preRollMs += ms;
+      const msOf = (part: Float32Array) =>
+        (part.length / this.sampleRate) * 1000;
+      while (
+        this.preRoll.length > 1 &&
+        this.preRollMs - msOf(this.preRoll[0]) >= SEGMENTER.preRollMs
+      )
+        this.preRollMs -= msOf(this.preRoll.shift()!);
+      this.loudMs = loud ? this.loudMs + ms : 0;
+      if (this.loudMs >= SEGMENTER.startMs) {
+        this.segment = this.preRoll;
+        this.totalMs = this.preRollMs;
+        this.speechMs = this.loudMs;
+        this.quietMs = 0;
+        this.trailing = [];
+        this.preRoll = [];
+        this.preRollMs = 0;
+        this.events.onStart();
+      }
+      return;
+    }
+
+    this.totalMs += ms;
+    if (loud) {
+      this.segment.push(...this.trailing, chunk);
+      this.trailing = [];
+      this.speechMs += ms;
+      this.quietMs = 0;
+    } else {
+      this.trailing.push(chunk);
+      this.quietMs += ms;
+    }
+    if (this.quietMs >= SEGMENTER.endMs || this.totalMs >= SEGMENTER.maxMs)
+      this.finish();
+  }
+
+  /** Drop any half-heard turn, e.g. when listening is switched off. */
+  reset() {
+    this.segment = null;
+    this.trailing = [];
+    this.preRoll = [];
+    this.preRollMs = 0;
+    this.loudMs = 0;
+    this.level = 0;
+  }
+
+  private finish() {
+    const segment = this.segment!;
+    // Keep a little of the closing silence so the last word is not cut.
+    let keptMs = 0;
+    for (const chunk of this.trailing) {
+      if (keptMs >= SEGMENTER.keepSilenceMs) break;
+      segment.push(chunk);
+      keptMs += (chunk.length / this.sampleRate) * 1000;
+    }
+    const enough = this.speechMs >= SEGMENTER.minSpeechMs;
+    this.segment = null;
+    this.trailing = [];
+    this.loudMs = 0;
+    if (!enough) return;
+    const length = segment.reduce((total, chunk) => total + chunk.length, 0);
+    const samples = new Float32Array(length);
+    let offset = 0;
+    for (const chunk of segment) {
+      samples.set(chunk, offset);
+      offset += chunk.length;
+    }
+    this.events.onSegment(samples);
+  }
+}

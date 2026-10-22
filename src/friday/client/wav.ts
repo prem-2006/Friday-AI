@@ -42,3 +42,23 @@ export function toBase64(bytes: Uint8Array) {
     binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(binary);
 }
+
+// Down to 16 kHz by averaging each window, which also filters out the
+// highs that would otherwise alias into speech.
+export function downsample(
+  samples: Float32Array,
+  from: number,
+  to = CLIP_SAMPLE_RATE,
+): Float32Array {
+  if (from === to) return samples;
+  const ratio = from / to;
+  const out = new Float32Array(Math.floor(samples.length / ratio));
+  for (let i = 0; i < out.length; i++) {
+    const start = Math.floor(i * ratio);
+    const end = Math.min(samples.length, Math.floor((i + 1) * ratio));
+    let sum = 0;
+    for (let j = start; j < end; j++) sum += samples[j];
+    out[i] = sum / Math.max(1, end - start);
+  }
+  return out;
+}

@@ -68,3 +68,21 @@ it('describes the local time in the owner time zone', () => {
   expect(text).toMatch(/1:03\s?pm/i);
   expect(text).toContain('(Asia/Kolkata)');
 });
+
+it('adds FRIDAY_MODEL_OPTIONS to the model request', async () => {
+  const { fridayModelOptions } =
+    await import('../../src/friday/server/model-options.js');
+  const base = { max_completion_tokens: 2200 };
+  expect(fridayModelOptions(base, {})).toEqual(base);
+  expect(
+    fridayModelOptions(base, {
+      FRIDAY_MODEL_OPTIONS: '{"reasoning_effort":"none"}',
+    }),
+  ).toEqual({ max_completion_tokens: 2200, reasoning_effort: 'none' });
+  expect(() =>
+    fridayModelOptions(base, { FRIDAY_MODEL_OPTIONS: 'none' }),
+  ).toThrow('must be JSON');
+  expect(() =>
+    fridayModelOptions(base, { FRIDAY_MODEL_OPTIONS: '[1]' }),
+  ).toThrow('JSON object');
+});

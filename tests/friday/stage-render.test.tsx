@@ -25,12 +25,7 @@ const workspace = (dots: string[], missing: string[]) =>
 
 const render = (state?: WorkspaceState, configured = false) =>
   renderToStaticMarkup(
-    <FridayStage
-      workspace={state}
-      configured={configured}
-      refresh={() => {}}
-      onExit={() => {}}
-    />,
+    <FridayStage workspace={state} configured={configured} onExit={() => {}} />,
   );
 
 it('shows the stage with clear next steps before setup is done', () => {

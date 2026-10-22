@@ -2,6 +2,27 @@
 
 Status: **approved 22 Oct 2026, built 22 Oct 2026.** Changes since approval: Telegram dropped at the owner's request; Pipecat pinned to 1.5.x; the calendar has MCP tools as a no-Docker fallback. Findings come from reading OpenDots at commit `ab39f25` (15 Oct 2026) and the Gnani docs on 22 Oct 2026.
 
+## Current design (23 Oct 2026)
+
+The owner redirected Friday from phone calls to doing tasks on their own PC. The current shape:
+
+```mermaid
+flowchart LR
+  You((You)) -- voice, hands-free --> Stage["Voice stage<br/>src/friday/client/stage"]
+  Stage -- Prisma STT --> Friday["Friday Dot<br/>(Evon)"]
+  Friday -- Timbre TTS --> Stage
+  Friday -- delegate_to_dot --> Navigator["Navigator Dot"]
+  Friday -- delegate_to_dot --> Operator["Operator Dot"]
+  Friday -- WhatsApp tools, after your yes --> WA["WhatsApp Desktop"]
+  Navigator -- browser tools --> Chrome["Chrome on your screen<br/>(Playwright)"]
+  Operator -- desktop tools --> Apps["Windows apps<br/>(UI Automation)"]
+  Services["friday/services"] -- live activity + screenshots --> Stage
+```
+
+- Helpers run in their own conversations through OpenDots' headless turn, so they cannot show approval cards. Their browser and desktop tools therefore run without "Ask first". WhatsApp send and call stay with Friday, behind an approval card that can be answered by voice.
+- `friday/services` hosts the MCP endpoints `/browser`, `/desktop` and `/whatsapp`, plus `/activity/stream` (SSE with screenshots) and `/activity/stop`. Playwright and UI Automation each run on their own thread.
+- The phone-call and Telegram sections below are history. The calling code remains in `friday_services/calls`, parked.
+
 ## What OpenDots already gives us
 
 | Area          | How OpenDots does it                                                                                                                                                                                                                                                                                                           | What it means for Friday                                                                                                                      |

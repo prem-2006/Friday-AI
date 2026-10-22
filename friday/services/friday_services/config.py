@@ -70,9 +70,7 @@ class Settings:
     @property
     def calendar_url(self) -> str:
         # Navigator's browser runs on the owner's screen, so localhost works.
-        return self.get("FRIDAY_CALENDAR_URL", f"http://127.0.0.1:{self.port}/calendar").rstrip(
-            "/"
-        )
+        return self.get("FRIDAY_CALENDAR_URL", f"http://127.0.0.1:{self.port}/calendar").rstrip("/")
 
     @property
     def evon_disable_thinking(self) -> bool:

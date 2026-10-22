@@ -1,4 +1,4 @@
-> **This repository is Friday**, a voice-first personal assistant for India built for the Gnani AI #GreatIndianAIInternshipChallenge. Friday uses Gnani's Evon v3.3 (planning), Prisma v2.5 (speech-to-text) and Timbre v2.5 (text-to-speech) to research with sources, make phone calls and fill in websites. **Start with [friday/README.md](friday/README.md).** Friday is built on OpenDots by CopilotKit (MIT); the original OpenDots README follows unchanged.
+> **This repository is Friday**, a voice-first personal assistant for India built for the Gnani AI #GreatIndianAIInternshipChallenge. Friday uses Gnani's Evon v3.3 (planning), Prisma v2.5 (speech-to-text) and Timbre v2.5 (text-to-speech) to research, work in a browser and desktop apps on your PC, and send WhatsApp messages or start calls after your OK. **Start with [friday/README.md](friday/README.md).** Friday is built on OpenDots by CopilotKit (MIT); the original OpenDots README follows unchanged.
 
 <div align="center">
 

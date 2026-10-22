@@ -61,6 +61,24 @@ def build_browser_server(browser: OnScreenBrowser, worker: Worker, feed: Activit
         return await act("browser_open", f"Opening {url}.", browser.open, url)
 
     @server.tool(
+        name="browser_search",
+        description=(
+            "Search in the on-screen browser by typing into the site's own search box, and "
+            "return the top results (title, link, kind). Use site youtube for videos, "
+            "channels, tutorials, songs or anything the owner says is on YouTube; otherwise google."
+        ),
+        annotations=ACT,
+    )
+    async def browser_search(
+        site: Literal["youtube", "google"],
+        query: Annotated[str, Field(min_length=1, max_length=300)],
+    ) -> dict:
+        name = "YouTube" if site == "youtube" else "Google"
+        return await act(
+            "browser_search", f'Searching {name} for "{query}".', browser.search, site, query
+        )
+
+    @server.tool(
         name="browser_snapshot",
         description="Describe the current page and its numbered elements.",
         annotations=LOOK,

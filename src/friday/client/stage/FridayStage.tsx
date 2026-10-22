@@ -426,6 +426,9 @@ function StageSession({
     return handsFree.current?.level ?? 0;
   }, []);
 
+  // Gnani allows one transcription at a time, so clips wait their turn.
+  const transcribing = useRef<Promise<unknown>>(Promise.resolve());
+  const starting = useRef(false);
   const speechToken = useRef(0);
   const stopSpeaking = () => {
     speechToken.current += 1; // cancels any parts still queued
@@ -638,7 +641,11 @@ function StageSession({
     timing.current = { endedAt };
     let text = '';
     try {
-      text = (await transcribeClip(toBase64(wav), languageRef.current)).trim();
+      const job = transcribing.current.then(() =>
+        transcribeClip(toBase64(wav), languageRef.current),
+      );
+      transcribing.current = job.catch(() => {});
+      text = (await job).trim();
       timing.current.heard = performance.now() - endedAt;
     } catch (e) {
       setError(friendlyError(e, 'Could not hear that.'));
@@ -667,6 +674,7 @@ function StageSession({
   heardRef.current = heard;
 
   const toggleListening = async () => {
+    if (starting.current) return; // a second tap while the mic is opening
     setError('');
     if (handsFree.current?.active) {
       handsFree.current.stop();
@@ -685,11 +693,14 @@ function StageSession({
       onError: setError,
       isFridaySpeaking: () => !!audio.current,
     });
+    starting.current = true;
     try {
       await next.start();
     } catch {
       setError('Allow microphone access so Friday can hear you.');
       return;
+    } finally {
+      starting.current = false;
     }
     handsFree.current = next;
     setPhase(running ? 'thinking' : 'listening');

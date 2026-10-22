@@ -132,3 +132,19 @@ it('asks Timbre v2.5 for speech in the chosen language, with clean text', async 
   });
   expect(body.audio_config.container).toBe('mp3');
 });
+
+it('quietly retries once when Gnani asks to slow down', async () => {
+  let calls = 0;
+  const fetch = vi.fn(async () =>
+    ++calls === 1
+      ? Response.json({ success: false }, { status: 429 })
+      : Response.json({ success: true, transcript: 'hello' }),
+  );
+  const response = await post(
+    fridayVoiceRoutes({ apiKey: 'k', fetch }),
+    '/friday/voice/stt',
+    { audio: clip, language: 'en-IN' },
+  );
+  expect(await response.json()).toEqual({ transcript: 'hello' });
+  expect(fetch).toHaveBeenCalledTimes(2);
+});

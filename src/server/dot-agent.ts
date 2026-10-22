@@ -32,7 +32,10 @@ import { answerObserver, type SetupTelemetry } from './setup-telemetry.js';
 import { fridayLocalTime } from '../friday/server/time.js';
 import { fridayToolRounds } from '../friday/server/agent-limits.js';
 import { delegateTool, type Delegate } from '../friday/server/delegate.js';
-import { fridayModelOptions } from '../friday/server/model-options.js';
+import {
+  fridayModelOptions,
+  fridayModelRetries,
+} from '../friday/server/model-options.js';
 const channelError = () => ({
   type: EventType.RUN_ERROR,
   message:
@@ -340,7 +343,7 @@ export class DotAgent extends AbstractAgent {
           apiKey: this.config.apiKey,
           baseURL: this.config.baseUrl ?? 'https://api.openai.com/v1',
           api: 'chat-completions',
-          maxRetries: 1,
+          maxRetries: fridayModelRetries(), // FRIDAY: ride out rate limits
         });
         const start = async () => {
           const appTools =

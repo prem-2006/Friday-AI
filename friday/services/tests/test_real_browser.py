@@ -38,3 +38,38 @@ def test_fills_in_the_calendar_like_navigator(server, tmp_path):
             browser.click(999)
     finally:
         browser.close()
+
+
+FAKE_HOME = """<!doctype html><title>YouTube</title>
+<form action="/results"><input name="search_query" aria-label="Search"></form>"""
+FAKE_RESULTS = """<!doctype html><title>results - YouTube</title><body>
+<a href="/shorts/s1">Top 5 Python channels #shorts</a>
+<a href="/watch?v=v1">Watch</a>
+<a href="/watch?v=v1" title="Python full course for beginners">Python full course for beginners</a>
+<a href="/@coreyms">Corey Schafer</a>
+<a href="/watch?v=v2">12:34</a>
+</body>"""
+
+
+def test_search_types_in_youtubes_box_and_ranks_results(tmp_path):
+    browser = OnScreenBrowser(tmp_path / "profile", headless=True)
+    try:
+        browser._page()  # start Chrome so a pretend YouTube can be served offline
+
+        def serve(route):
+            html = FAKE_RESULTS if "/results" in route.request.url else FAKE_HOME
+            route.fulfill(status=200, content_type="text/html", body=html)
+
+        browser._context.route("https://www.youtube.com/**", serve)
+        found = browser.search("youtube", "best python channel")
+        assert found["site"] == "YouTube"
+        assert "search_query=best+python+channel" in found["url"]
+        assert [(r["kind"], r["title"]) for r in found["results"]] == [
+            ("channel", "Corey Schafer"),
+            ("video", "Python full course for beginners"),
+            ("short", "Top 5 Python channels #shorts"),
+        ]
+        with pytest.raises(BrowserError, match="YouTube or Google"):
+            browser.search("bing", "x")
+    finally:
+        browser.close()

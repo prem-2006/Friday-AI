@@ -115,7 +115,9 @@ for (const spec of DOTS) {
   const settings = {
     name: spec.name,
     instructions: await persona(spec.persona),
-    researchAllowed: true,
+    // No background web search: every search happens in the on-screen
+    // browser, through Navigator.
+    researchAllowed: false,
     memoryAllowed: spec.name === 'Friday',
   };
   const existing = workspace.dots.find((dot) => dot.name === spec.name);

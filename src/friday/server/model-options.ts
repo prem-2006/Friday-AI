@@ -1,3 +1,12 @@
+// Friday: how often to retry a model request that was rate limited (HTTP
+// 429); free plans hit their per-minute limit quickly. FRIDAY_MODEL_RETRIES.
+export function fridayModelRetries(
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const value = Number(env.FRIDAY_MODEL_RETRIES ?? 3);
+  return Number.isInteger(value) && value >= 0 && value <= 6 ? value : 3;
+}
+
 // Friday: extra request options for the model, from FRIDAY_MODEL_OPTIONS
 // (JSON). For Gemini, {"reasoning_effort":"none"} skips the thinking step and
 // roughly halves the time to the first word, which matters for a voice reply.

@@ -10,6 +10,7 @@ const LOG_FILE = join(
 );
 
 export function voiceLog(event: string, fields: Record<string, unknown>) {
+  if (process.env.VITEST) return; // tests use fake speech
   const line = `${new Date().toISOString()} ${event} ${JSON.stringify(fields)}`;
   console.info(`[friday] ${event} ${JSON.stringify(fields)}`);
   try {

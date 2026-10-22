@@ -20,6 +20,18 @@ const languageCode = z
   .string()
   .refine((code) => !!fridayLanguage(code), 'Unsupported language.');
 
+// Gnani asks callers to slow down now and then; one short pause usually
+// clears it, so the owner never sees the error.
+async function retryOnce<T>(job: () => Promise<T>): Promise<T> {
+  try {
+    return await job();
+  } catch (error) {
+    if (!(error instanceof GnaniError) || error.status !== 429) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    return job();
+  }
+}
+
 export function fridayVoiceRoutes({
   apiKey,
   fetch = globalThis.fetch,
@@ -69,13 +81,15 @@ export function fridayVoiceRoutes({
       return c.json({ error: 'Audio must be WAV.' }, 400);
     try {
       const started = performance.now();
-      const transcript = await transcribe({
-        apiKey: key,
-        audio,
-        language: input.data.language,
-        fetch,
-        signal: AbortSignal.timeout(30_000),
-      });
+      const transcript = await retryOnce(() =>
+        transcribe({
+          apiKey: key,
+          audio,
+          language: input.data.language,
+          fetch,
+          signal: AbortSignal.timeout(30_000),
+        }),
+      );
       voiceLog('heard', {
         language: input.data.language,
         audioSeconds: +((audio.length - 44) / 32_000).toFixed(1),
@@ -123,14 +137,16 @@ export function fridayVoiceRoutes({
     if (!text) return c.json({ error: 'Nothing to say.' }, 400);
     try {
       const started = performance.now();
-      const audio = await synthesize({
-        apiKey: key,
-        text,
-        language: input.data.language,
-        voice: fridayLanguage(input.data.language)!.voice,
-        fetch,
-        signal: AbortSignal.timeout(30_000),
-      });
+      const audio = await retryOnce(() =>
+        synthesize({
+          apiKey: key,
+          text,
+          language: input.data.language,
+          voice: fridayLanguage(input.data.language)!.voice,
+          fetch,
+          signal: AbortSignal.timeout(30_000),
+        }),
+      );
       voiceLog('spoke', {
         timbreMs: Math.round(performance.now() - started),
         chars: text.length,

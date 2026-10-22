@@ -83,8 +83,20 @@ it('never names the platform underneath in voice-screen errors', async () => {
   expect(friendlyError(new Error('This operation was aborted'), 'x')).toBe(
     'That was interrupted. Please say it again.',
   );
-  expect(friendlyError(new Error('Gnani rate limit'), 'x')).toBe(
-    'Gnani rate limit',
+  expect(friendlyError(new Error('Gnani: out of credits'), 'x')).toBe(
+    'Gnani: out of credits',
   );
   expect(friendlyError('weird', 'Try again.')).toBe('Try again.');
+});
+
+it('turns rate-limit errors into plain words', async () => {
+  const { friendlyError } =
+    await import('../../src/friday/client/stage/errors.js');
+  for (const raw of [
+    '429 status code (no body)',
+    'Gnani speech-to-text is rate limiting requests; wait a moment and try again.',
+  ])
+    expect(friendlyError(new Error(raw), 'x')).toBe(
+      'Friday is getting a lot of requests right now. Give it a few seconds and try again.',
+    );
 });

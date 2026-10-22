@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote_plus
 
 # Gives every visible interactive element a number and describes it.
 SNAPSHOT_JS = """
@@ -36,6 +37,64 @@ SNAPSHOT_JS = """
 }
 """
 
+# Where each site's search box is, and its results page as a fallback.
+SEARCH_SITES = {
+    "youtube": {
+        "name": "YouTube",
+        "home": "https://www.youtube.com/",
+        "box": "input[name=search_query]",
+        "results": "https://www.youtube.com/results?search_query=",
+        "ready": 'a[href*="/watch?v="], a[href^="/shorts/"], a[href^="/@"]',
+    },
+    "google": {
+        "name": "Google",
+        "home": "https://www.google.com/",
+        "box": "textarea[name=q], input[name=q]",
+        "results": "https://www.google.com/search?q=",
+        "ready": "#search a h3, #rso a h3",
+    },
+    # Used when Google asks "are you a robot?"; Friday never solves CAPTCHAs.
+    "duckduckgo": {
+        "name": "DuckDuckGo",
+        "home": "https://html.duckduckgo.com/html/",
+        "box": "input[name=q]",
+        "results": "https://html.duckduckgo.com/html/?q=",
+        "ready": "a.result__a",
+    },
+}
+
+# The top results as title, link and kind, read from links, not from the
+# sites' internal component names, which change often.
+RESULTS_JS = r"""
+(site) => {
+  const seen = new Set();
+  const out = [];
+  const links =
+    site === 'youtube'
+      ? [...document.querySelectorAll('a[href*="/watch?v="], a[href^="/shorts/"], a[href^="/@"]')]
+      : site === 'google'
+        ? [...document.querySelectorAll('#search a h3, #rso a h3')].map((h) => h.closest('a'))
+        : [...document.querySelectorAll('a.result__a')];
+  for (const a of links) {
+    if (!a) continue;
+    const box = a.getBoundingClientRect();
+    const title = (a.getAttribute('title') || a.innerText || a.getAttribute('aria-label') || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const url = a.href.split('&pp=')[0];
+    // Thumbnails are labelled "Watch" or with a duration; the real title link follows.
+    if (!title || title.length < 6 || /^(watch|play|\d+:\d+)/i.test(title) || !box.width || seen.has(url)) continue;
+    seen.add(url);
+    const kind = url.includes('/shorts/') ? 'short' : url.includes('/@') ? 'channel' : url.includes('watch?v=') ? 'video' : 'page';
+    out.push({ title: title.slice(0, 140), url, kind });
+    if (out.length >= 16) break;
+  }
+  // Full videos and channels first: "best" answers rarely live in Shorts.
+  const rank = { channel: 0, video: 1, page: 1, short: 2 };
+  return out.sort((a, b) => rank[a.kind] - rank[b.kind]).slice(0, 8);
+}
+"""
+
 SENSITIVE_FIELD_JS = """
 (el) => el.type === 'password' || /^cc-|one-time-code/.test(el.autocomplete || '')
 """
@@ -55,10 +114,17 @@ def _check_url(url: str) -> str:
 class OnScreenBrowser:
     """Use only from one thread (see worker.Worker)."""
 
-    def __init__(self, profile_dir: Path, channel: str = "chrome", headless: bool = False):
+    def __init__(
+        self,
+        profile_dir: Path,
+        channel: str = "chrome",
+        headless: bool = False,
+        user_agent: str | None = None,
+    ):
         self._profile_dir = profile_dir
         self._channel = channel
         self._headless = headless  # tests only; the owner should see the window
+        self._user_agent = user_agent  # tests only
         self._playwright: Any = None
         self._context: Any = None
 
@@ -74,6 +140,7 @@ class OnScreenBrowser:
                 headless=self._headless,
                 no_viewport=True,
                 args=["--start-maximized"],
+                **({"user_agent": self._user_agent} if self._user_agent else {}),
             )
         pages = [page for page in self._context.pages if not page.is_closed()]
         page = pages[-1] if pages else self._context.new_page()
@@ -140,6 +207,55 @@ class OnScreenBrowser:
         page = self._page()
         text = page.evaluate("() => document.body ? document.body.innerText : ''")
         return {"url": page.url, "title": page.title(), "text": " ".join(text.split())[:8000]}
+
+    def search(self, site: str, query: str) -> dict:
+        """Type a query into YouTube's or Google's own search box, like a person."""
+        if site not in ("youtube", "google"):
+            raise BrowserError("Search YouTube or Google.")
+        page = self._page()
+        used = self._search_on(page, site, query)
+        if used == "google" and (
+            "/sorry/" in page.url or page.locator("form#captcha-form").count()
+        ):
+            used = self._search_on(page, "duckduckgo", query)
+        try:
+            page.wait_for_selector(SEARCH_SITES[used]["ready"], timeout=12_000)
+        except Exception:
+            pass  # read whatever is there
+        if used == "youtube":
+            page.mouse.wheel(0, 2400)  # full videos load below the first Shorts
+            page.wait_for_timeout(1200)
+            page.mouse.wheel(0, -2400)
+        page.wait_for_timeout(700)
+        results = page.evaluate(RESULTS_JS, used)
+        return {
+            "site": SEARCH_SITES[used]["name"],
+            "query": query,
+            "url": page.url,
+            "title": page.title(),
+            "results": results,
+            "note": ""
+            if results
+            else "No results could be read; use browser_read or browser_snapshot.",
+        }
+
+    def _search_on(self, page, site: str, query: str) -> str:
+        config = SEARCH_SITES[site]
+        try:
+            page.goto(config["home"], wait_until="domcontentloaded", timeout=20_000)
+            box = page.locator(config["box"]).first
+            box.wait_for(state="visible", timeout=8_000)
+            box.click()
+            box.fill(query)
+            box.press("Enter")
+            page.wait_for_load_state("domcontentloaded", timeout=15_000)
+        except Exception:
+            page.goto(
+                config["results"] + quote_plus(query),
+                wait_until="domcontentloaded",
+                timeout=20_000,
+            )
+        return site
 
     def back(self) -> dict:
         page = self._page()

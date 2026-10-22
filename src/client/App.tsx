@@ -9,6 +9,7 @@ import {
   STAGE_HASH,
 } from '../friday/client/stage/FridayStage';
 import { StageLink } from '../friday/client/StageLink';
+import { FridayHome, HOME_HASH } from '../friday/client/home/FridayHome';
 import {
   ArrowUp,
   ArrowUpRight,
@@ -72,17 +73,21 @@ export function App() {
     'chat',
   );
   const dirtyPage = useRef(false);
-  // FRIDAY: the voice stage is the home screen; #/chat opens this classic view.
-  const [stage, setStage] = useState(
-    () =>
-      [STAGE_HASH, STAGE_DEMO_HASH].includes(location.hash) || !location.hash,
-  );
+  // FRIDAY: Friday's main page is the home screen (#/home), with the voice
+  // stage at #/friday; #/chat opens this classic view.
+  const fridayScreenOf = () =>
+    !location.hash || location.hash === HOME_HASH
+      ? 'home'
+      : [STAGE_HASH, STAGE_DEMO_HASH].includes(location.hash)
+        ? 'stage'
+        : null;
+  const [fridayScreen, setFridayScreen] = useState(fridayScreenOf);
   useEffect(() => {
-    const follow = () =>
-      setStage([STAGE_HASH, STAGE_DEMO_HASH].includes(location.hash));
+    const follow = () => setFridayScreen(fridayScreenOf());
     window.addEventListener('hashchange', follow);
     return () => window.removeEventListener('hashchange', follow);
   }, []);
+  const stage = fridayScreen !== null;
   const [spaceId, setSpaceId] = useState('');
   const [pageId, setPageId] = useState<string>();
   const setDirtyPage = useCallback((value: boolean) => {
@@ -973,22 +978,33 @@ export function App() {
     </div>
   );
   // FRIDAY: full-screen voice stage, or the classic view with a way back.
-  const screen = stage ? (
-    <FridayStage
-      workspace={workspace}
-      configured={configured}
-      paused={!!state?.settings.paused}
-      onResume={() => void mutate('/settings', 'PATCH', { paused: false })}
-      onExit={() => {
-        location.hash = '#/chat';
-      }}
-    />
-  ) : (
-    <>
-      {content}
-      <StageLink />
-    </>
-  );
+  const screen =
+    fridayScreen === 'home' ? (
+      <FridayHome
+        workspace={workspace}
+        onVoice={() => {
+          location.hash = STAGE_HASH;
+        }}
+        onAdvanced={() => {
+          location.hash = '#/chat';
+        }}
+      />
+    ) : fridayScreen === 'stage' ? (
+      <FridayStage
+        workspace={workspace}
+        configured={configured}
+        paused={!!state?.settings.paused}
+        onResume={() => void mutate('/settings', 'PATCH', { paused: false })}
+        onExit={() => {
+          location.hash = HOME_HASH;
+        }}
+      />
+    ) : (
+      <>
+        {content}
+        <StageLink />
+      </>
+    );
   return configured ? (
     <CopilotKitProvider
       runtimeUrl="/api/copilotkit"

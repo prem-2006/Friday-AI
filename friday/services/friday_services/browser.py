@@ -217,7 +217,7 @@ class OnScreenBrowser:
         self._cdp_browser = browser
         return browser.contexts[0] if browser.contexts else browser.new_context(no_viewport=True)
 
-    def _page(self):
+    def _page(self, front: bool = True):
         if self._cdp_browser is not None and not self._cdp_browser.is_connected():
             # The owner closed Friday's Chrome window: open it again.
             self._context = self._cdp_browser = None
@@ -247,7 +247,8 @@ class OnScreenBrowser:
             )
         pages = [page for page in self._context.pages if not page.is_closed()]
         page = pages[-1] if pages else self._context.new_page()
-        page.bring_to_front()
+        if front:
+            page.bring_to_front()
         return page
 
     def warm(self) -> None:
@@ -415,7 +416,7 @@ class OnScreenBrowser:
 
     def google_account(self) -> dict:
         """Whether the owner is signed in to Google in Friday's Chrome."""
-        self._page()
+        self._page(front=False)  # a status check must not pull the window up
         cookies = self._context.cookies(["https://accounts.google.com", "https://mail.google.com"])
         return {"signed_in": any(c["name"] in GOOGLE_SESSION_COOKIES for c in cookies)}
 

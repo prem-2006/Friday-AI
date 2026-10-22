@@ -8,7 +8,7 @@ import {
   CircleCheck,
   CircleX,
   Loader2,
-  MessageSquare,
+  LayoutDashboard,
   OctagonX,
   RotateCcw,
 } from 'lucide-react';
@@ -279,9 +279,10 @@ function Header({
           type="button"
           className="stage-icon"
           onClick={onExit}
-          aria-label="Open the chat view"
+          aria-label="Open Friday's main page"
+          title="Main page"
         >
-          <MessageSquare size={18} />
+          <LayoutDashboard size={18} />
         </button>
       </div>
     </header>

@@ -50,14 +50,14 @@ cd friday/browser-agent; python -m uv sync; cd ../..   # Navigator's browser age
 Two terminals:
 
 ```sh
-npm run dev                                                        # the app
-cd friday/services; python -m uv run python -m friday_services   # browser, apps, WhatsApp, live activity
+npm run dev               # the app
+npm run friday:services   # browser, apps, WhatsApp, live activity (from the repo root)
 ```
 
 Then, once:
 
 ```sh
-node --env-file-if-exists=.env friday/scripts/setup-friday-dot.mjs    # creates Friday, Navigator, Operator
+npm run friday:setup    # creates Friday, Navigator, Operator; run again after updating Friday
 node --env-file-if-exists=.env friday/scripts/check-services.mjs      # lists their tools as OpenDots sees them
 node --env-file-if-exists=.env friday/scripts/test-evon-tools.mjs     # Evon tool calling (a few Evon tokens)
 ```

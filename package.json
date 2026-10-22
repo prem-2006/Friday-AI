@@ -9,6 +9,8 @@
   },
   "scripts": {
     "dev": "concurrently -k \"cross-env NODE_ENV=development node --env-file-if-exists=.env --import tsx --watch src/server/index.ts\" \"vite\"",
+    "friday:services": "cd friday/services && python -m uv run python -m friday_services",
+    "friday:setup": "node --env-file-if-exists=.env friday/scripts/setup-friday-dot.mjs",
     "build": "vite build && tsc -p tsconfig.server.json",
     "start": "node --env-file-if-exists=.env dist/server/server/index.js",
     "browser": "node --env-file-if-exists=.env --import tsx src/browser/index.ts",

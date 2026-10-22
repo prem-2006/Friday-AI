@@ -1,17 +1,24 @@
-"""Friday services: Twilio webhooks, call audio, and MCP endpoints for OpenDots."""
+"""Friday services: MCP tools for the on-screen browser, desktop apps and
+WhatsApp, a live activity feed for the voice screen, the demo calendar, and
+(parked for now) Twilio phone calls."""
 
 from __future__ import annotations
 
+import asyncio
 import hmac
+import json
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, Response, WebSocket
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocket
+from fastapi.responses import StreamingResponse
 from pipecat.runner.utils import parse_telephony_websocket
 
+from friday_services.activity import ActivityFeed
 from friday_services.auth import BearerAuth
+from friday_services.browser import OnScreenBrowser
 from friday_services.calendar.page import add_calendar_page
 from friday_services.calendar.store import CalendarStore
 from friday_services.calls.bot import run_call
@@ -23,8 +30,13 @@ from friday_services.calls.twilio import (
     valid_signature,
 )
 from friday_services.config import CALL_SETTINGS, REPO_ROOT, Settings
+from friday_services.desktop import DesktopApps
+from friday_services.mcp_browser import build_browser_server
 from friday_services.mcp_calendar import build_calendar_server
+from friday_services.mcp_desktop import build_desktop_server, build_whatsapp_server
 from friday_services.mcp_phone import Dialer, build_phone_server
+from friday_services.whatsapp import DesktopWhatsAppUI, WhatsApp, WhatsAppUI
+from friday_services.worker import Worker, com_thread
 
 CallRunner = Callable[..., Awaitable[None]]
 
@@ -34,6 +46,9 @@ def create_app(
     *,
     dialer: Dialer | None = None,
     call_runner: CallRunner = run_call,
+    browser: OnScreenBrowser | None = None,
+    desktop: DesktopApps | None = None,
+    whatsapp_ui: WhatsAppUI | None = None,
 ) -> FastAPI:
     settings = settings or Settings.from_env()
     if len(settings.services_token) < 24:
@@ -43,9 +58,17 @@ def create_app(
         )
     store = CallStore(settings.data_dir)
     calendar = CalendarStore(settings.data_dir / "calendar.json")
+    feed = ActivityFeed()
+    browser = browser or OnScreenBrowser(settings.data_dir / "browser-profile")
+    browser_worker = Worker("friday-browser")
+    desktop_worker = Worker("friday-desktop", initializer=com_thread)
+    whatsapp = WhatsApp(whatsapp_ui or DesktopWhatsAppUI(), settings.owner_name)
     servers = {
-        "/phone": build_phone_server(store, dialer or TwilioDialer(settings), settings),
+        "/browser": build_browser_server(browser, browser_worker, feed),
+        "/desktop": build_desktop_server(desktop or DesktopApps(), desktop_worker, feed),
+        "/whatsapp": build_whatsapp_server(whatsapp, desktop_worker, feed),
         "/calendar": build_calendar_server(calendar, settings.calendar_url),
+        "/phone": build_phone_server(store, dialer or TwilioDialer(settings), settings),
     }
     mcp_apps = {
         path: (
@@ -63,11 +86,56 @@ def create_app(
             for server, _asgi in mcp_apps.values():
                 await stack.enter_async_context(server.session_manager.run())
             yield
+        try:
+            await asyncio.wait_for(browser_worker.run(browser.close), 10)
+        except Exception:
+            pass
+        browser_worker.close()
+        desktop_worker.close()
 
     app = FastAPI(title="Friday services", lifespan=lifespan)
     app.state.settings = settings
     app.state.calls = store
     app.state.calendar = calendar
+    app.state.activity = feed
+
+    def owner(request: Request) -> None:
+        supplied = request.headers.get("authorization", "")
+        if not hmac.compare_digest(supplied, f"Bearer {settings.services_token}"):
+            raise HTTPException(status_code=401, detail="Missing or wrong bearer token.")
+
+    @app.get("/activity", dependencies=[Depends(owner)])
+    async def activity() -> dict[str, Any]:
+        return {"stopped": feed.stopped, "events": feed.recent()}
+
+    @app.get("/activity/stream", dependencies=[Depends(owner)])
+    async def activity_stream(request: Request) -> StreamingResponse:
+        queue = feed.listen()
+
+        async def events():
+            try:
+                yield ": connected\n\n"
+                while not await request.is_disconnected():
+                    try:
+                        event = await asyncio.wait_for(queue.get(), 15)
+                        yield f"data: {json.dumps(event.public())}\n\n"
+                    except TimeoutError:
+                        yield ": keep-alive\n\n"
+            finally:
+                feed.unlisten(queue)
+
+        return StreamingResponse(events(), media_type="text/event-stream")
+
+    @app.post("/activity/stop", dependencies=[Depends(owner)])
+    async def activity_stop() -> dict[str, bool]:
+        feed.stop()
+        return {"stopped": True}
+
+    @app.post("/activity/resume", dependencies=[Depends(owner)])
+    async def activity_resume() -> dict[str, bool]:
+        feed.resume()
+        return {"stopped": False}
+
     # Before the MCP mounts, so /calendar stays the web page and only
     # /calendar/mcp goes to the tools.
     add_calendar_page(app, calendar)

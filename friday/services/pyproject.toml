@@ -11,7 +11,9 @@ dependencies = [
     "mcp>=2.3.0",
     "pipecat-ai[openai,silero,websocket]>=1.5,<1.6",
     "pipecat-gnani>=0.5.12",
+    "playwright>=1.64.0",
     "python-dotenv>=1.2.4",
+    "pywinauto>=0.6.9",
     "tzdata>=2026.5",
     "uvicorn[standard]>=0.54.0",
 ]

@@ -1,4 +1,4 @@
-"""Shared fixtures. Nothing here reaches Twilio, Gnani or Evon."""
+"""Shared fixtures. Nothing here reaches Twilio, Gnani, Evon or WhatsApp."""
 
 from __future__ import annotations
 
@@ -61,6 +61,84 @@ class FakeCall:
         await websocket.close()
 
 
+class FakeWhatsAppUI:
+    """A pretend WhatsApp window: records what Friday did, sends nothing."""
+
+    def __init__(self, contacts=("Priya Sharma", "Priya Office", "Rahul")):
+        self.contacts = list(contacts)
+        self.chat: str | None = None
+        self.log: list[tuple] = []
+        self.misdirect = False  # open the wrong chat, to test the safety check
+
+    def focus(self):
+        self.log.append(("focus",))
+
+    def open_phone(self, digits):
+        self.log.append(("open_phone", digits))
+        self.chat = f"+{digits}"
+
+    def search(self, query):
+        self.log.append(("search", query))
+        return [c for c in self.contacts if query.casefold() in c.casefold()]
+
+    def open_result(self, name):
+        self.log.append(("open_result", name))
+        self.chat = "Someone Else" if self.misdirect else name
+
+    def current_chat(self):
+        return self.chat
+
+    def write(self, text):
+        self.log.append(("write", self.chat, text))
+
+    def press_enter(self):
+        self.log.append(("enter", self.chat))
+
+    def start_call(self, video):
+        self.log.append(("call", self.chat, video))
+
+
+class FakeBrowser:
+    def __init__(self):
+        self.log: list[tuple] = []
+
+    def _page(self, title="Example"):
+        return {"url": "https://example.test/", "title": title, "elements": '[1] link "More"'}
+
+    def open(self, url):
+        self.log.append(("open", url))
+        return self._page()
+
+    def snapshot(self):
+        return self._page()
+
+    def click(self, ref):
+        self.log.append(("click", ref))
+        return self._page("Clicked")
+
+    def type(self, ref, text, press_enter):
+        self.log.append(("type", ref, text, press_enter))
+        return self._page()
+
+    def press(self, key):
+        return self._page()
+
+    def scroll(self, direction):
+        return self._page()
+
+    def read(self):
+        return {"url": "https://example.test/", "title": "Example", "text": "Hello"}
+
+    def back(self):
+        return self._page()
+
+    def screenshot(self):
+        return "aW1hZ2U="
+
+    def close(self):
+        pass
+
+
 def free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -70,7 +148,10 @@ def free_port() -> int:
 @pytest.fixture
 def server(settings: Settings):
     dialer, call = FakeDialer(), FakeCall()
-    app = create_app(settings, dialer=dialer, call_runner=call)
+    browser, whatsapp = FakeBrowser(), FakeWhatsAppUI()
+    app = create_app(
+        settings, dialer=dialer, call_runner=call, browser=browser, whatsapp_ui=whatsapp
+    )
     port = free_port()
     uv = uvicorn.Server(
         uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", lifespan="on")
@@ -82,7 +163,13 @@ def server(settings: Settings):
         time.sleep(0.05)
     assert uv.started, "test server did not start"
     yield SimpleNamespace(
-        url=f"http://127.0.0.1:{port}", app=app, dialer=dialer, call=call, settings=settings
+        url=f"http://127.0.0.1:{port}",
+        app=app,
+        dialer=dialer,
+        call=call,
+        settings=settings,
+        browser=browser,
+        whatsapp=whatsapp,
     )
     uv.should_exit = True
     thread.join(10)

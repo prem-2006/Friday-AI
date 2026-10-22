@@ -1,6 +1,6 @@
 # Friday architecture
 
-Status: **approved 22 Oct 2026.** Findings come from reading OpenDots at commit `ab39f25` (15 Oct 2026) and the Gnani docs on 22 Oct 2026.
+Status: **approved 22 Oct 2026, built 22 Oct 2026.** Changes since approval: Telegram dropped at the owner's request; Pipecat pinned to 1.5.x; the calendar has MCP tools as a no-Docker fallback. Findings come from reading OpenDots at commit `ab39f25` (15 Oct 2026) and the Gnani docs on 22 Oct 2026.
 
 ## What OpenDots already gives us
 
@@ -14,7 +14,7 @@ Status: **approved 22 Oct 2026.** Findings come from reading OpenDots at commit 
 | Browser       | Dot computers: an OpenBot container per Dot, run through Docker.                                                                                                                                                                                                                                                               | Docker Desktop and WSL2 are installed on this machine; Docker needs to be running.                                                            |
 | Time          | The prompt gives the current time in UTC.                                                                                                                                                                                                                                                                                      | Friday needs Asia/Kolkata.                                                                                                                    |
 
-## Proposed design
+## Design
 
 ```mermaid
 flowchart LR
@@ -28,7 +28,7 @@ flowchart LR
   Chat -- browser tools --> Computer["Dot computer<br/>(Docker)"]
   Chat -- MCP --> Services["friday-services<br/>(Python)"]
   Services -- Twilio Media Streams --> Phone((Clinic))
-  Services -- Bot API --> TG((Priya on Telegram))
+  Services -- calendar tools --> Demo
   Computer --> Demo["Demo calendar page"]
 ```
 
@@ -52,45 +52,43 @@ flowchart LR
   - `get_call_result(call_id)` is read-only. It waits up to about 40 s, then returns `{ status: in_progress | answered | no_answer | failed, outcome, summary, transcript, latency_ms }`.
 - Latency is logged per turn, from the end of the other person's speech to Friday's first audio. The target is under about 2 s; Prisma's silence window (`x-min-silence-ms`) is the main lever.
 
-### 4. Telegram: same Python service, its own MCP endpoint
+### 4. Telegram: dropped for now
 
-- Tools: `send_message(contact, text)`, which needs approval, plus `get_replies(contact)` and `list_contacts`, which are read-only.
-- A contact is registered (name → chat id) when they press Start on the bot. Friday's memory holds aliases such as "Priya = my sister".
+The owner decided Friday should focus on voice, research and browser work.
 
 ### 5. Browser and research
 
-- The Dot computer opens a small demo calendar page served by friday-services and adds the event.
-- If OpenBot or Docker is a problem on Windows, the fallback is a Playwright MCP tool.
-- Research stays on Parallel.
+- The Dot computer opens the demo calendar page served by friday-services at `/calendar` (plain HTML, clearly labelled fields) and adds the event. The container reaches the host as `host.docker.internal`, so the services must listen on `0.0.0.0` for this.
+- Without a Dot computer, the `calendar` MCP endpoint's `add_event` (asks first) does the same; `list_events` (read-only) confirms either way.
+- Research stays on Parallel; the persona asks for compared options, checked details and source links.
+- A live step strip above the composer shows research, call, browser, calendar and approval steps as tool results arrive.
 
 ## File plan
 
 Friday's code lives in two clearly named places. Any edit to an upstream OpenDots file is small, marked `// FRIDAY:`, and listed in `friday/CHANGES-TO-OPENDOTS.md`.
 
 ```
-OpenDots/                        fork of CopilotKit/OpenDots (MIT)
-├── friday/                      everything Friday adds that is not app TypeScript
-│   ├── README.md                what Friday is, setup, Gnani model map, OpenDots credit
-│   ├── CHANGES-TO-OPENDOTS.md   every upstream file touched, and why
-│   ├── docs/ARCHITECTURE.md     this file
-│   ├── scripts/                 one standalone check per skill
-│   │   ├── test-evon-tools.mjs  done in Phase 1
-│   │   ├── test-gnani-stt.mjs   Phase 4
-│   │   ├── test-gnani-tts.mjs   Phase 4
-│   │   └── setup-friday-dot.mjs Phase 2: creates the Friday Dot and persona
-│   └── services/                Python 3.12 (uv): calls, Telegram, demo page
-│       ├── pyproject.toml
-│       ├── friday_services/main.py       FastAPI: Twilio webhooks + MCP endpoints
-│       ├── friday_services/calls/        Pipecat pipeline, call state, latency log
-│       ├── friday_services/telegram/     Bot API client, contacts
-│       ├── friday_services/demo_site/    calendar page for the browser task
+friday/ (repo root, fork of CopilotKit/OpenDots, MIT)
+├── friday/
+│   ├── README.md, CHANGES-TO-OPENDOTS.md, persona.md, docs/ARCHITECTURE.md
+│   ├── scripts/
+│   │   ├── test-evon-tools.mjs   Evon tool-call check
+│   │   ├── test-research.ts      one research query through Parallel
+│   │   ├── setup-friday-dot.mjs  creates Friday, browser permission, MCP connections
+│   │   └── check-services.mjs    lists the services' tools as OpenDots sees them
+│   └── services/                 Python 3.12 (uv)
+│       ├── friday_services/main.py           FastAPI: Twilio webhooks, call audio, MCP mounts
+│       ├── friday_services/calls/            Pipecat pipeline, prompts, store, Twilio helpers
+│       ├── friday_services/calendar/         demo calendar page and store
+│       ├── friday_services/mcp_phone.py      start_call, get_call_result
+│       ├── friday_services/mcp_calendar.py   list_events, add_event
 │       └── tests/
-├── src/friday/                  TypeScript that runs inside the OpenDots app
-│   ├── server/gnani.ts          Prisma and Timbre clients
-│   ├── server/voice-routes.ts   /api/friday/voice/*
-│   └── client/useFridayVoice.ts push-to-talk hook for the call screen
-├── src/...                      OpenDots, with small marked edits only
-└── .env.example                 plus Friday's variables
+├── src/friday/
+│   ├── server/   config, time, agent limits, Gnani client, voice routes, speech text
+│   ├── shared/   voices (languages and Timbre voices)
+│   └── client/   FridayVoice (push-to-talk), FridaySteps (live steps), recorder, WAV
+├── tests/friday/                 tests for src/friday and the persona
+└── src/...                       OpenDots, with small marked edits only
 ```
 
 App TypeScript sits in `src/friday/` because OpenDots compiles the server with `rootDir: src`. Code placed outside `src` would need build changes.
@@ -99,4 +97,4 @@ App TypeScript sits in `src/friday/` because OpenDots compiles the server with `
 
 - Evon endpoint, key and model id come from the challenge dashboard. No public hosted Evon API was found.
 - Python 3.14 is installed. The Pipecat plugin is tested with Python 3.10+ and Pipecat 1.5, so the services use Python 3.12 through uv to be safe.
-- Voice turns that go through normal chat need the browser open. Scheduled or headless turns can't show approval cards, so they can't start calls or send messages.
+- Voice turns that go through normal chat need the browser open. Scheduled or headless turns can't show approval cards, so they can't start calls.

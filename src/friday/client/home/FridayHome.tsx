@@ -64,18 +64,18 @@ const FIELDS: {
   { key: 'address', label: 'Address', wide: true },
 ];
 
-function ProfileCard() {
-  const [saved, setSaved] = useState<Profile>({});
-  const [draft, setDraft] = useState<Profile>({});
+function ProfileCard({
+  saved,
+  onSaved,
+  loadError,
+}: {
+  saved: Profile;
+  onSaved: (profile: Profile) => void;
+  loadError: boolean;
+}) {
+  const [draft, setDraft] = useState<Profile>(saved);
   const [status, setStatus] = useState('');
-  useEffect(() => {
-    void api<Profile>('/friday/profile')
-      .then((profile) => {
-        setSaved(profile);
-        setDraft(profile);
-      })
-      .catch(() => setStatus('Could not load your details.'));
-  }, []);
+  useEffect(() => setDraft(saved), [saved]);
   const changed = FIELDS.concat({ key: 'notes', label: '' }).some(
     ({ key }) => (draft[key] ?? '') !== (saved[key] ?? ''),
   );
@@ -86,8 +86,7 @@ function ProfileCard() {
         method: 'PUT',
         body: JSON.stringify(draft),
       });
-      setSaved(profile);
-      setDraft(profile);
+      onSaved(profile);
       setStatus('Saved.');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Could not save.');
@@ -137,7 +136,9 @@ function ProfileCard() {
           />
         </label>
         <div className="home-actions wide">
-          <span className="home-muted">{status}</span>
+          <span className="home-muted">
+            {status || (loadError ? 'Could not load your details.' : '')}
+          </span>
           <button type="submit" className="primary" disabled={!changed}>
             Save
           </button>
@@ -147,42 +148,71 @@ function ProfileCard() {
   );
 }
 
-const SHORTCUTS = [
-  { label: 'Gmail', url: 'https://mail.google.com/', Icon: Mail },
-  {
-    label: 'Calendar',
-    url: 'https://calendar.google.com/',
-    Icon: CalendarDays,
-  },
-  { label: 'Drive', url: 'https://drive.google.com/', Icon: HardDrive },
-  { label: 'YouTube', url: 'https://www.youtube.com/', Icon: Play },
-];
+// Gmail, Calendar and Drive in the account Friday is signed in to, even if
+// more Google accounts get signed in to Friday's Chrome later.
+export function googleShortcuts(email?: string | null) {
+  const as = email ? `authuser=${encodeURIComponent(email)}` : '';
+  return [
+    {
+      label: 'Gmail',
+      url: as
+        ? `https://mail.google.com/mail/u/?${as}`
+        : 'https://mail.google.com/',
+    },
+    {
+      label: 'Calendar',
+      url: as
+        ? `https://calendar.google.com/calendar/r?${as}`
+        : 'https://calendar.google.com/',
+    },
+    {
+      label: 'Drive',
+      url: as
+        ? `https://drive.google.com/drive/my-drive?${as}`
+        : 'https://drive.google.com/',
+    },
+    { label: 'YouTube', url: 'https://www.youtube.com/' },
+  ];
+}
+const SHORTCUT_ICONS = {
+  Gmail: Mail,
+  Calendar: CalendarDays,
+  Drive: HardDrive,
+  YouTube: Play,
+} as const;
 
+interface GoogleAccount {
+  signed_in: boolean;
+  email?: string | null;
+}
 type GoogleState = 'checking' | 'signed-in' | 'signed-out' | 'offline';
 
-function GoogleCard() {
+function GoogleCard({ detailsEmail }: { detailsEmail?: string }) {
   const [state, setState] = useState<GoogleState>('checking');
+  const [account, setAccount] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const check = useCallback(async () => {
     setState('checking');
     try {
-      const account = await api<{ signed_in: boolean }>(
-        '/friday/account/google',
-      );
-      setState(account.signed_in ? 'signed-in' : 'signed-out');
+      const found = await api<GoogleAccount>('/friday/account/google');
+      setAccount(found.email ?? null);
+      setState(found.signed_in ? 'signed-in' : 'signed-out');
     } catch {
       setState('offline');
     }
   }, []);
   useEffect(() => void check(), [check]);
+  const wanted = detailsEmail?.trim().toLowerCase() || undefined;
+  const otherAccount =
+    state === 'signed-in' && !!account && !!wanted && account !== wanted;
   const signIn = async () => {
     try {
       await api('/friday/account/google/connect', {
         method: 'POST',
-        body: '{}',
+        body: JSON.stringify(wanted ? { email: wanted } : {}),
       });
       setNote(
-        'Sign in in Friday’s Chrome window (type your password there yourself), then check again.',
+        'Finish signing in in Friday’s Chrome window (type your password there yourself), then check again.',
       );
     } catch (error) {
       setNote(error instanceof Error ? error.message : 'Could not open it.');
@@ -199,12 +229,16 @@ function GoogleCard() {
       setNote(error instanceof Error ? error.message : 'Could not open it.');
     }
   };
-  const label = {
-    checking: 'Checking…',
-    'signed-in': 'Signed in',
-    'signed-out': 'Not signed in',
-    offline: 'Friday’s browser is offline',
-  }[state];
+  const label =
+    state === 'signed-in'
+      ? account
+        ? `Signed in as ${account}`
+        : 'Signed in'
+      : {
+          checking: 'Checking…',
+          'signed-out': 'Not signed in',
+          offline: 'Friday’s browser is offline',
+        }[state];
   return (
     <section className="home-card">
       <header>
@@ -213,18 +247,28 @@ function GoogleCard() {
         <span className={`home-pill ${state}`}>{label}</span>
       </header>
       <p className="home-muted">
-        Friday’s Chrome window can use one Google account for Gmail, Calendar
-        and Drive. Sending an email always asks you first.
+        Friday works in your own Google account (Gmail, Calendar, Drive) in its
+        Chrome window. Sign in there once and it stays signed in. Sending an
+        email always asks you first.
       </p>
+      {otherAccount && (
+        <p className="home-note">
+          Friday is signed in as {account}, but your details say {wanted}.
+        </p>
+      )}
+      {state === 'signed-out' && !wanted && (
+        <p className="home-note">
+          Add your Gmail address under Your details to sign in with it.
+        </p>
+      )}
       <div className="home-row">
-        {state !== 'signed-in' && (
+        {(state === 'signed-out' || otherAccount) && (
           <button
             type="button"
             className="primary"
-            disabled={state === 'offline' || state === 'checking'}
             onClick={() => void signIn()}
           >
-            Sign in to Google
+            {wanted ? `Sign in as ${wanted}` : 'Sign in to Google'}
           </button>
         )}
         <button type="button" onClick={() => void check()}>
@@ -233,17 +277,20 @@ function GoogleCard() {
       </div>
       {note && <p className="home-note">{note}</p>}
       <div className="home-shortcuts">
-        {SHORTCUTS.map(({ label: name, url, Icon }) => (
-          <button
-            key={name}
-            type="button"
-            disabled={state === 'offline'}
-            onClick={() => void open(url)}
-          >
-            <Icon size={16} />
-            {name}
-          </button>
-        ))}
+        {googleShortcuts(account).map(({ label: name, url }) => {
+          const Icon = SHORTCUT_ICONS[name as keyof typeof SHORTCUT_ICONS];
+          return (
+            <button
+              key={name}
+              type="button"
+              disabled={state === 'offline'}
+              onClick={() => void open(url)}
+            >
+              <Icon size={16} />
+              {name}
+            </button>
+          );
+        })}
       </div>
     </section>
   );
@@ -354,6 +401,14 @@ export function FridayHome({
   onVoice: () => void;
   onAdvanced: () => void;
 }) {
+  // Your details, shared by the details card and the Google card.
+  const [profile, setProfile] = useState<Profile>({});
+  const [profileError, setProfileError] = useState(false);
+  useEffect(() => {
+    void api<Profile>('/friday/profile')
+      .then(setProfile)
+      .catch(() => setProfileError(true));
+  }, []);
   return (
     <div className="friday-home">
       <header className="home-top">
@@ -385,9 +440,13 @@ export function FridayHome({
           </span>
         </div>
         <div className="home-grid">
-          <ProfileCard />
+          <ProfileCard
+            saved={profile}
+            onSaved={setProfile}
+            loadError={profileError}
+          />
           <div className="home-column">
-            <GoogleCard />
+            <GoogleCard detailsEmail={profile.email} />
             <PermissionsCard dots={workspace?.dots ?? []} />
           </div>
         </div>

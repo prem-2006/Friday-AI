@@ -157,10 +157,10 @@ class FakeBrowser:
         pass
 
     def google_account(self):
-        return {"signed_in": True}
+        return {"signed_in": True, "email": "prem@example.com"}
 
-    def connect_google(self):
-        self.log.append(("connect_google",))
+    def connect_google(self, email=None):
+        self.log.append(("connect_google", email))
         return {"url": "https://accounts.google.com/", "title": "Sign in"}
 
     def send_open_email(self):

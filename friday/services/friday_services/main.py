@@ -178,11 +178,15 @@ def create_app(
         return await in_browser(browser.google_account)
 
     @app.post("/account/google/connect", dependencies=[Depends(owner)])
-    async def google_connect() -> dict:
+    async def google_connect(request: Request) -> dict:
+        body = await request.json() if await request.body() else {}
+        email = str((body or {}).get("email") or "").strip() or None
+        if email and ("@" not in email or len(email) > 120):
+            raise HTTPException(400, "That does not look like an email address.")
         feed.emit(
             "friday", "google_sign_in", "Showing Google sign-in. Type your password yourself."
         )
-        return await in_browser(browser.connect_google)
+        return await in_browser(browser.connect_google, email)
 
     @app.post("/browser/open", dependencies=[Depends(owner)])
     async def browser_open(request: Request) -> dict:

@@ -124,9 +124,23 @@ def test_send_email_is_marked_as_one_that_sends(server):
 
 def test_main_page_google_and_shortcut_routes(server):
     assert httpx.get(f"{server.url}/account/google").status_code == 401
-    assert httpx.get(f"{server.url}/account/google", headers=AUTH).json() == {"signed_in": True}
+    assert httpx.get(f"{server.url}/account/google", headers=AUTH).json() == {
+        "signed_in": True,
+        "email": "prem@example.com",
+    }
     connect = httpx.post(f"{server.url}/account/google/connect", headers=AUTH)
-    assert connect.status_code == 200 and ("connect_google",) in server.browser.log
+    assert connect.status_code == 200 and ("connect_google", None) in server.browser.log
+    # With the owner's Gmail from "Your details", sign-in starts with it filled in.
+    httpx.post(
+        f"{server.url}/account/google/connect",
+        headers=AUTH,
+        json={"email": "prem@gmail.com"},
+    )
+    assert ("connect_google", "prem@gmail.com") in server.browser.log
+    bad = httpx.post(
+        f"{server.url}/account/google/connect", headers=AUTH, json={"email": "not an email"}
+    )
+    assert bad.status_code == 400
     opened = httpx.post(
         f"{server.url}/browser/open", headers=AUTH, json={"url": "https://mail.google.com/"}
     )

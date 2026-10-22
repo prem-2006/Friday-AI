@@ -131,7 +131,7 @@ def test_only_friday_can_send_an_email_and_only_through_send_email(tmp_path):
         # Friday's send_email (behind an approval card) clicks Send.
         assert browser.send_open_email() == {"sent": True}
         assert "Message sent" in browser.read()["text"]
-        assert browser.google_account() == {"signed_in": False}
+        assert browser.google_account() == {"signed_in": False, "email": None}
     finally:
         browser.close()
 
@@ -148,3 +148,16 @@ def test_send_needs_an_open_gmail_draft(tmp_path):
             browser.send_open_email()
     finally:
         browser.close()
+
+
+def test_sign_in_uses_the_owners_gmail_and_reads_which_account_is_in():
+    from urllib.parse import parse_qs, urlparse
+
+    from friday_services.browser import email_from_feed, sign_in_url
+
+    query = parse_qs(urlparse(sign_in_url("prem@gmail.com")).query)
+    assert query == {"continue": ["https://mail.google.com/"], "Email": ["prem@gmail.com"]}
+    assert "Email" not in sign_in_url()
+    feed = "<feed><title>Gmail - Inbox for Prem.Singh@gmail.com</title><entry>...</entry></feed>"
+    assert email_from_feed(feed) == "prem.singh@gmail.com"
+    assert email_from_feed("<feed><title>Gmail</title></feed>") is None

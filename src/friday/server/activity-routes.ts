@@ -68,8 +68,8 @@ export function fridayActivityRoutes({
   app.post('/friday/activity/resume', () => relay('/activity/resume', 'POST'));
   // Friday's main page: its Google account and one-click shortcuts.
   app.get('/friday/account/google', () => relay('/account/google'));
-  app.post('/friday/account/google/connect', () =>
-    relay('/account/google/connect', 'POST'),
+  app.post('/friday/account/google/connect', async (c) =>
+    relay('/account/google/connect', 'POST', undefined, await c.req.text()),
   );
   app.post('/friday/browser/open', async (c) =>
     relay('/browser/open', 'POST', undefined, await c.req.text()),

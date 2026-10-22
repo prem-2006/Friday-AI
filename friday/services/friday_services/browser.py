@@ -22,7 +22,7 @@ import subprocess
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlencode
 
 # Gives every visible interactive element a number and describes it.
 SNAPSHOT_JS = """
@@ -114,9 +114,24 @@ SENSITIVE_FIELD_JS = """
 
 # Cookies Google sets once someone is signed in.
 GOOGLE_SESSION_COOKIES = {"SID", "__Secure-1PSID", "__Secure-3PSID"}
-GOOGLE_SIGN_IN = (
-    "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fmail.google.com%2F"
-)
+# Gmail's inbox feed is titled "Gmail - Inbox for <address>" for whoever is
+# signed in; Friday reads only that title, to show the owner which account it uses.
+GMAIL_FEED = "https://mail.google.com/mail/feed/atom"
+EMAIL_IN_TITLE = re.compile(r"<title>[^<]*?([\w.+-]+@[\w-]+(?:\.[\w-]+)+)[^<]*</title>")
+
+
+def sign_in_url(email: str | None = None) -> str:
+    """Google's sign-in page, with the owner's address filled in when known."""
+    query = {"continue": "https://mail.google.com/"}
+    if email:
+        query["Email"] = email
+    return "https://accounts.google.com/ServiceLogin?" + urlencode(query)
+
+
+def email_from_feed(feed: str) -> str | None:
+    match = EMAIL_IN_TITLE.search(feed)
+    return match.group(1).lower() if match else None
+
 
 # The words on whatever is about to be clicked.
 LABEL_JS = """
@@ -418,13 +433,21 @@ class OnScreenBrowser:
         """Whether the owner is signed in to Google in Friday's Chrome."""
         self._page(front=False)  # a status check must not pull the window up
         cookies = self._context.cookies(["https://accounts.google.com", "https://mail.google.com"])
-        return {"signed_in": any(c["name"] in GOOGLE_SESSION_COOKIES for c in cookies)}
+        if not any(c["name"] in GOOGLE_SESSION_COOKIES for c in cookies):
+            return {"signed_in": False, "email": None}
+        try:
+            response = self._context.request.get(GMAIL_FEED, timeout=8_000)
+            email = email_from_feed(response.text()) if response.ok else None
+        except Exception:
+            email = None  # still signed in; only the address is unknown
+        return {"signed_in": True, "email": email}
 
-    def connect_google(self) -> dict:
-        """Shows Google's sign-in page; the owner signs in themselves."""
+    def connect_google(self, email: str | None = None) -> dict:
+        """Shows Google's sign-in page in Friday's Chrome, with the owner's
+        address filled in when known; the owner types the password."""
         self._page()
         page = self._context.new_page()
-        page.goto(GOOGLE_SIGN_IN, wait_until="domcontentloaded", timeout=30_000)
+        page.goto(sign_in_url(email), wait_until="domcontentloaded", timeout=30_000)
         page.bring_to_front()
         return {"url": page.url, "title": page.title()}
 

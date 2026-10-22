@@ -10,6 +10,7 @@ import { configured, type Config } from './research.js';
 import type { Platform } from './platform.js';
 import { VoiceService } from './voice.js';
 import { workspaceRoutes } from './workspace-routes.js';
+import { fridayVoiceRoutes } from '../friday/server/voice-routes.js';
 const interval = z.number().int().min(60).max(31_536_000).nullable();
 export interface AppOptions {
   store: Store;
@@ -90,6 +91,8 @@ export function createApp({
       return c.json({ error: 'Use application/json.' }, 415);
     await next();
   });
+  // FRIDAY: Gnani speech for talking to Friday (Prisma in, Timbre out).
+  app.route('/api', fridayVoiceRoutes({ apiKey: process.env.GNANI_API_KEY }));
   if (platform) app.route('/api', computerRoutes(platform.computers));
   if (platform)
     app.route(

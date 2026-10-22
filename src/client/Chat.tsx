@@ -37,6 +37,8 @@ import { Mascot } from './Mascot';
 import { useVoice } from './useVoice';
 import { CallView } from './CallView';
 import { shouldSubmitComposerOnKeyDown } from './chat-composer';
+import { FridayVoice } from '../friday/client/FridayVoice';
+import { lastReplyText } from '../friday/client/speech';
 
 export function Chat({
   thread,
@@ -445,6 +447,12 @@ export function Chat({
           >
             <Link2 size={19} />
           </button>
+          {/* FRIDAY: push-to-talk with Gnani Prisma, replies read by Timbre. */}
+          <FridayVoice
+            disabled={running || !loaded || !contextReady || paused}
+            onTranscript={send}
+            lastReply={() => lastReplyText(agent.messages)}
+          />
           <textarea
             aria-label="Message your Dot"
             placeholder={`Message ${dot.name}…`}

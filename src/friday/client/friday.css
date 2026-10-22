@@ -1,0 +1,47 @@
+/* Friday: push-to-talk controls in the chat composer. */
+.friday-voice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.friday-voice-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 5px;
+}
+.friday-mic.recording {
+  color: #d9534f;
+  animation: friday-pulse 1.2s ease-in-out infinite;
+}
+.friday-language {
+  border: 1px solid #e9e8e6;
+  border-radius: 8px;
+  background: transparent;
+  color: #8c8d97;
+  font-size: 11px;
+  padding: 3px 4px;
+  max-width: 92px;
+}
+.friday-voice-status {
+  font-size: 11px;
+  color: #8c8d97;
+  padding-left: 4px;
+}
+.friday-voice-status.error {
+  color: #c0392b;
+}
+.friday-spin {
+  animation: friday-spin 1s linear infinite;
+}
+@keyframes friday-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+@keyframes friday-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

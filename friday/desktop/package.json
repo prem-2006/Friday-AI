@@ -1,0 +1,16 @@
+{
+  "name": "friday-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Friday's desktop notch: a thin pill above the taskbar. Hold Caps Lock to talk. It loads Friday from this project folder, so updates to the folder show up without reinstalling.",
+  "license": "MIT",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "install-shortcuts": "node install.cjs",
+    "uninstall-shortcuts": "node install.cjs --remove"
+  },
+  "devDependencies": {
+    "electron": "44.9.3"
+  }
+}

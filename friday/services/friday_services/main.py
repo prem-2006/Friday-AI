@@ -147,8 +147,8 @@ def create_app(
         return {"stopped": feed.stopped, "events": feed.recent()}
 
     @app.get("/activity/stream", dependencies=[Depends(owner)])
-    async def activity_stream(request: Request) -> StreamingResponse:
-        queue = feed.listen()
+    async def activity_stream(request: Request, voice: bool = False) -> StreamingResponse:
+        queue = feed.listen(voice=voice)
 
         async def events():
             try:

@@ -55,7 +55,14 @@ export function fridayActivityRoutes({
 
   app.get('/friday/activity', () => relay('/activity'));
   app.get('/friday/activity/stream', (c) =>
-    relay('/activity/stream', 'GET', c.req.raw.signal),
+    relay(
+      // A voice window (voice screen or notch) also gets Caps Lock signals.
+      c.req.query('voice') === '1'
+        ? '/activity/stream?voice=1'
+        : '/activity/stream',
+      'GET',
+      c.req.raw.signal,
+    ),
   );
   app.post('/friday/activity/stop', () => relay('/activity/stop', 'POST'));
   app.post('/friday/activity/resume', () => relay('/activity/resume', 'POST'));

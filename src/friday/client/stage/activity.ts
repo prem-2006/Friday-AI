@@ -20,7 +20,8 @@ export function followActivity(
   const run = async () => {
     while (!controller.signal.aborted) {
       try {
-        const response = await fetch('/api/friday/activity/stream', {
+        // ?voice=1: this window handles Caps Lock (the newest one does).
+        const response = await fetch('/api/friday/activity/stream?voice=1', {
           headers: ownerHeaders(),
           signal: controller.signal,
         });

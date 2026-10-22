@@ -30,6 +30,7 @@ import { HandsFree } from './handsFree';
 import { friendlyError } from './errors';
 import { intentOf, isEcho } from './intent';
 import { LiveVoice, type LiveEvent } from './liveVoice';
+import { Notch, type NotchState } from './Notch';
 import { ACTOR_NAMES, narrate, type ActivityEvent } from './narration';
 import { Orb, type OrbMode } from './Orb';
 import './stage.css';
@@ -295,6 +296,7 @@ export function FridayStage({
   paused = false,
   onResume = () => {},
   onExit,
+  variant = 'stage',
 }: {
   workspace?: WorkspaceState;
   configured: boolean;
@@ -302,6 +304,8 @@ export function FridayStage({
   paused?: boolean;
   onResume?: () => void;
   onExit: () => void;
+  /** 'notch': the desktop pill (friday/desktop) instead of the full screen. */
+  variant?: 'stage' | 'notch';
 }) {
   const friday = workspace?.dots.find((dot) => dot.name === 'Friday');
   const [language, setLanguage] = useState(savedLanguage);
@@ -325,6 +329,16 @@ export function FridayStage({
         onExit={onExit}
         paused={paused}
         onResume={onResume}
+        variant={variant}
+      />
+    );
+  if (variant === 'notch')
+    return (
+      <Notch
+        state="offline"
+        level={() => 0}
+        spectrum={() => null}
+        note={workspace ? 'Friday is not set up yet.' : undefined}
       />
     );
 
@@ -358,6 +372,7 @@ function StageSession({
   onExit,
   paused,
   onResume,
+  variant,
 }: {
   friday: Dot;
   language: string;
@@ -365,6 +380,7 @@ function StageSession({
   onExit: () => void;
   paused: boolean;
   onResume: () => void;
+  variant: 'stage' | 'notch';
 }) {
   // Friday's voice conversation lives here and runs directly on the server.
   const [messages, setMessages] = useState<Message[]>(
@@ -1039,6 +1055,34 @@ function StageSession({
         ? { tone: 'warn' as const, label: 'Helpers offline' }
         : { tone: 'ok' as const, label: 'Connected' };
 
+  if (variant === 'notch') {
+    const notchState: NotchState = paused
+      ? 'offline'
+      : pendingApproval
+        ? 'asking'
+        : phase === 'hearing'
+          ? 'hearing'
+          : phase === 'speaking'
+            ? 'speaking'
+            : running || phase === 'thinking' || phase === 'transcribing'
+              ? 'thinking'
+              : 'idle';
+    return (
+      <Notch
+        state={notchState}
+        level={level}
+        spectrum={spectrum}
+        note={
+          paused
+            ? 'Friday is paused. Resume it from the main page.'
+            : pendingApproval
+              ? `OK to ${pendingApproval.summary.replace(/[.!]+$/, '')}?`
+              : error || undefined
+        }
+        onDecide={(approve) => void decide(approve)}
+      />
+    );
+  }
   return (
     <div className={`friday-stage mode-${mode}`}>
       <Orb

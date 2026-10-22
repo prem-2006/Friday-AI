@@ -10,6 +10,9 @@ import {
 } from '../friday/client/stage/FridayStage';
 import { StageLink } from '../friday/client/StageLink';
 import { FridayHome, HOME_HASH } from '../friday/client/home/FridayHome';
+
+// FRIDAY: the desktop notch page (friday/desktop).
+const NOTCH_HASH = '#/notch';
 import {
   ArrowUp,
   ArrowUpRight,
@@ -80,7 +83,9 @@ export function App() {
       ? 'home'
       : [STAGE_HASH, STAGE_DEMO_HASH].includes(location.hash)
         ? 'stage'
-        : null;
+        : location.hash === NOTCH_HASH
+          ? 'notch'
+          : null;
   const [fridayScreen, setFridayScreen] = useState(fridayScreenOf);
   useEffect(() => {
     const follow = () => setFridayScreen(fridayScreenOf());
@@ -989,8 +994,9 @@ export function App() {
           location.hash = '#/chat';
         }}
       />
-    ) : fridayScreen === 'stage' ? (
+    ) : fridayScreen === 'stage' || fridayScreen === 'notch' ? (
       <FridayStage
+        variant={fridayScreen}
         workspace={workspace}
         configured={configured}
         paused={!!state?.settings.paused}

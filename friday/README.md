@@ -76,6 +76,28 @@ Try saying:
 - "WhatsApp Priya that I'm running ten minutes late." Friday reads the message back; you say yes.
 - "Call Rahul on WhatsApp." Friday starts the call after your yes, and you talk.
 
+## Pages and ports
+
+| What                                                             | Address                              |
+| ---------------------------------------------------------------- | ------------------------------------ |
+| Main page: your details, Google account, permissions, shortcuts  | http://localhost:5173/ (or `#/home`) |
+| Voice screen (the orb)                                           | http://localhost:5173/#/friday       |
+| Desktop notch page (shown by `friday/desktop`)                   | http://localhost:5173/#/notch        |
+| Dots (the OpenDots dashboard underneath)                         | http://localhost:5173/#/chat         |
+| App server (API only; the pages above come through port 5173)    | http://127.0.0.1:4310                |
+| Friday services (tools, live voice; `/health`, demo `/calendar`) | http://127.0.0.1:8765                |
+| Friday's Chrome debugging port (for Friday's own tools only)     | 127.0.0.1:9333                       |
+
+## Desktop notch
+
+`friday/desktop` is a small Electron shell: a thin black pill just above the taskbar, like Wispr Flow. Hold Caps Lock anywhere to talk: the pill widens with bars that follow your voice, and again while Friday answers out loud. Clicking it opens the main page; its tray icon has Start with Windows and Quit.
+
+```sh
+cd friday/desktop; npm install; npm run install-shortcuts
+```
+
+This adds "Friday" to the Start menu and the desktop. The shell shows Friday from this folder's dev server, so changes to the folder appear at once, and it restarts itself when its own files change: there is nothing to reinstall. If the app or the services are not running, it starts them (logs in `data/desktop-*.log`). Only one voice window answers Caps Lock at a time, the newest: close the browser's voice screen and the notch takes over.
+
 ## How the voice stage works
 
 - **Fast turns:** the voice stage runs Friday directly on the app server and keeps its own short conversation (the circular-arrow button starts a new one). The hosted conversation service is skipped there because it added 4–6 s per turn; the classic dashboard still uses it. Helper Dots also run directly.

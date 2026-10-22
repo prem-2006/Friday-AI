@@ -76,12 +76,18 @@ def test_two_claps_wake_but_one_clap_or_speech_does_not():
     assert fired is False
 
 
-def test_signals_reach_the_screen_but_are_not_kept():
+def test_signals_reach_the_newest_voice_window_only_and_are_not_kept():
     feed = ActivityFeed()
+    watcher = feed.listen()  # e.g. a page that only shows activity
     assert feed.watched is False
-    queue = feed.listen()
+    notch = feed.listen(voice=True)
+    stage = feed.listen(voice=True)
     assert feed.watched is True
     feed.signal("ptt_down")
-    event = queue.get_nowait()
+    event = stage.get_nowait()
     assert (event.actor, event.action) == ("control", "ptt_down")
+    assert notch.empty() and watcher.empty()  # one request never runs twice
+    feed.unlisten(stage)  # the voice screen closed: the notch takes over
+    feed.signal("ptt_up")
+    assert notch.get_nowait().action == "ptt_up"
     assert feed.recent() == []

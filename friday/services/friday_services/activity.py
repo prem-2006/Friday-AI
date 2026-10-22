@@ -30,6 +30,9 @@ class ActivityFeed:
     def __init__(self, keep: int = 200):
         self._events: deque[Activity] = deque(maxlen=keep)
         self._listeners: set[asyncio.Queue[Activity]] = set()
+        # Voice windows (the voice screen, the desktop notch), oldest first.
+        # Caps Lock goes to the newest only, so one request never runs twice.
+        self._voices: list[asyncio.Queue[Activity]] = []
         self._ids = itertools.count(1)
         self.stopped = False
 
@@ -44,24 +47,28 @@ class ActivityFeed:
         """Tell the voice screen to do something (e.g. ptt_down, wake). Not kept
         in the history, so a page that connects later never replays it."""
         event = Activity(next(self._ids), "control", action, "", state="done")
-        for queue in list(self._listeners):
-            queue.put_nowait(event)
+        if self._voices:
+            self._voices[-1].put_nowait(event)
 
     @property
     def watched(self) -> bool:
-        """Whether a voice screen is connected right now."""
-        return bool(self._listeners)
+        """Whether a voice window is connected right now."""
+        return bool(self._voices)
 
     def recent(self, limit: int = 30) -> list[dict]:
         return [event.public() for event in list(self._events)[-limit:]]
 
-    def listen(self) -> asyncio.Queue[Activity]:
+    def listen(self, voice: bool = False) -> asyncio.Queue[Activity]:
         queue: asyncio.Queue[Activity] = asyncio.Queue()
         self._listeners.add(queue)
+        if voice:
+            self._voices.append(queue)
         return queue
 
     def unlisten(self, queue: asyncio.Queue[Activity]) -> None:
         self._listeners.discard(queue)
+        if queue in self._voices:
+            self._voices.remove(queue)
 
     def stop(self) -> None:
         self.stopped = True

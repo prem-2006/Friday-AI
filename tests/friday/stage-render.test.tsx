@@ -38,5 +38,5 @@ it('shows the stage with clear next steps before setup is done', () => {
   );
   expect(noKeys).toContain('Add to .env, then restart: OPENAI_API_KEY.');
   expect(noKeys).toContain('Your AI Voice Assistant');
-  expect(noKeys).toContain('aria-label="Open the chat view"');
+  expect(noKeys).toContain('aria-label="Open Friday&#x27;s main page"');
 });

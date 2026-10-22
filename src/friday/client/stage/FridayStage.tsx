@@ -884,10 +884,11 @@ function StageSession({
         </div>
       )}
       <footer className="stage-footer">
-        <div className="stage-captions">
-          {captions.map((item, index) => (
-            <p key={index} className={item.who}>
-              <b>{item.who === 'you' ? 'You' : 'Friday'}</b> {item.text}
+        <div className="stage-captions" aria-live="polite">
+          {captions.slice(-2).map((item, index) => (
+            <p key={`${captions.length}-${index}`} className={item.who}>
+              <b>{item.who === 'you' ? 'You' : 'Friday'}</b>
+              <span>{item.text}</span>
             </p>
           ))}
         </div>

@@ -1,5 +1,7 @@
-// Friday: the living orb. Glowing rings ripple with the voice level, waves
-// flow out to both sides, and busy helper Dots orbit around it.
+// Friday: the living orb. A 3D sphere of particles turns inside glowing
+// rings that ripple with the voice level, HUD rings spin around it, waves flow
+// out to both sides, and busy helper Dots orbit around it. Its colour follows
+// what Friday is doing: cyan listening, violet thinking, pink speaking.
 import { useEffect, useRef } from 'react';
 
 export type OrbMode =
@@ -24,6 +26,24 @@ const MODE_SPIN: Record<OrbMode, number> = {
   speaking: 0.35,
   working: 0.6,
 };
+
+// The particle sphere's colour per mode, as "r,g,b".
+const MODE_TINT: Record<OrbMode, [string, string]> = {
+  idle: ['120,140,255', '170,120,255'],
+  listening: ['56,225,255', '120,170,255'],
+  thinking: ['167,107,255', '236,72,153'],
+  speaking: ['236,72,153', '139,92,246'],
+  working: ['56,225,255', '255,90,209'],
+};
+
+// Evenly spread points on a unit sphere (a Fibonacci lattice).
+const POINTS = 460;
+const SPHERE = Array.from({ length: POINTS }, (_, i) => {
+  const y = 1 - (2 * (i + 0.5)) / POINTS;
+  const r = Math.sqrt(1 - y * y);
+  const a = i * Math.PI * (3 - Math.sqrt(5));
+  return { x: Math.cos(a) * r, y, z: Math.sin(a) * r, seed: (i * 7919) % 97 };
+});
 
 function paletteGradient(
   ctx: CanvasRenderingContext2D,
@@ -219,25 +239,43 @@ export function Orb({
         ctx.stroke();
       }
 
-      // Dark glassy core.
+      // Dark glassy core, so the particles read against it.
       ctx.globalCompositeOperation = 'source-over';
       ctx.shadowBlur = 0;
-      const core = ctx.createRadialGradient(
-        cx,
-        cy - R * 0.2,
-        R * 0.1,
-        cx,
-        cy,
-        R * 0.92,
-      );
-      core.addColorStop(0, 'rgba(10,12,40,0.95)');
-      core.addColorStop(0.75, 'rgba(8,10,34,0.85)');
+      const core = ctx.createRadialGradient(cx, cy, R * 0.1, cx, cy, R * 0.92);
+      core.addColorStop(0, 'rgba(10,12,40,0.9)');
+      core.addColorStop(0.8, 'rgba(8,10,34,0.75)');
       core.addColorStop(1, 'rgba(8,10,34,0)');
       ctx.fillStyle = core;
       ctx.beginPath();
       ctx.arc(cx, cy, R * 0.92, 0, Math.PI * 2);
       ctx.fill();
+
+      // The particle sphere: turns, swirls while thinking, swells with the voice.
       ctx.globalCompositeOperation = 'lighter';
+      const [near, far] = MODE_TINT[s.mode];
+      const turn = t * (0.25 + MODE_SPIN[s.mode] * 0.5);
+      const tilt = 0.38 + Math.sin(t * 0.3) * 0.08;
+      const swirl = s.mode === 'thinking' || s.mode === 'working' ? 1.4 : 0.25;
+      const radius = R * (0.7 + e * 0.12 + s.voice * 0.18);
+      for (const point of SPHERE) {
+        const twist = turn + point.y * swirl * Math.sin(t * 0.7);
+        const x1 = point.x * Math.cos(twist) - point.z * Math.sin(twist);
+        const z1 = point.x * Math.sin(twist) + point.z * Math.cos(twist);
+        const y2 = point.y * Math.cos(tilt) - z1 * Math.sin(tilt);
+        const z2 = point.y * Math.sin(tilt) + z1 * Math.cos(tilt);
+        const pulse =
+          1 + Math.sin(t * 3 + point.seed) * (0.015 + s.voice * 0.08);
+        const depth = (z2 + 1) / 2; // 0 far .. 1 near
+        const perspective = 1 / (1.25 - z2 * 0.25);
+        const px = cx + x1 * radius * pulse * perspective;
+        const py = cy + y2 * radius * pulse * perspective;
+        const size = 0.6 + depth * 1.7 + s.voice * 1.2;
+        ctx.fillStyle = `rgba(${depth > 0.5 ? near : far},${0.18 + depth * 0.72})`;
+        ctx.beginPath();
+        ctx.arc(px, py, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
       const sheen = ctx.createRadialGradient(
         cx - R * 0.35,
         cy - R * 0.4,
@@ -246,12 +284,45 @@ export function Orb({
         cy,
         R,
       );
-      sheen.addColorStop(0, `rgba(160,180,255,${0.12 + e * 0.15})`);
-      sheen.addColorStop(1, 'rgba(160,180,255,0)');
+      sheen.addColorStop(0, `rgba(${near},${0.1 + e * 0.12})`);
+      sheen.addColorStop(1, `rgba(${near},0)`);
       ctx.fillStyle = sheen;
       ctx.beginPath();
       ctx.arc(cx, cy, R * 0.9, 0, Math.PI * 2);
       ctx.fill();
+
+      // HUD rings: ticks, dashes and arc segments turning at their own speeds.
+      ctx.lineCap = 'round';
+      const ticks = R * 1.5;
+      for (let i = 0; i < 90; i++) {
+        const a = (i / 90) * Math.PI * 2 - s.spin * 0.25;
+        const long = i % 6 === 0;
+        const inner = ticks - (long ? 9 : 4);
+        ctx.strokeStyle = `rgba(${near},${long ? 0.5 : 0.22})`;
+        ctx.lineWidth = long ? 1.6 : 1;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
+        ctx.lineTo(cx + Math.cos(a) * ticks, cy + Math.sin(a) * ticks);
+        ctx.stroke();
+      }
+      ctx.setLineDash([3, 9]);
+      ctx.strokeStyle = `rgba(${far},0.4)`;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(cx, cy, R * 1.36, s.spin * 0.6, s.spin * 0.6 + Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      for (let k = 0; k < 3; k++) {
+        const start = s.spin * (1.2 + k * 0.3) * (k % 2 ? -1 : 1) + k * 2.1;
+        ctx.strokeStyle = `rgba(${k === 1 ? far : near},${0.55 + e * 0.3})`;
+        ctx.lineWidth = 2.6;
+        ctx.shadowBlur = 14;
+        ctx.shadowColor = `rgba(${near},0.9)`;
+        ctx.beginPath();
+        ctx.arc(cx, cy, R * (1.22 + k * 0.035), start, start + 0.5 + e * 0.6);
+        ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
 
       // Busy helper Dots orbit the orb.
       s.helpers.forEach((name, index) => {

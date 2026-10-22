@@ -1,6 +1,9 @@
 // Friday: finds where you start and stop speaking in a live audio stream.
 // It keeps a short pre-roll so the first word is never clipped, and ends a
-// turn after a brief silence. Pure logic, so it can be tested with numbers.
+// turn after a brief silence. Only sound in the voice band (150 Hz to 3.8 kHz)
+// counts, and most of the energy must sit there, so fan hum, hiss and key
+// clicks do not start a turn (each false start costs a Gnani call). Pure
+// logic, so it can be tested with numbers.
 export interface SegmenterEvents {
   onStart: () => void;
   onSegment: (samples: Float32Array) => void;
@@ -12,7 +15,10 @@ export const SEGMENTER = {
   endMs: 700, // this much silence ends it
   keepSilenceMs: 250, // trailing silence kept at the end
   maxMs: 20_000, // Prisma clips stay short
-  minSpeechMs: 250, // ignore coughs and clicks
+  minSpeechMs: 300, // ignore coughs and clicks
+  voiceLowHz: 150,
+  voiceHighHz: 3800,
+  minVoiceShare: 0.4, // of a chunk's energy inside the voice band
 };
 
 export class SpeechSegmenter {
@@ -27,13 +33,42 @@ export class SpeechSegmenter {
   private speechMs = 0;
   private totalMs = 0;
   private trailing: Float32Array[] = [];
+  // One-pole high-pass then low-pass, kept across chunks.
+  private hpIn = 0;
+  private hpOut = 0;
+  private lpOut = 0;
+  private hpA: number;
+  private lpB: number;
 
   constructor(
     private sampleRate: number,
     private events: SegmenterEvents,
     /** Multiplies the threshold, e.g. while Friday's own voice is playing. */
     private boost: () => number = () => 1,
-  ) {}
+  ) {
+    const dt = 1 / sampleRate;
+    const rc = (hz: number) => 1 / (2 * Math.PI * hz);
+    this.hpA = rc(SEGMENTER.voiceLowHz) / (rc(SEGMENTER.voiceLowHz) + dt);
+    this.lpB = dt / (rc(SEGMENTER.voiceHighHz) + dt);
+  }
+
+  // Energy of the whole chunk and of its voice band.
+  private measure(chunk: Float32Array) {
+    let all = 0;
+    let band = 0;
+    for (const x of chunk) {
+      all += x * x;
+      this.hpOut = this.hpA * (this.hpOut + x - this.hpIn);
+      this.hpIn = x;
+      this.lpOut += this.lpB * (this.hpOut - this.lpOut);
+      band += this.lpOut * this.lpOut;
+    }
+    return {
+      rms: Math.sqrt(all / chunk.length),
+      voice: Math.sqrt(band / chunk.length),
+      share: all > 0 ? band / all : 0,
+    };
+  }
 
   get speaking() {
     return this.segment !== null;
@@ -41,14 +76,12 @@ export class SpeechSegmenter {
 
   push(chunk: Float32Array) {
     const ms = (chunk.length / this.sampleRate) * 1000;
-    let sum = 0;
-    for (const sample of chunk) sum += sample * sample;
-    const rms = Math.sqrt(sum / chunk.length);
+    const { rms, voice, share } = this.measure(chunk);
     this.level = this.level * 0.7 + Math.min(1, rms * 8) * 0.3;
-    if (!this.segment && rms < this.floor * 2)
-      this.floor = this.floor * 0.95 + rms * 0.05; // learn the room's noise
+    if (!this.segment && voice < this.floor * 2)
+      this.floor = this.floor * 0.95 + voice * 0.05; // learn the room's noise
     const threshold = Math.max(0.012, this.floor * 3) * this.boost();
-    const loud = rms > threshold;
+    const loud = voice > threshold && share >= SEGMENTER.minVoiceShare;
 
     if (!this.segment) {
       this.preRoll.push(chunk);

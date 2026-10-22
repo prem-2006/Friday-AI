@@ -83,6 +83,42 @@ it('ignores clicks and needs a louder voice while Friday is talking', () => {
   expect(segments).toHaveLength(0);
 });
 
+function tone(hz: number, amplitude: number, start: number) {
+  const data = new Float32Array(CHUNK);
+  for (let i = 0; i < CHUNK; i++)
+    data[i] = amplitude * Math.sin((2 * Math.PI * hz * (start + i)) / RATE);
+  return data;
+}
+
+function noise(amplitude: number) {
+  let seed = 7;
+  const data = new Float32Array(CHUNK);
+  for (let i = 0; i < CHUNK; i++) {
+    seed = (seed * 16807) % 2147483647;
+    // Alternate signs make it mostly high-frequency hiss.
+    data[i] = amplitude * (i % 2 ? 1 : -1) * (seed / 2147483647);
+  }
+  return data;
+}
+
+it('only a voice-band sound starts a turn, not hum or hiss', () => {
+  for (const [name, make, expected] of [
+    ['50 Hz mains hum', (n: number) => tone(50, 0.4, n * CHUNK), 0],
+    ['high hiss', () => noise(0.4), 0],
+    ['a 300 Hz voice', (n: number) => tone(300, 0.3, n * CHUNK), 1],
+  ] as const) {
+    const segments: Float32Array[] = [];
+    const segmenter = new SpeechSegmenter(RATE, {
+      onStart: () => {},
+      onSegment: (s) => segments.push(s),
+    });
+    feed(segmenter, [[false, 300]]);
+    for (let n = 0; n * chunkMs < 800; n++) segmenter.push(make(n));
+    feed(segmenter, [[false, 1000]]);
+    expect(segments.length, name).toBe(expected);
+  }
+});
+
 it('downsamples 48 kHz to 16 kHz', () => {
   const samples = new Float32Array(4800).fill(0.5);
   const out = downsample(samples, 48_000);

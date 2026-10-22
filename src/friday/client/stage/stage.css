@@ -39,6 +39,45 @@
   opacity: 0.6;
   pointer-events: none;
 }
+.friday-stage::after {
+  /* a slow aurora whose colour follows what Friday is doing */
+  content: '';
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(
+      40% 30% at 25% 30%,
+      var(--aurora-a, rgba(79, 107, 255, 0.16)),
+      transparent 70%
+    ),
+    radial-gradient(
+      35% 30% at 75% 70%,
+      var(--aurora-b, rgba(139, 92, 246, 0.14)),
+      transparent 70%
+    );
+  filter: blur(30px);
+  animation: stage-aurora 18s ease-in-out infinite alternate;
+  pointer-events: none;
+  transition: background 1s ease;
+}
+.friday-stage.mode-listening {
+  --aurora-a: rgba(56, 225, 255, 0.16);
+  --aurora-b: rgba(79, 107, 255, 0.14);
+}
+.friday-stage.mode-thinking,
+.friday-stage.mode-working {
+  --aurora-a: rgba(167, 107, 255, 0.2);
+  --aurora-b: rgba(236, 72, 153, 0.12);
+}
+.friday-stage.mode-speaking {
+  --aurora-a: rgba(236, 72, 153, 0.16);
+  --aurora-b: rgba(139, 92, 246, 0.16);
+}
+@keyframes stage-aurora {
+  to {
+    transform: translate(4%, -3%) rotate(8deg) scale(1.08);
+  }
+}
 @keyframes stage-drift {
   to {
     background-position: 420px 840px;
@@ -204,7 +243,7 @@
   overflow: hidden;
 }
 .stage-title p.error {
-  color: #ff9db1;
+  color: #d8a8b4;
 }
 @keyframes stage-rise {
   from {
@@ -314,6 +353,15 @@
   font-size: 12.5px;
   color: #b9c0f0;
   line-height: 1.35;
+  padding: 7px 9px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(120, 135, 255, 0.12);
+  animation: stage-fade 0.25s ease both;
+}
+.stage-live li.running {
+  border-color: rgba(56, 225, 255, 0.45);
+  box-shadow: inset 0 0 18px rgba(56, 225, 255, 0.08);
 }
 .stage-live li b {
   color: #e8ebff;
@@ -400,25 +448,39 @@
   display: grid;
   gap: 6px;
   margin-bottom: 14px;
-  max-height: 96px;
-  overflow: hidden;
-  mask-image: linear-gradient(180deg, transparent, #000 40%);
+  padding: 0 6px;
 }
 .stage-captions p {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 10px;
   margin: 0;
   font-size: 14px;
-  color: #b9c0f0;
+  line-height: 1.5;
+  color: #c9cdf0;
+  animation: stage-fade 0.25s ease both;
+}
+.stage-captions p span {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .stage-captions b {
-  color: #8b7bff;
+  font-size: 11px;
+  line-height: 21px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #8f86d9;
   font-weight: 600;
-  margin-right: 6px;
 }
 .stage-captions .you b {
-  color: #38e1ff;
+  color: #6fb8d6;
+}
+@keyframes stage-fade {
+  from {
+    opacity: 0;
+  }
 }
 .stage-input {
   display: flex;
@@ -475,21 +537,32 @@
   .stage-clock {
     display: none;
   }
-  .stage-live {
-    left: 16px;
-    right: 16px;
-    top: auto;
-    bottom: 120px;
-    width: auto;
-    max-height: 32%;
-  }
   .stage-approval {
     bottom: 120px;
   }
 }
+@media (max-width: 900px) {
+  /* A compact strip under the header, clear of the chat bubbles. */
+  .stage-live {
+    left: 16px;
+    right: 16px;
+    top: 84px;
+    width: auto;
+    max-height: 96px;
+    padding: 8px 10px;
+  }
+  .stage-live header {
+    margin-bottom: 6px;
+  }
+  .stage-live img,
+  .stage-live li:not(:last-child) {
+    display: none;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .friday-stage *,
-  .friday-stage::before {
+  .friday-stage::before,
+  .friday-stage::after {
     animation: none !important;
   }
 }

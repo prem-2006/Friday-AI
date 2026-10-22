@@ -45,3 +45,47 @@
     transform: rotate(360deg);
   }
 }
+/* Friday: live steps of the current task, above the composer. */
+.friday-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+.friday-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #e9e8e6;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: #8c8d97;
+  background: #fafafa;
+}
+.friday-step-label {
+  color: #333641;
+  font-weight: 600;
+}
+.friday-step.active {
+  border-color: #b9c3ec;
+  background: #eeeffa;
+}
+.friday-step.done {
+  border-color: #cfe6cf;
+}
+.friday-step.done svg:last-child {
+  color: #3c8d5a;
+}
+.friday-step.failed {
+  border-color: #f0cccc;
+}
+.friday-step.failed svg:last-child {
+  color: #c0392b;
+}
+.friday-step.waiting {
+  border-color: #f1dca6;
+  background: #fdf7e7;
+}

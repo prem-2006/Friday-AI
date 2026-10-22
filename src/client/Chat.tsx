@@ -39,6 +39,7 @@ import { CallView } from './CallView';
 import { shouldSubmitComposerOnKeyDown } from './chat-composer';
 import { FridayVoice } from '../friday/client/FridayVoice';
 import { lastReplyText } from '../friday/client/speech';
+import { FridaySteps } from '../friday/client/FridaySteps';
 
 export function Chat({
   thread,
@@ -403,6 +404,8 @@ export function Chat({
           )}
         </div>
       )}
+      {/* FRIDAY: live steps of the current task. */}
+      <FridaySteps messages={agent.messages} />
       <CallView
         key={voice.status === 'idle' ? 'idle' : 'call'}
         dot={dot}

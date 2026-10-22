@@ -89,3 +89,21 @@
   border-color: #f1dca6;
   background: #fdf7e7;
 }
+/* Friday: button back to the voice stage. */
+.friday-stage-link {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 40;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  background: linear-gradient(135deg, #4f6bff, #8b5cf6);
+  box-shadow: 0 8px 24px rgba(79, 107, 255, 0.4);
+}

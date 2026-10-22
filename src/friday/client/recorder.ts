@@ -31,26 +31,7 @@ export class ClipRecorder {
     recorder.stop();
     await stopped;
     this.release();
-    const encoded = await new Blob(this.chunks).arrayBuffer();
-    if (!encoded.byteLength) throw new Error('No audio was recorded.');
-    const context = new AudioContext();
-    try {
-      const decoded = await context.decodeAudioData(encoded);
-      // Downmix and resample in one offline render.
-      const offline = new OfflineAudioContext(
-        1,
-        Math.ceil(decoded.duration * CLIP_SAMPLE_RATE),
-        CLIP_SAMPLE_RATE,
-      );
-      const source = offline.createBufferSource();
-      source.buffer = decoded;
-      source.connect(offline.destination);
-      source.start();
-      const rendered = await offline.startRendering();
-      return encodeWav(rendered.getChannelData(0));
-    } finally {
-      void context.close();
-    }
+    return blobToWav(new Blob(this.chunks));
   }
 
   cancel() {
@@ -62,5 +43,29 @@ export class ClipRecorder {
     this.stream?.getTracks().forEach((track) => track.stop());
     this.stream = undefined;
     this.recorder = undefined;
+  }
+}
+
+// Decode a recording (WebM/Opus etc.) and re-encode it as 16 kHz mono WAV.
+export async function blobToWav(blob: Blob): Promise<Uint8Array> {
+  const encoded = await blob.arrayBuffer();
+  if (!encoded.byteLength) throw new Error('No audio was recorded.');
+  const context = new AudioContext();
+  try {
+    const decoded = await context.decodeAudioData(encoded);
+    // Downmix and resample in one offline render.
+    const offline = new OfflineAudioContext(
+      1,
+      Math.ceil(decoded.duration * CLIP_SAMPLE_RATE),
+      CLIP_SAMPLE_RATE,
+    );
+    const source = offline.createBufferSource();
+    source.buffer = decoded;
+    source.connect(offline.destination);
+    source.start();
+    const rendered = await offline.startRendering();
+    return encodeWav(rendered.getChannelData(0));
+  } finally {
+    void context.close();
   }
 }

@@ -4,6 +4,12 @@ import { SpaceWorkspace } from './SpaceWorkspace';
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { CopilotKitProvider } from '@copilotkit/react-core/v2';
 import {
+  FridayStage,
+  STAGE_DEMO_HASH,
+  STAGE_HASH,
+} from '../friday/client/stage/FridayStage';
+import { StageLink } from '../friday/client/StageLink';
+import {
   ArrowUp,
   ArrowUpRight,
   BookOpen,
@@ -66,6 +72,17 @@ export function App() {
     'chat',
   );
   const dirtyPage = useRef(false);
+  // FRIDAY: the voice stage is the home screen; #/chat opens this classic view.
+  const [stage, setStage] = useState(
+    () =>
+      [STAGE_HASH, STAGE_DEMO_HASH].includes(location.hash) || !location.hash,
+  );
+  useEffect(() => {
+    const follow = () =>
+      setStage([STAGE_HASH, STAGE_DEMO_HASH].includes(location.hash));
+    window.addEventListener('hashchange', follow);
+    return () => window.removeEventListener('hashchange', follow);
+  }, []);
   const [spaceId, setSpaceId] = useState('');
   const [pageId, setPageId] = useState<string>();
   const setDirtyPage = useCallback((value: boolean) => {
@@ -955,11 +972,27 @@ export function App() {
       )}
     </div>
   );
+  // FRIDAY: full-screen voice stage, or the classic view with a way back.
+  const screen = stage ? (
+    <FridayStage
+      workspace={workspace}
+      configured={configured}
+      refresh={refresh}
+      onExit={() => {
+        location.hash = '#/chat';
+      }}
+    />
+  ) : (
+    <>
+      {content}
+      <StageLink />
+    </>
+  );
   return configured ? (
     <CopilotKitProvider runtimeUrl="/api/copilotkit" headers={authHeaders()}>
-      {content}
+      {screen}
     </CopilotKitProvider>
   ) : (
-    content
+    screen
   );
 }

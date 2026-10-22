@@ -103,3 +103,48 @@ def test_play_youtube_opens_the_first_full_video(tmp_path):
         ]
     finally:
         browser.close()
+
+
+FAKE_GMAIL = """<!doctype html><title>Inbox - Gmail</title><body>
+<div role="dialog">
+  <input aria-label="To recipients" value="priya@example.com">
+  <div role="button" aria-label="Send (Ctrl-Enter)" tabindex="0"
+       onclick="document.body.insertAdjacentHTML('beforeend', '<span>Message sent</span>')">Send</div>
+</div></body>"""
+
+
+def test_only_friday_can_send_an_email_and_only_through_send_email(tmp_path):
+    browser = OnScreenBrowser(tmp_path / "profile", headless=True)
+    try:
+        browser._page()
+        browser._context.route(
+            "https://mail.google.com/**",
+            lambda route: route.fulfill(status=200, content_type="text/html", body=FAKE_GMAIL),
+        )
+        page = browser.open("https://mail.google.com/mail/u/0/")
+        # Navigator's own tools refuse to send: the owner must approve first.
+        with pytest.raises(BrowserError, match="owner's OK"):
+            browser.click(ref_of(page["elements"], "Send"))
+        with pytest.raises(BrowserError, match="owner's OK"):
+            browser.press("Control+Enter")
+        assert "Message sent" not in browser.read()["text"]
+        # Friday's send_email (behind an approval card) clicks Send.
+        assert browser.send_open_email() == {"sent": True}
+        assert "Message sent" in browser.read()["text"]
+        assert browser.google_account() == {"signed_in": False}
+    finally:
+        browser.close()
+
+
+def test_send_needs_an_open_gmail_draft(tmp_path):
+    from friday_services.browser import is_send_label
+
+    assert is_send_label("Send (Ctrl-Enter)") and is_send_label("send")
+    assert not is_send_label("Sender details") and not is_send_label("Resend code")
+    browser = OnScreenBrowser(tmp_path / "profile", headless=True)
+    try:
+        browser._page().set_content("<title>Elsewhere</title>")
+        with pytest.raises(BrowserError, match="No Gmail draft"):
+            browser.send_open_email()
+    finally:
+        browser.close()

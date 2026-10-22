@@ -1,13 +1,25 @@
 """A real Chrome window on the owner's screen that the Navigator Dot drives.
 
 It uses its own profile (data/browser-profile), so the owner's personal Chrome
-logins are never touched. Pages are described as numbered elements, which a
-text-only model like Evon can act on.
+logins are never touched. The owner may sign in to one Google account in it
+(they type the password themselves); Friday then works in Gmail, Calendar and
+Drive there. Pages are described as numbered elements, which a text-only model
+like Evon can act on.
+
+On the owner's screen it is an ordinary Chrome process with a debugging port
+on 127.0.0.1, which Playwright and the browser-use agent attach to. Chrome
+started by Playwright itself is marked as automated, and Google refuses to
+sign in there. Tests use a headless Playwright Chrome instead.
 """
 
 from __future__ import annotations
 
 import base64
+import os
+import re
+import shutil
+import subprocess
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote_plus
@@ -100,8 +112,42 @@ SENSITIVE_FIELD_JS = """
 """
 
 
+# Cookies Google sets once someone is signed in.
+GOOGLE_SESSION_COOKIES = {"SID", "__Secure-1PSID", "__Secure-3PSID"}
+GOOGLE_SIGN_IN = (
+    "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fmail.google.com%2F"
+)
+
+# The words on whatever is about to be clicked.
+LABEL_JS = """
+(el) => (el.getAttribute('aria-label') || el.getAttribute('data-tooltip') || el.innerText || el.value || '').trim()
+"""
+SENDING_NEEDS_OK = (
+    "Sending needs the owner's OK. Leave the draft open and tell Friday it is ready: "
+    "Friday reads it back and sends it once the owner approves."
+)
+
+
 class BrowserError(RuntimeError):
     pass
+
+
+def find_chrome() -> str:
+    """Where Google Chrome is installed (FRIDAY_CHROME_PATH overrides)."""
+    for base in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
+        root = os.environ.get(base)
+        if root:
+            candidate = Path(root) / "Google" / "Chrome" / "Application" / "chrome.exe"
+            if candidate.exists():
+                return str(candidate)
+    found = shutil.which("chrome") or shutil.which("google-chrome")
+    if not found:
+        raise BrowserError("Google Chrome is not installed. Install it or set FRIDAY_CHROME_PATH.")
+    return found
+
+
+def is_send_label(label: str) -> bool:
+    return bool(re.match(r"send\b", label.strip(), re.IGNORECASE))
 
 
 def _check_url(url: str) -> str:
@@ -121,8 +167,13 @@ class OnScreenBrowser:
         headless: bool = False,
         user_agent: str | None = None,
         cdp_port: int | None = None,
+        chrome_path: str | None = None,
     ):
         self._profile_dir = profile_dir
+        self._chrome_path = chrome_path
+        # Its own Chrome process on the owner's screen (see the module notes).
+        self._own_window = cdp_port is not None and not headless
+        self._cdp_browser: Any = None
         # The browser-use agent attaches to this same window over Chrome's
         # debugging port, which Chrome serves on 127.0.0.1 only.
         self._cdp_port = cdp_port
@@ -132,7 +183,50 @@ class OnScreenBrowser:
         self._playwright: Any = None
         self._context: Any = None
 
+    def _attach(self):
+        """Connects to Friday's Chrome, starting it first if it is not running."""
+        url = f"http://127.0.0.1:{self._cdp_port}"
+        chromium = self._playwright.chromium
+        try:
+            browser = chromium.connect_over_cdp(url, timeout=1500)
+        except Exception:
+            subprocess.Popen(
+                [
+                    self._chrome_path or find_chrome(),
+                    f"--user-data-dir={self._profile_dir}",
+                    f"--remote-debugging-port={self._cdp_port}",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--start-maximized",
+                    # "Play X on YouTube" should start playing, with sound.
+                    "--autoplay-policy=no-user-gesture-required",
+                    "about:blank",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            deadline = time.monotonic() + 20
+            while True:
+                try:
+                    browser = chromium.connect_over_cdp(url, timeout=2000)
+                    break
+                except Exception as error:
+                    if time.monotonic() > deadline:
+                        raise BrowserError("Friday's Chrome window did not start.") from error
+                    time.sleep(0.3)
+        self._cdp_browser = browser
+        return browser.contexts[0] if browser.contexts else browser.new_context(no_viewport=True)
+
     def _page(self):
+        if self._cdp_browser is not None and not self._cdp_browser.is_connected():
+            # The owner closed Friday's Chrome window: open it again.
+            self._context = self._cdp_browser = None
+        if self._context is None and self._own_window:
+            from playwright.sync_api import sync_playwright
+
+            self._profile_dir.mkdir(parents=True, exist_ok=True)
+            self._playwright = self._playwright or sync_playwright().start()
+            self._context = self._attach()
         if self._context is None:
             from playwright.sync_api import sync_playwright
 
@@ -194,7 +288,10 @@ class OnScreenBrowser:
 
     def click(self, ref: int) -> dict:
         page = self._page()
-        self._element(page, ref).click(timeout=8_000)
+        element = self._element(page, ref)
+        if is_send_label(element.evaluate(LABEL_JS) or ""):
+            raise BrowserError(SENDING_NEEDS_OK)
+        element.click(timeout=8_000)
         page.wait_for_timeout(600)
         return self._describe(page)
 
@@ -213,6 +310,9 @@ class OnScreenBrowser:
 
     def press(self, key: str) -> dict:
         page = self._page()
+        combo = key.replace(" ", "").lower()
+        if combo in ("control+enter", "ctrl+enter", "meta+enter") and "mail.google." in page.url:
+            raise BrowserError(SENDING_NEEDS_OK)  # Gmail sends on Ctrl+Enter
         page.keyboard.press(key)
         page.wait_for_timeout(500)
         return self._describe(page)
@@ -313,8 +413,44 @@ class OnScreenBrowser:
         page.go_back(wait_until="domcontentloaded", timeout=15_000)
         return self._describe(page)
 
+    def google_account(self) -> dict:
+        """Whether the owner is signed in to Google in Friday's Chrome."""
+        self._page()
+        cookies = self._context.cookies(["https://accounts.google.com", "https://mail.google.com"])
+        return {"signed_in": any(c["name"] in GOOGLE_SESSION_COOKIES for c in cookies)}
+
+    def connect_google(self) -> dict:
+        """Shows Google's sign-in page; the owner signs in themselves."""
+        self._page()
+        page = self._context.new_page()
+        page.goto(GOOGLE_SIGN_IN, wait_until="domcontentloaded", timeout=30_000)
+        page.bring_to_front()
+        return {"url": page.url, "title": page.title()}
+
+    def send_open_email(self) -> dict:
+        """Clicks Send on the email draft open in Gmail (only after the owner's OK)."""
+        page = self._page()
+        if "mail.google." not in page.url:
+            raise BrowserError("No Gmail draft is open. Ask Navigator to prepare the email first.")
+        button = page.locator('div[role="button"][aria-label^="Send"] >> visible=true').first
+        if button.count() == 0:
+            raise BrowserError("No Send button is visible, so no draft is open.")
+        button.click(timeout=5_000)
+        try:
+            page.get_by_text(re.compile("message sent", re.IGNORECASE)).first.wait_for(
+                timeout=8_000
+            )
+            return {"sent": True}
+        except Exception:
+            return {"sent": False, "note": "Send was clicked, but Gmail did not confirm yet."}
+
     def close(self) -> None:
-        if self._context is not None:
+        if self._cdp_browser is not None:
+            # Leaves Friday's Chrome window open (and signed in) for next time.
+            self._cdp_browser.close()
+            self._playwright.stop()
+            self._cdp_browser = self._context = self._playwright = None
+        elif self._context is not None:
             self._context.close()
             self._playwright.stop()
             self._context = self._playwright = None

@@ -156,6 +156,17 @@ class FakeBrowser:
     def warm(self):
         pass
 
+    def google_account(self):
+        return {"signed_in": True}
+
+    def connect_google(self):
+        self.log.append(("connect_google",))
+        return {"url": "https://accounts.google.com/", "title": "Sign in"}
+
+    def send_open_email(self):
+        self.log.append(("send_email",))
+        return {"sent": True}
+
     def cdp_url(self):
         return "http://127.0.0.1:9333"
 

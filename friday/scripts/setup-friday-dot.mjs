@@ -49,8 +49,10 @@ const DOTS = [
 ];
 // Parked skills that older setups connected to Friday.
 const RETIRED = ['phone', 'calendar', 'telegram'];
-// Run without an approval card: one-step actions that send nothing and buy nothing.
+// Run without an approval card: one-step actions that send nothing and buy
+// nothing; except these, which always ask the owner first.
 const NO_APPROVAL = ['quick'];
+const ALWAYS_ASK = ['send_email'];
 
 async function api(path, method = 'GET', body) {
   const response = await fetch(`${APP_URL}/api${path}`, {
@@ -100,12 +102,15 @@ async function connect(dot, name, helper) {
         });
   if (connection.error) throw new Error(connection.error);
   if (helper)
-    for (const tool of connection.tools.filter((t) => t.requiresApproval))
-      connection = await api(
-        `/connections/${connection.id}/tools/${encodeURIComponent(tool.name)}`,
-        'PATCH',
-        { requiresApproval: false },
-      );
+    for (const tool of connection.tools) {
+      const ask = ALWAYS_ASK.includes(tool.name);
+      if (tool.requiresApproval !== ask)
+        connection = await api(
+          `/connections/${connection.id}/tools/${encodeURIComponent(tool.name)}`,
+          'PATCH',
+          { requiresApproval: ask },
+        );
+    }
   return connection;
 }
 

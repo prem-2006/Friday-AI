@@ -26,9 +26,10 @@ from friday_services.screen import POSITIONS, Position, ScreenError
 from friday_services.worker import Worker
 
 ACT = ToolAnnotations(read_only_hint=False, destructive_hint=False)
+SENDS = ToolAnnotations(read_only_hint=False, destructive_hint=True)
 LOOK = ToolAnnotations(read_only_hint=True)
 FAILURES = (BrowserError, DesktopError, ScreenError)
-IN_BROWSER = {"open_website", "play_youtube", "browser_search"}
+IN_BROWSER = {"open_website", "play_youtube", "browser_search", "send_email"}
 
 
 def _short(title: str, limit: int = 70) -> str:
@@ -159,6 +160,24 @@ def build_quick_server(
             else f"The results are on screen in {found['site']}."
         )
         return {"results": found["results"][:5], "friday_say": say}
+
+    @server.tool(
+        name="send_email",
+        description=(
+            "Send the email draft that is open in Gmail in the on-screen browser. First have "
+            "Navigator prepare the draft and read it back to the owner; the owner approves "
+            "every send."
+        ),
+        annotations=SENDS,
+    )
+    async def send_email() -> dict:
+        sent = await act("send_email", "Sending the email…", in_browser(browser.send_open_email))
+        say = (
+            "The email is sent."
+            if sent.get("sent")
+            else "I clicked Send; Gmail has not confirmed yet."
+        )
+        return {**sent, "friday_say": say}
 
     @server.tool(
         name="look_at_screen",

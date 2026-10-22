@@ -18,7 +18,7 @@ from pipecat.runner.utils import parse_telephony_websocket
 
 from friday_services.activity import ActivityFeed
 from friday_services.auth import BearerAuth
-from friday_services.browser import OnScreenBrowser
+from friday_services.browser import BrowserError, OnScreenBrowser
 from friday_services.browser_agent import BrowserAgent, agent_from_settings
 from friday_services.calendar.page import add_calendar_page
 from friday_services.calendar.store import CalendarStore
@@ -67,7 +67,9 @@ def create_app(
     calendar = CalendarStore(settings.data_dir / "calendar.json")
     feed = ActivityFeed()
     browser = browser or OnScreenBrowser(
-        settings.data_dir / "browser-profile", cdp_port=settings.browser_cdp_port
+        settings.data_dir / "browser-profile",
+        cdp_port=settings.browser_cdp_port,
+        chrome_path=settings.get("FRIDAY_CHROME_PATH") or None,
     )
     browser_agent = browser_agent or agent_from_settings(
         settings.browser_agent_dir, settings.data_dir
@@ -161,6 +163,36 @@ def create_app(
                 feed.unlisten(queue)
 
         return StreamingResponse(events(), media_type="text/event-stream")
+
+    # The main page: Friday's Google account and one-click shortcuts.
+    async def in_browser(fn, *args):
+        try:
+            return await browser_worker.run(fn, *args)
+        except BrowserError as error:
+            raise HTTPException(409, str(error)) from error
+        except Exception as error:
+            raise HTTPException(503, f"Friday's browser is not available: {error}") from error
+
+    @app.get("/account/google", dependencies=[Depends(owner)])
+    async def google_status() -> dict:
+        return await in_browser(browser.google_account)
+
+    @app.post("/account/google/connect", dependencies=[Depends(owner)])
+    async def google_connect() -> dict:
+        feed.emit(
+            "friday", "google_sign_in", "Showing Google sign-in. Type your password yourself."
+        )
+        return await in_browser(browser.connect_google)
+
+    @app.post("/browser/open", dependencies=[Depends(owner)])
+    async def browser_open(request: Request) -> dict:
+        body = await request.json()
+        url = str((body or {}).get("url") or "")
+        if not url.startswith(("https://", "http://")):
+            raise HTTPException(400, "Send a web address starting with https://.")
+        feed.emit("friday", "browser_open", f"Opening {url}.")
+        page = await in_browser(browser.open, url)
+        return {"url": page["url"], "title": page["title"]}
 
     live: dict[str, Any] = {"handler": None, "tasks": set()}
 

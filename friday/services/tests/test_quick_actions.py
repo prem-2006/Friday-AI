@@ -25,6 +25,7 @@ def test_quick_tools_and_which_only_look(server):
     assert set(tools) == {
         "open_app",
         "write_in_app",
+        "send_email",
         "open_website",
         "play_youtube",
         "web_search",
@@ -110,3 +111,25 @@ def test_write_in_app_types_into_the_app(server):
     assert written["friday_say"] == "Done, it is written in Notepad."
     assert server.launched == ["notepad"]  # it was not open yet
     assert server.typed == ["Milk", "{ENTER}", "Eggs"]
+
+
+def test_send_email_is_marked_as_one_that_sends(server):
+    tool = quick(server).tools()["send_email"]
+    assert tool["annotations"]["readOnlyHint"] is False
+    assert tool["annotations"]["destructiveHint"] is True
+    sent = quick(server).call("send_email", {})["data"]
+    assert sent["friday_say"] == "The email is sent."
+    assert ("send_email",) in server.browser.log
+
+
+def test_main_page_google_and_shortcut_routes(server):
+    assert httpx.get(f"{server.url}/account/google").status_code == 401
+    assert httpx.get(f"{server.url}/account/google", headers=AUTH).json() == {"signed_in": True}
+    connect = httpx.post(f"{server.url}/account/google/connect", headers=AUTH)
+    assert connect.status_code == 200 and ("connect_google",) in server.browser.log
+    opened = httpx.post(
+        f"{server.url}/browser/open", headers=AUTH, json={"url": "https://mail.google.com/"}
+    )
+    assert opened.json() == {"url": "https://example.test/", "title": "Example"}
+    bad = httpx.post(f"{server.url}/browser/open", headers=AUTH, json={"url": "file:///c:/"})
+    assert bad.status_code == 400

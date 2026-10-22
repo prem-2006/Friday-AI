@@ -69,10 +69,10 @@ class Settings:
 
     @property
     def calendar_url(self) -> str:
-        # The Dot computer runs in Docker, where the host is host.docker.internal.
-        return self.get(
-            "FRIDAY_CALENDAR_URL", f"http://host.docker.internal:{self.port}/calendar"
-        ).rstrip("/")
+        # Navigator's browser runs on the owner's screen, so localhost works.
+        return self.get("FRIDAY_CALENDAR_URL", f"http://127.0.0.1:{self.port}/calendar").rstrip(
+            "/"
+        )
 
     @property
     def evon_disable_thinking(self) -> bool:

@@ -79,4 +79,4 @@ def test_calendar_tools(server):
         ("From the browser", "browser"),
         ("From a tool", "tool"),
     ]
-    assert listed["page_url"] == "http://host.docker.internal:8765/calendar"
+    assert listed["page_url"] == "http://127.0.0.1:8765/calendar"

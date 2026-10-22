@@ -1,0 +1,54 @@
+// Friday: brings friday-services' live activity (what Navigator and Operator
+// are doing, with screenshots) to the voice screen, and relays the owner's
+// stop button. The services token never reaches the browser.
+import { Hono } from 'hono';
+
+export function fridayActivityRoutes({
+  servicesUrl,
+  token,
+  fetch = globalThis.fetch,
+}: {
+  servicesUrl: string;
+  token?: string;
+  fetch?: typeof globalThis.fetch;
+}) {
+  const app = new Hono();
+  const base = servicesUrl.replace(/\/+$/, '');
+  const headers = { Authorization: `Bearer ${token ?? ''}` };
+  const unavailable = () =>
+    Response.json(
+      {
+        error:
+          'Friday services are not reachable. Start friday/services and set FRIDAY_SERVICES_TOKEN.',
+      },
+      { status: 503 },
+    );
+  const relay = async (path: string, method = 'GET', signal?: AbortSignal) => {
+    if (!token) return unavailable();
+    try {
+      const response = await fetch(`${base}${path}`, {
+        method,
+        headers,
+        signal,
+      });
+      return new Response(response.body, {
+        status: response.status,
+        headers: {
+          'Content-Type':
+            response.headers.get('content-type') ?? 'application/json',
+          'Cache-Control': 'no-store',
+        },
+      });
+    } catch {
+      return unavailable();
+    }
+  };
+
+  app.get('/friday/activity', () => relay('/activity'));
+  app.get('/friday/activity/stream', (c) =>
+    relay('/activity/stream', 'GET', c.req.raw.signal),
+  );
+  app.post('/friday/activity/stop', () => relay('/activity/stop', 'POST'));
+  app.post('/friday/activity/resume', () => relay('/activity/resume', 'POST'));
+  return app;
+}

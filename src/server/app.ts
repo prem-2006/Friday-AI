@@ -11,6 +11,7 @@ import type { Platform } from './platform.js';
 import { VoiceService } from './voice.js';
 import { workspaceRoutes } from './workspace-routes.js';
 import { fridayVoiceRoutes } from '../friday/server/voice-routes.js';
+import { fridayActivityRoutes } from '../friday/server/activity-routes.js';
 const interval = z.number().int().min(60).max(31_536_000).nullable();
 export interface AppOptions {
   store: Store;
@@ -93,6 +94,16 @@ export function createApp({
   });
   // FRIDAY: Gnani speech for talking to Friday (Prisma in, Timbre out).
   app.route('/api', fridayVoiceRoutes({ apiKey: process.env.GNANI_API_KEY }));
+  // FRIDAY: live helper activity and the stop button, from friday/services.
+  app.route(
+    '/api',
+    fridayActivityRoutes({
+      servicesUrl:
+        process.env.FRIDAY_SERVICES_URL ??
+        `http://127.0.0.1:${process.env.FRIDAY_SERVICES_PORT || 8765}`,
+      token: process.env.FRIDAY_SERVICES_TOKEN,
+    }),
+  );
   if (platform) app.route('/api', computerRoutes(platform.computers));
   if (platform)
     app.route(

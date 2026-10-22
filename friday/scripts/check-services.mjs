@@ -14,7 +14,9 @@ const BASE = (
   `http://127.0.0.1:${process.env.FRIDAY_SERVICES_PORT || 8765}`
 ).replace(/\/+$/, '');
 const TOKEN = process.env.FRIDAY_SERVICES_TOKEN ?? '';
-const ENDPOINTS = (process.env.FRIDAY_MCP_ENDPOINTS ?? 'phone,calendar')
+const ENDPOINTS = (
+  process.env.FRIDAY_MCP_ENDPOINTS ?? 'whatsapp,browser,desktop'
+)
   .split(',')
   .map((name) => name.trim())
   .filter(Boolean);

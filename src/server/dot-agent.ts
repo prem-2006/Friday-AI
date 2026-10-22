@@ -31,6 +31,7 @@ import { browserResponse } from './research.js';
 import { answerObserver, type SetupTelemetry } from './setup-telemetry.js';
 import { fridayLocalTime } from '../friday/server/time.js';
 import { fridayToolRounds } from '../friday/server/agent-limits.js';
+import { delegateTool, type Delegate } from '../friday/server/delegate.js';
 const channelError = () => ({
   type: EventType.RUN_ERROR,
   message:
@@ -46,6 +47,8 @@ export class DotAgent extends AbstractAgent {
     private dotId: string,
     private channel = false,
     private setupTelemetry?: SetupTelemetry,
+    // FRIDAY: lets the Friday Dot hand tasks to helper Dots.
+    private delegate?: Delegate,
   ) {
     super({ agentId: dotId });
   }
@@ -57,6 +60,7 @@ export class DotAgent extends AbstractAgent {
       this.dotId,
       this.channel,
       this.setupTelemetry,
+      this.delegate,
     );
   }
   abortRun() {
@@ -357,6 +361,14 @@ export class DotAgent extends AbstractAgent {
           check();
           const serverTools = [
             ...tools,
+            // FRIDAY: delegate_to_dot, for the Friday Dot only.
+            ...delegateTool(
+              dot,
+              this.workspace.dots(),
+              this.channel ? undefined : this.delegate,
+              check,
+              controller.signal,
+            ),
             ...appTools,
             ...pageTools(pages),
             ...(computer.configured

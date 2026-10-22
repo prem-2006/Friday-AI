@@ -22,6 +22,10 @@ import {
 import { validateRuntimeScope } from './runtime-scope.js';
 import { learningSelector } from './learning.js';
 import { SetupTelemetry } from './setup-telemetry.js';
+import {
+  HELPER_THREAD_TITLE,
+  type Delegate,
+} from '../friday/server/delegate.js';
 export class Platform {
   private channelStartupFailed = false;
   readonly setupTelemetry: SetupTelemetry;
@@ -88,19 +92,18 @@ export class Platform {
       }),
       agents: async () =>
         Object.fromEntries(
-          workspace
-            .dots()
-            .map((dot) => [
+          workspace.dots().map((dot) => [
+            dot.id,
+            new DotAgent(
+              store,
+              workspace,
+              config,
               dot.id,
-              new DotAgent(
-                store,
-                workspace,
-                config,
-                dot.id,
-                false,
-                this.setupTelemetry,
-              ),
-            ]),
+              false,
+              this.setupTelemetry,
+              this.delegate, // FRIDAY: helper Dots
+            ),
+          ]),
         ),
       channels,
       generateThreadNames: true,
@@ -209,6 +212,17 @@ export class Platform {
     }
     return this.handler.fetch(request);
   }
+  // FRIDAY: a helper Dot works in its own "Tasks from Friday" conversation.
+  readonly delegate: Delegate = async (helper, task, signal) => {
+    const thread =
+      this.workspace
+        .conversations()
+        .find(
+          (item) =>
+            item.dotId === helper.id && item.title === HELPER_THREAD_TITLE,
+        ) ?? (await this.createConversation(helper.id, HELPER_THREAD_TITLE));
+    return this.turn(thread.id, task, signal);
+  };
   async turn(
     threadId: string,
     prompt: string,

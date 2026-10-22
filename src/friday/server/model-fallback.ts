@@ -3,12 +3,14 @@
 // Free model keys run out quickly (Gemini answers 429 after a few requests a
 // minute). When FRIDAY_FALLBACK_* is set, a 429 or 503 from the main endpoint
 // is answered by sending the same request to the backup instead, at once,
-// rather than retrying and making the owner wait.
+// rather than retrying and making the owner wait. For a minute after that,
+// requests go straight to the backup, skipping a refusal round trip each time.
 import { voiceLog } from './voice-log.js';
 
 type Fetch = typeof fetch;
 
 const trim = (url: string) => url.replace(/\/+$/, '');
+const COOL_DOWN_MS = 60_000;
 
 export function fallbackFromEnv(env: Record<string, string | undefined>) {
   const baseUrl = env.FRIDAY_FALLBACK_BASE_URL?.trim();
@@ -23,12 +25,17 @@ export function fridayFallbackFetch(
   primaryBaseUrl: string | undefined,
   env: Record<string, string | undefined> = process.env,
   baseFetch: Fetch = fetch,
+  now: () => number = Date.now,
 ): Fetch | undefined {
   const backup = fallbackFromEnv(env);
   if (!backup || !primaryBaseUrl) return undefined;
   const primary = trim(primaryBaseUrl);
+  let limitedUntil = 0;
   return async (input, init) => {
-    const response = await baseFetch(input, init);
+    const skip = now() < limitedUntil;
+    const response = skip
+      ? new Response(null, { status: 429 })
+      : await baseFetch(input, init);
     const url =
       typeof input === 'string'
         ? input
@@ -52,10 +59,13 @@ export function fridayFallbackFetch(
     body.model = backup.model;
     const headers = new Headers(init.headers);
     headers.set('authorization', `Bearer ${backup.apiKey}`);
-    voiceLog('model_fallback', {
-      status: response.status,
-      model: backup.model,
-    });
+    if (!skip) {
+      limitedUntil = now() + COOL_DOWN_MS;
+      voiceLog('model_fallback', {
+        status: response.status,
+        model: backup.model,
+      });
+    }
     void response.body?.cancel().catch(() => {});
     return baseFetch(backup.baseUrl + url.slice(primary.length), {
       ...init,

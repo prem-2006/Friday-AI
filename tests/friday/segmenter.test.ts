@@ -177,3 +177,25 @@ it('push-to-talk records only while held, whatever the level', () => {
   segmenter.release();
   expect(segments).toHaveLength(1);
 });
+
+it('drops a turn that began on Friday’s voice, so the next one starts clean', () => {
+  const segments: Float32Array[] = [];
+  const segmenter = new SpeechSegmenter(RATE, {
+    onStart: () => {},
+    onSegment: (s) => segments.push(s),
+  });
+  feed(segmenter, [
+    [false, 300],
+    [true, 500], // Friday's voice through the speakers
+  ]);
+  expect(segmenter.speaking).toBe(true);
+  segmenter.drop(); // Friday stopped talking
+  expect(segmenter.speaking).toBe(false);
+  feed(segmenter, [
+    [true, 600], // the owner
+    [false, 1000],
+  ]);
+  expect(segments).toHaveLength(1);
+  const ms = (segments[0].length / RATE) * 1000;
+  expect(ms).toBeLessThan(1500); // only the owner's words, not Friday's
+});

@@ -42,6 +42,16 @@ export class HandsFree {
     if (this.segmenter) this.segmenter.auto = on;
   }
 
+  /** Whether a turn is being recorded right now. */
+  get hearing() {
+    return this.segmenter?.speaking ?? false;
+  }
+
+  /** Throw away the turn being heard (see SpeechSegmenter.drop). */
+  dropTurn() {
+    this.segmenter?.drop();
+  }
+
   hold() {
     this.segmenter?.hold();
   }

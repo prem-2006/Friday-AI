@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { intentOf } from '../../src/friday/client/stage/intent.js';
+import { intentOf, isEcho } from '../../src/friday/client/stage/intent.js';
 import {
   narrate,
   type ActivityEvent,
@@ -99,4 +99,13 @@ it('turns rate-limit errors into plain words', async () => {
     expect(friendlyError(new Error(raw), 'x')).toBe(
       'Friday is getting a lot of requests right now. Give it a few seconds and try again.',
     );
+});
+
+it('tells Friday’s own echo from the owner talking over it', () => {
+  const said = 'Yes, I am listening. What is on your mind?';
+  expect(isEcho('yes I am listening', said)).toBe(true);
+  expect(isEcho('what is on your mind', said)).toBe(true);
+  expect(isEcho('can you open calculator', said)).toBe(false);
+  expect(isEcho('open youtube', said)).toBe(false);
+  expect(isEcho('', said)).toBe(true);
 });

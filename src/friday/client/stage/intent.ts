@@ -80,3 +80,24 @@ export function intentOf(text: string): Intent {
   if (matches(text, YES)) return 'yes';
   return 'request';
 }
+
+const words = (text: string) =>
+  text
+    .toLowerCase()
+    .normalize('NFKC')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+
+/**
+ * Whether something heard while Friday was talking is just Friday's own voice
+ * coming back through the mic: most of its words are words Friday just said.
+ * Anything else is the owner talking over Friday, which interrupts it.
+ */
+export function isEcho(heard: string, spoken: string) {
+  const said = new Set(words(spoken));
+  const got = words(heard);
+  if (!got.length) return true;
+  if (!said.size) return false;
+  const repeated = got.filter((word) => said.has(word)).length;
+  return repeated / got.length >= 0.6;
+}

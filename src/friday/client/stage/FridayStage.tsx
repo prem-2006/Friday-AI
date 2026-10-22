@@ -28,7 +28,7 @@ import {
 } from './conversation';
 import { HandsFree } from './handsFree';
 import { friendlyError } from './errors';
-import { intentOf } from './intent';
+import { intentOf, isEcho } from './intent';
 import { ACTOR_NAMES, narrate, type ActivityEvent } from './narration';
 import { Orb, type OrbMode } from './Orb';
 import './stage.css';
@@ -379,6 +379,14 @@ function StageSession({
   const controlRef = useRef<(action: string) => void>(() => {});
 
   const handsFree = useRef<HandsFree | null>(null);
+  // Live copies of state that async voice handlers read after a re-render.
+  const runningRef = useRef(false);
+  const replying = useRef(false); // speaking the answer to the last request
+  const turnDone = useRef<Promise<void>>(Promise.resolve());
+  // Whether the turn being heard began while Friday was talking.
+  const overFriday = useRef(false);
+  // What Friday said lately, to tell its echo from the owner talking over it.
+  const spokenLately = useRef<{ text: string; at: number }[]>([]);
   // Hands-free: the mic is open and turns start by voice. For push-to-talk
   // alone the mic may stay open, but nothing is heard until Caps Lock is held.
   const handsFreeOn = () =>
@@ -503,6 +511,11 @@ function StageSession({
     const token = speechToken.current;
     speakingMain.current = main;
     if (main) setPhase('speaking');
+    const now = Date.now();
+    spokenLately.current = [
+      ...spokenLately.current.filter((item) => now - item.at < 30_000),
+      { text, at: now },
+    ];
     const parts = speechParts(text);
     const clips = parts.map(() => null as Promise<Blob> | null);
     const clip = (index: number) =>
@@ -523,6 +536,12 @@ function StageSession({
     } finally {
       if (token === speechToken.current) {
         audio.current = null;
+        // A turn that started on Friday's own voice would swallow whatever the
+        // owner says next; start that turn afresh instead.
+        if (overFriday.current && handsFree.current?.hearing) {
+          handsFree.current.dropTurn();
+          overFriday.current = false;
+        }
         if (main) {
           speakingMain.current = false;
           setPhase(handsFreeOn() ? 'listening' : 'off');
@@ -558,6 +577,9 @@ function StageSession({
   // One run of Friday on the server; afterwards either speak the reply or
   // wait for the owner's OK on a WhatsApp send or call.
   const runTurn = async (history: Message[]) => {
+    let finished = () => {};
+    turnDone.current = new Promise((resolve) => (finished = resolve));
+    runningRef.current = true;
     setRunning(true);
     setPhase('thinking');
     setError('');
@@ -575,14 +597,18 @@ function StageSession({
       if (reply) {
         caption('friday', reply);
         setSubtitle(reply);
+        replying.current = true;
         await speak(reply, true, performance.now());
       } else logTiming();
     } catch (e) {
       if (!controller.signal.aborted)
         setError(friendlyError(e, 'That did not work. Try again.'));
     } finally {
+      replying.current = false;
       turn.current = null;
+      runningRef.current = false;
       setRunning(false);
+      finished();
       if (stopping.current) {
         stopping.current = false;
         await setStopped(false);
@@ -625,7 +651,7 @@ function StageSession({
   };
 
   const send = async (text: string) => {
-    if (!text.trim() || running || !loaded) return;
+    if (!text.trim() || runningRef.current || !loaded) return;
     if (paused) {
       setError('Friday is paused. Tap Resume to continue.');
       return;
@@ -666,9 +692,10 @@ function StageSession({
   const heard = async (
     wav: Uint8Array,
     endedAt: number,
-    overFriday: boolean,
+    startedOverFriday: boolean,
   ) => {
-    if (!overFriday) setPhase('transcribing');
+    overFriday.current = false; // that turn is over
+    if (!startedOverFriday) setPhase('transcribing');
     timing.current = { endedAt };
     let text = '';
     try {
@@ -682,21 +709,31 @@ function StageSession({
       setError(friendlyError(e, 'Could not hear that.'));
     }
     if (!text) {
-      if (!overFriday)
+      if (!startedOverFriday)
         setPhase(running ? 'thinking' : handsFreeOn() ? 'listening' : 'off');
       return;
     }
     const intent = intentOf(text);
     if (intent === 'stop') return stopEverything();
-    // Speech that began while Friday was talking is most likely Friday's own
-    // voice coming back through the mic; only stop / yes / no count then.
-    if (overFriday && intent === 'request') return;
+    // Speech that began while Friday was talking: ignore it if it is Friday's
+    // own voice coming back through the mic, otherwise the owner is talking
+    // over Friday, which interrupts it.
+    if (startedOverFriday && intent === 'request') {
+      const lately = spokenLately.current.map((item) => item.text).join(' ');
+      if (isEcho(text, lately)) return;
+      stopSpeaking();
+    }
+    if (runningRef.current && replying.current) {
+      // Friday was only reading out its last answer: that turn is over.
+      stopSpeaking();
+      await turnDone.current;
+    }
     if (pendingApproval) {
       caption('you', text);
       if (intent === 'yes' || intent === 'no') return decide(intent === 'yes');
       return speak('Please say yes or no first.', true);
     }
-    if (running) {
+    if (runningRef.current) {
       caption('you', text);
       return speak('I am still on the last task. Say stop to cancel it.', true);
     }
@@ -714,14 +751,13 @@ function StageSession({
       return current;
     }
     if (starting.current) return null;
-    let overFriday = false;
     const next = new HandsFree({
       onSpeechStart: () => {
-        overFriday = !!audio.current;
+        overFriday.current = !!audio.current;
         setPhase((phase) => (phase === 'listening' ? 'hearing' : phase));
       },
       onUtterance: (wav, endedAt) =>
-        void heardRef.current(wav, endedAt, overFriday),
+        void heardRef.current(wav, endedAt, overFriday.current),
       onError: setError,
       isFridaySpeaking: () => !!audio.current,
       auto,

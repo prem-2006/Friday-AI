@@ -12,7 +12,7 @@ export interface SegmenterEvents {
 export const SEGMENTER = {
   preRollMs: 450, // audio kept from just before speech is detected
   startMs: 100, // this much speech starts a turn
-  endMs: 700, // this much silence ends it
+  endMs: 550, // this much silence ends it
   keepSilenceMs: 250, // trailing silence kept at the end
   maxMs: 20_000, // Prisma clips stay short
   minSpeechMs: 300, // ignore coughs and clicks
@@ -156,6 +156,19 @@ export class SpeechSegmenter {
     if (!this.held) return;
     this.held = false;
     if (this.segment) this.finish(SEGMENTER.minHeldSpeechMs);
+  }
+
+  /**
+   * Throw away the turn being heard and listen afresh, e.g. one that began on
+   * Friday's own voice, so what the owner says next starts a clean turn.
+   * A push-to-talk turn is never dropped.
+   */
+  drop() {
+    if (this.held || !this.segment) return;
+    this.segment = null;
+    this.trailing = [];
+    this.loudMs = 0;
+    this.speechMs = 0;
   }
 
   /** Drop any half-heard turn, e.g. when listening is switched off. */

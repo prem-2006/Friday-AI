@@ -70,3 +70,20 @@ it('is off unless all three backup settings are present', () => {
   ).toBeUndefined();
   expect(fridayFallbackFetch(PRIMARY, {})).toBeUndefined();
 });
+
+it('skips the main model for a minute after it was rate limited', async () => {
+  let clock = 0;
+  const { calls, fake } = recorder([429, 200, 200, 200, 200]);
+  const wrapped = fridayFallbackFetch(PRIMARY, ENV, fake, () => clock)!;
+  await wrapped(`${PRIMARY}chat/completions`, request); // main 429, backup
+  clock = 30_000;
+  await wrapped(`${PRIMARY}chat/completions`, request); // backup only
+  expect(calls.map((call) => new URL(call.url).host)).toEqual([
+    'main.test',
+    'backup.test',
+    'backup.test',
+  ]);
+  clock = 61_000;
+  await wrapped(`${PRIMARY}chat/completions`, request); // main again
+  expect(new URL(calls.at(-1)!.url).host).toBe('main.test');
+});

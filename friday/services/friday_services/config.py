@@ -19,7 +19,6 @@ CALL_SETTINGS = (
     "TWILIO_FROM_NUMBER",
     "PUBLIC_URL",
 )
-TELEGRAM_SETTINGS = ("TELEGRAM_BOT_TOKEN",)
 
 
 @dataclass(frozen=True)

@@ -20,7 +20,7 @@ from friday_services.calls.twilio import (
     stream_twiml,
     valid_signature,
 )
-from friday_services.config import CALL_SETTINGS, REPO_ROOT, TELEGRAM_SETTINGS, Settings
+from friday_services.config import CALL_SETTINGS, REPO_ROOT, Settings
 from friday_services.mcp_phone import Dialer, build_phone_server
 
 CallRunner = Callable[..., Awaitable[None]]
@@ -80,11 +80,9 @@ def create_app(
     @app.get("/health")
     async def health() -> dict[str, Any]:
         calls_missing = settings.missing(CALL_SETTINGS)
-        telegram_missing = settings.missing(TELEGRAM_SETTINGS)
         return {
             "ok": True,
             "calls": {"ready": not calls_missing, "missing": calls_missing},
-            "telegram": {"ready": not telegram_missing, "missing": telegram_missing},
         }
 
     @app.post("/twilio/voice/{call_id}")

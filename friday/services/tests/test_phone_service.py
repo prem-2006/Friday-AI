@@ -30,7 +30,6 @@ def twilio_post(server, path: str, params: dict, *, sign: bool = True) -> httpx.
 def test_health_reports_what_is_configured(server):
     body = httpx.get(f"{server.url}/health").json()
     assert body["calls"] == {"ready": True, "missing": []}
-    assert body["telegram"]["missing"] == ["TELEGRAM_BOT_TOKEN"]
 
 
 def test_mcp_requires_the_bearer_token(server):

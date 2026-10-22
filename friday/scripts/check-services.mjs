@@ -15,7 +15,7 @@ const BASE = (
 ).replace(/\/+$/, '');
 const TOKEN = process.env.FRIDAY_SERVICES_TOKEN ?? '';
 const ENDPOINTS = (
-  process.env.FRIDAY_MCP_ENDPOINTS ?? 'phone,telegram,calendar'
+  process.env.FRIDAY_MCP_ENDPOINTS ?? 'phone,calendar'
 )
   .split(',')
   .map((name) => name.trim())

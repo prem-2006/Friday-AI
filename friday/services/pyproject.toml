@@ -1,7 +1,7 @@
 [project]
 name = "friday-services"
 version = "0.1.0"
-description = "Friday's side services: phone calls (Pipecat + Gnani + Twilio), Telegram, and the demo calendar page, exposed to OpenDots over MCP."
+description = "Friday's side services: phone calls (Pipecat + Gnani + Twilio) and the demo calendar page, exposed to OpenDots over MCP."
 requires-python = ">=3.12,<3.13"
 license = "MIT"
 dependencies = [

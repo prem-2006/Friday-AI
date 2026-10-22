@@ -90,7 +90,7 @@ if (!process.env.FRIDAY_SERVICES_TOKEN)
   );
 else {
   const current = await api(`/dots/${dot.id}/connections`);
-  for (const name of ['phone', 'telegram', 'calendar']) {
+  for (const name of ['phone', 'calendar']) {
     const url = `${SERVICES_URL}/${name}/mcp`;
     const found = current.find((connection) => connection.name === name);
     try {

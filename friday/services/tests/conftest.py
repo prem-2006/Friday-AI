@@ -1,4 +1,4 @@
-"""Shared fixtures. Nothing here reaches Twilio, Gnani, Evon or Telegram."""
+"""Shared fixtures. Nothing here reaches Twilio, Gnani or Evon."""
 
 from __future__ import annotations
 

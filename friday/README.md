@@ -43,14 +43,14 @@ Use Node.js 24, npm and [uv](https://docs.astral.sh/uv/) (`python -m pip install
 
 ```sh
 npm ci
-cd friday/services && python -m uv sync && cd ../..
+cd friday/services; python -m uv sync; cd ../..
 ```
 
 Two terminals:
 
 ```sh
 npm run dev                                                        # the app
-cd friday/services && python -m uv run python -m friday_services   # browser, apps, WhatsApp, live activity
+cd friday/services; python -m uv run python -m friday_services   # browser, apps, WhatsApp, live activity
 ```
 
 Then, once:
@@ -107,8 +107,8 @@ Try saying:
 ## Tests
 
 ```sh
-npm run typecheck && npx vitest run tests/friday
-cd friday/services && python -m uv run pytest && python -m uv run ruff check .
+npm run typecheck; npx vitest run tests/friday
+cd friday/services; python -m uv run pytest; python -m uv run ruff check .
 ```
 
 ## Known limits

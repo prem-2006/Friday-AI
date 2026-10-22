@@ -68,6 +68,13 @@ class Settings:
         return self.get("PUBLIC_URL").rstrip("/")
 
     @property
+    def calendar_url(self) -> str:
+        # The Dot computer runs in Docker, where the host is host.docker.internal.
+        return self.get(
+            "FRIDAY_CALENDAR_URL", f"http://host.docker.internal:{self.port}/calendar"
+        ).rstrip("/")
+
+    @property
     def evon_disable_thinking(self) -> bool:
         # Evon reasons before answering by default, which is too slow on a phone
         # line. Set EVON_DISABLE_THINKING=false if the endpoint rejects

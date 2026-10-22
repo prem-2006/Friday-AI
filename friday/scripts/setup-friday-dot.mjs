@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Friday: creates the "Friday" Dot, or updates it if it already exists, with
-// the persona in friday/persona.md. Research and memory are switched on.
+// the persona in friday/persona.md. Research and memory are switched on, the
+// Dot computer's browser is allowed when computers are configured, and
+// friday/services is connected over MCP.
 //
 // Start the app first (npm run dev), then from the repo root:
 //   node --env-file-if-exists=.env friday/scripts/setup-friday-dot.mjs
@@ -12,9 +14,16 @@ const APP_URL = (process.env.FRIDAY_APP_URL ?? 'http://127.0.0.1:4310').replace(
   /\/+$/,
   '',
 );
+const SERVICES_PORT = process.env.FRIDAY_SERVICES_PORT || 8765;
+// The Dot computer runs in Docker, where the host is host.docker.internal.
+const CALENDAR_URL =
+  process.env.FRIDAY_CALENDAR_URL ||
+  `http://host.docker.internal:${SERVICES_PORT}/calendar`;
 const persona = (
   await readFile(new URL('../persona.md', import.meta.url), 'utf8')
-).trim();
+)
+  .trim()
+  .replaceAll('{{CALENDAR_URL}}', CALENDAR_URL);
 if (persona.length > 2000) {
   console.error(
     `friday/persona.md is ${persona.length} characters; OpenDots allows 2000.`,
@@ -80,9 +89,25 @@ console.log(
 // connections are refreshed so your per-tool choices stay; pass --reconnect
 // after changing FRIDAY_SERVICES_TOKEN or the port.
 const SERVICES_URL = (
-  process.env.FRIDAY_SERVICES_URL ??
-  `http://127.0.0.1:${process.env.FRIDAY_SERVICES_PORT || 8765}`
+  process.env.FRIDAY_SERVICES_URL ?? `http://127.0.0.1:${SERVICES_PORT}`
 ).replace(/\/+$/, '');
+
+// Browser only: Friday needs no file or shell access on its computer.
+const computer = await api(`/dots/${dot.id}/computer`);
+if (computer.configured) {
+  await api(`/dots/${dot.id}/computer/permissions`, 'PATCH', {
+    enabled: true,
+    browser: true,
+    files: false,
+    shell: false,
+  });
+  console.log(
+    `Allowed Friday's computer browser (files and shell stay off). Start it from Friday's Computer panel; it fills in ${CALENDAR_URL}.`,
+  );
+} else
+  console.log(
+    'Dot computers are not configured (docs/COMPUTERS.md), so Friday adds calendar entries with the add_event tool instead of the browser.',
+  );
 const reconnect = process.argv.includes('--reconnect');
 if (!process.env.FRIDAY_SERVICES_TOKEN)
   console.log(

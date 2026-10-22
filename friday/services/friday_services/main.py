@@ -12,6 +12,8 @@ from fastapi import FastAPI, HTTPException, Request, Response, WebSocket
 from pipecat.runner.utils import parse_telephony_websocket
 
 from friday_services.auth import BearerAuth
+from friday_services.calendar.page import add_calendar_page
+from friday_services.calendar.store import CalendarStore
 from friday_services.calls.bot import run_call
 from friday_services.calls.store import CallStore
 from friday_services.calls.twilio import (
@@ -21,6 +23,7 @@ from friday_services.calls.twilio import (
     valid_signature,
 )
 from friday_services.config import CALL_SETTINGS, REPO_ROOT, Settings
+from friday_services.mcp_calendar import build_calendar_server
 from friday_services.mcp_phone import Dialer, build_phone_server
 
 CallRunner = Callable[..., Awaitable[None]]
@@ -39,14 +42,19 @@ def create_app(
             "OpenDots sends it as the bearer token for Friday's MCP connections."
         )
     store = CallStore(settings.data_dir)
-    phone = build_phone_server(store, dialer or TwilioDialer(settings), settings)
+    calendar = CalendarStore(settings.data_dir / "calendar.json")
+    servers = {
+        "/phone": build_phone_server(store, dialer or TwilioDialer(settings), settings),
+        "/calendar": build_calendar_server(calendar, settings.calendar_url),
+    }
     mcp_apps = {
-        "/phone": (
-            phone,
-            phone.streamable_http_app(
+        path: (
+            server,
+            server.streamable_http_app(
                 streamable_http_path="/mcp", stateless_http=True, json_response=True
             ),
         )
+        for path, server in servers.items()
     }
 
     @asynccontextmanager
@@ -59,8 +67,10 @@ def create_app(
     app = FastAPI(title="Friday services", lifespan=lifespan)
     app.state.settings = settings
     app.state.calls = store
-    for path, (_server, asgi) in mcp_apps.items():
-        app.mount(path, BearerAuth(asgi, settings.services_token))
+    app.state.calendar = calendar
+    # Before the MCP mounts, so /calendar stays the web page and only
+    # /calendar/mcp goes to the tools.
+    add_calendar_page(app, calendar)
 
     async def twilio_params(request: Request) -> dict[str, str]:
         """Read a Twilio webhook and reject it unless Twilio signed it."""
@@ -83,6 +93,7 @@ def create_app(
         return {
             "ok": True,
             "calls": {"ready": not calls_missing, "missing": calls_missing},
+            "calendar": {"ready": True, "missing": [], "browser_url": settings.calendar_url},
         }
 
     @app.post("/twilio/voice/{call_id}")
@@ -142,6 +153,8 @@ def create_app(
             settings=settings,
         )
 
+    for path, (_server, asgi) in mcp_apps.items():
+        app.mount(path, BearerAuth(asgi, settings.services_token))
     return app
 
 

@@ -482,43 +482,6 @@
     opacity: 0;
   }
 }
-.stage-input {
-  display: flex;
-  gap: 8px;
-  padding: 6px 6px 6px 18px;
-  border-radius: 999px;
-  background: rgba(12, 16, 44, 0.78);
-  border: 1px solid rgba(120, 135, 255, 0.25);
-  backdrop-filter: blur(10px);
-}
-.stage-input input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: #e8ebff;
-  font-size: 14px;
-}
-.stage-input input::placeholder {
-  color: #7a83bb;
-}
-.stage-input button {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  border: 0;
-  border-radius: 50%;
-  color: #fff;
-  background: linear-gradient(135deg, #4f6bff, #8b5cf6);
-  cursor: pointer;
-}
-.stage-input button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
 @media (max-width: 720px) {
   .stage-header {
     padding: 16px;
@@ -581,16 +544,6 @@
 .friday-stage .stage-icon.stop {
   color: #ff6b8b !important;
   border-color: rgba(255, 107, 139, 0.45) !important;
-}
-.friday-stage .stage-input input {
-  background: transparent !important;
-  color: #e8ebff !important;
-  border: 0 !important;
-}
-.friday-stage .stage-input button {
-  background: linear-gradient(135deg, #4f6bff, #8b5cf6) !important;
-  color: #fff !important;
-  border: 0 !important;
 }
 .friday-stage .stage-resume {
   margin-top: 18px;

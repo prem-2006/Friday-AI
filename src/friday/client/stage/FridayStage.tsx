@@ -11,7 +11,6 @@ import {
   MessageSquare,
   OctagonX,
   RotateCcw,
-  Send,
 } from 'lucide-react';
 import type { Dot, WorkspaceState } from '../../../shared/types';
 import { FRIDAY_DEFAULT_LANGUAGE, FRIDAY_LANGUAGES } from '../../shared/voices';
@@ -356,7 +355,6 @@ function StageSession({
   const [captions, setCaptions] = useState<Caption[]>([]);
   const [subtitle, setSubtitle] = useState('');
   const [error, setError] = useState('');
-  const [draft, setDraft] = useState('');
   const [events, setEvents] = useState<ActivityEvent[]>([]);
 
   const handsFree = useRef<HandsFree | null>(null);
@@ -677,6 +675,7 @@ function StageSession({
     if (starting.current) return; // a second tap while the mic is opening
     setError('');
     if (handsFree.current?.active) {
+      stopSpeaking();
       handsFree.current.stop();
       handsFree.current = null;
       setPhase(running ? 'thinking' : 'off');
@@ -762,7 +761,7 @@ function StageSession({
             : phase === 'transcribing'
               ? 'Got it…'
               : listening
-                ? 'I’m listening…'
+                ? 'Listening…'
                 : 'Tap the orb to talk';
   const line =
     error ||
@@ -771,7 +770,9 @@ function StageSession({
       : pendingApproval
         ? 'Say yes or no, or use the buttons.'
         : subtitle ||
-          (listening ? 'Go ahead, I’m here.' : 'Or type a task below.'));
+          (listening
+            ? 'Go ahead. Tap the orb again to stop.'
+            : 'Friday listens until you tap it again.'));
   const status =
     voiceReady === false
       ? { tone: 'warn' as const, label: 'Voice needs GNANI_API_KEY' }
@@ -892,34 +893,6 @@ function StageSession({
             </p>
           ))}
         </div>
-        <form
-          className="stage-input"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const text = draft;
-            setDraft('');
-            void send(text);
-          }}
-        >
-          <input
-            aria-label="Type a task for Friday"
-            placeholder={
-              loaded
-                ? 'Type a task, e.g. “Open Notepad and write a shopping list”'
-                : 'Connecting…'
-            }
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            disabled={!loaded || running}
-          />
-          <button
-            type="submit"
-            aria-label="Send"
-            disabled={!draft.trim() || !loaded || running}
-          >
-            <Send size={16} />
-          </button>
-        </form>
       </footer>
     </div>
   );

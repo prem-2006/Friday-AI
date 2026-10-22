@@ -31,6 +31,7 @@ import { browserResponse } from './research.js';
 import { answerObserver, type SetupTelemetry } from './setup-telemetry.js';
 import { fridayLocalTime } from '../friday/server/time.js';
 import { fridayLoopStrategy } from '../friday/server/quick-finish.js';
+import { fridayFallbackFetch } from '../friday/server/model-fallback.js';
 import {
   fridayToolRounds,
   fridayToolTimeoutMs,
@@ -352,6 +353,8 @@ export class DotAgent extends AbstractAgent {
           baseURL: this.config.baseUrl ?? 'https://api.openai.com/v1',
           api: 'chat-completions',
           maxRetries: fridayModelRetries(), // FRIDAY: ride out rate limits
+          // FRIDAY: a rate-limited request goes to the backup model at once.
+          fetch: fridayFallbackFetch(this.config.baseUrl),
         });
         const start = async () => {
           const appTools =

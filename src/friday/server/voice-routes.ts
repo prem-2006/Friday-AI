@@ -10,6 +10,7 @@ import {
 } from '../shared/voices.js';
 import { GnaniError, synthesize, transcribe } from './gnani.js';
 import { speakableText } from './speech-text.js';
+import { voiceLog } from './voice-log.js';
 
 // Clips are 16 kHz mono WAV. 20 s is 640 KB, which stays inside OpenDots'
 // 1 MB request limit once base64-encoded.
@@ -67,6 +68,7 @@ export function fridayVoiceRoutes({
     if (audio.subarray(0, 4).toString('ascii') !== 'RIFF')
       return c.json({ error: 'Audio must be WAV.' }, 400);
     try {
+      const started = performance.now();
       const transcript = await transcribe({
         apiKey: key,
         audio,
@@ -74,10 +76,39 @@ export function fridayVoiceRoutes({
         fetch,
         signal: AbortSignal.timeout(30_000),
       });
+      voiceLog('heard', {
+        language: input.data.language,
+        audioSeconds: +((audio.length - 44) / 32_000).toFixed(1),
+        prismaMs: Math.round(performance.now() - started),
+        text: transcript,
+      });
       return c.json({ transcript });
     } catch (error) {
+      voiceLog('stt_failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return failed(error);
     }
+  });
+
+  // The browser reports how long a whole turn took, end to end.
+  app.post('/friday/voice/timing', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as Record<
+      string,
+      unknown
+    > | null;
+    const ms = (value: unknown) =>
+      typeof value === 'number' && Number.isFinite(value)
+        ? Math.round(value)
+        : undefined;
+    if (body)
+      voiceLog('turn', {
+        heardMs: ms(body.heard),
+        answeredMs: ms(body.reply),
+        firstVoiceMs: ms(body.firstAudio),
+        totalMs: ms(body.total),
+      });
+    return c.json({ ok: true });
   });
 
   app.post('/friday/voice/tts', async (c) => {
@@ -91,6 +122,7 @@ export function fridayVoiceRoutes({
     const text = speakableText(input.data.text);
     if (!text) return c.json({ error: 'Nothing to say.' }, 400);
     try {
+      const started = performance.now();
       const audio = await synthesize({
         apiKey: key,
         text,
@@ -99,8 +131,15 @@ export function fridayVoiceRoutes({
         fetch,
         signal: AbortSignal.timeout(30_000),
       });
+      voiceLog('spoke', {
+        timbreMs: Math.round(performance.now() - started),
+        chars: text.length,
+      });
       return c.body(audio, 200, { 'Content-Type': 'audio/mpeg' });
     } catch (error) {
+      voiceLog('tts_failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return failed(error);
     }
   });

@@ -18,7 +18,7 @@ import { FRIDAY_DEFAULT_LANGUAGE, FRIDAY_LANGUAGES } from '../../shared/voices';
 import { lastReplyText, speechParts } from '../speech';
 import { toBase64 } from '../wav';
 import { speechAudio, transcribeClip, voiceConfig } from '../voice-api';
-import { followActivity, setStopped } from './activity';
+import { followActivity, ownerHeaders, setStopped } from './activity';
 import {
   loadHistory,
   pendingApprovalOf,
@@ -387,6 +387,11 @@ function StageSession({
     console.info(
       `[Friday] heard ${ms(t.heard)} · answered ${ms(t.reply)} · voice ${ms(t.firstAudio)} · you stopped → Friday spoke ${ms(total)}`,
     );
+    void fetch('/api/friday/voice/timing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...ownerHeaders() },
+      body: JSON.stringify({ ...t, total }),
+    }).catch(() => {});
   };
 
   useEffect(() => {

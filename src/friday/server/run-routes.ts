@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Message } from '@ag-ui/core';
 import { FRIDAY_DOT_NAME } from './delegate.js';
+import { voiceLog } from './voice-log.js';
 import {
   localThread,
   runDotDirectly,
@@ -48,6 +49,7 @@ export function fridayRunRoutes(
         409,
       );
     const thread = localThread(platform, friday.id, VOICE_THREAD_TITLE);
+    const started = performance.now();
     try {
       const newMessages = await run(
         platform,
@@ -56,8 +58,26 @@ export function fridayRunRoutes(
         input.data.messages as unknown as Message[],
         { approvals: true, signal: c.req.raw.signal },
       );
+      const said = newMessages
+        .filter((item) => item.role === 'assistant')
+        .map((item) => (typeof item.content === 'string' ? item.content : ''))
+        .filter(Boolean)
+        .at(-1);
+      voiceLog('answered', {
+        ms: Math.round(performance.now() - started),
+        tools: newMessages.flatMap((item) =>
+          item.role === 'assistant'
+            ? (item.toolCalls ?? []).map((call) => call.function.name)
+            : [],
+        ),
+        text: said ?? '',
+      });
       return c.json({ threadId: thread.id, newMessages });
     } catch (error) {
+      voiceLog('run_failed', {
+        ms: Math.round(performance.now() - started),
+        error: error instanceof Error ? error.message : String(error),
+      });
       return c.json(
         {
           error:

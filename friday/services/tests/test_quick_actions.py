@@ -24,6 +24,7 @@ def test_quick_tools_and_which_only_look(server):
     tools = quick(server).tools()
     assert set(tools) == {
         "open_app",
+        "write_in_app",
         "open_website",
         "play_youtube",
         "web_search",
@@ -101,3 +102,11 @@ def test_describe_screen_sends_the_picture_and_reports_limits():
         describe_screen("aGk=", "What?", ENV, transport=limited)
     with pytest.raises(ScreenError, match="EVON_API_KEY"):
         describe_screen("aGk=", "What?", {})
+
+
+def test_write_in_app_types_into_the_app(server):
+    client = quick(server)
+    written = client.call("write_in_app", {"app": "notepad", "text": "Milk\nEggs"})["data"]
+    assert written["friday_say"] == "Done, it is written in Notepad."
+    assert server.launched == ["notepad"]  # it was not open yet
+    assert server.typed == ["Milk", "{ENTER}", "Eggs"]

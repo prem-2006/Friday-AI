@@ -92,9 +92,8 @@ class Settings:
 
     @property
     def stage_url(self) -> str:
-        # Opened by a double clap when no voice screen is open; ?wake=1 makes
-        # it start listening.
-        return self.get("FRIDAY_STAGE_URL", "http://localhost:5173/?wake=1#/friday")
+        # Opened by a double clap when no voice screen is open.
+        return self.get("FRIDAY_STAGE_URL", "http://localhost:5173/#/friday")
 
     @property
     def browser_prewarm(self) -> bool:

@@ -86,6 +86,25 @@ def build_quick_server(
         return {**opened, "friday_say": f"{opened['opened']} is open."}
 
     @server.tool(
+        name="write_in_app",
+        description=(
+            "Type text into a Windows app, e.g. a shopping list into Notepad. Uses the "
+            "app's open window, or opens the app first. Put each line on its own line."
+        ),
+        annotations=ACT,
+    )
+    async def write_in_app(
+        app: Annotated[str, Field(min_length=1, max_length=80)],
+        text: Annotated[str, Field(min_length=1, max_length=4000)],
+    ) -> dict:
+        written = await act(
+            "write_in_app",
+            f"Writing in {app}…",
+            lambda: desktop_worker.run(desktop.write, app, text),
+        )
+        return {**written, "friday_say": f"Done, it is written in {written['app']}."}
+
+    @server.tool(
         name="open_website",
         description="Open a website in the on-screen browser, e.g. gmail.com or irctc.co.in.",
         annotations=ACT,

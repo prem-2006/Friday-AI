@@ -240,6 +240,35 @@ class DesktopApps:
                 return {"opened": app["name"], "window": (new or match)[0]}
         return {"opened": app["name"], "window": None, "note": "Started; no new window seen yet."}
 
+    def write(self, name: str, text: str) -> dict:
+        """Type text into an app: into its open window, or open it first.
+
+        Lines become separate lines (Enter between them). The text goes where
+        the app's cursor is, as if the owner typed it."""
+        if any(guard in name.casefold() for guard in GUARDED_WINDOWS):
+            raise DesktopError("Use the WhatsApp tools for WhatsApp; they ask the owner first.")
+        app = self._find_app(name)
+        first_word = app["name"].split()[0].casefold()
+        title = next((t for t in self.windows() if first_word in t.casefold()), None)
+        opened = title is None
+        if opened:
+            title = self.open(name)["window"]
+            if not title:
+                raise DesktopError(f"{app['name']} has not opened a window yet. Try again.")
+        window = self._window_named(title)
+        try:
+            window.set_focus()
+        except Exception:
+            pass
+        time.sleep(0.6 if opened else 0.2)  # let a new window take the keyboard
+        lines = text.replace("\r\n", "\n").split("\n")
+        for index, line in enumerate(lines):
+            if line:
+                self._keys(escape_text(line), with_spaces=True, pause=0.005)
+            if index < len(lines) - 1:
+                self._keys("{ENTER}")
+        return {"app": app["name"], "window": window.window_text(), "opened": opened}
+
     def snapshot(self, title: str) -> dict:
         window = self._window_named(title)
         try:

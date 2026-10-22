@@ -313,9 +313,8 @@ def start_wake(settings: Settings, feed: ActivityFeed, loop) -> Callable[[], Non
         loop.call_soon_threadsafe(feed.signal, action)
 
     def clapped() -> None:
-        if feed.watched:
-            signal("wake")
-        else:
+        # Friday hears only while Caps Lock is held; a clap just brings up its screen.
+        if not feed.watched:
             webbrowser.open(settings.stage_url)
 
     if settings.push_to_talk:

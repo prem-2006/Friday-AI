@@ -395,16 +395,12 @@ function StageSession({
   // available, Friday falls back to sending recorded clips to Gnani.
   const live = useRef<LiveVoice | null>(null);
   const liveConnecting = useRef<Promise<LiveVoice | null> | null>(null);
-  const liveHandsFree = useRef(false);
   const liveEventRef = useRef<(event: LiveEvent) => void>(() => {});
   const spokenWaiter = useRef<(() => void) | null>(null);
   // What Friday said lately, to tell its echo from the owner talking over it.
   const spokenLately = useRef<{ text: string; at: number }[]>([]);
   // Hands-free: the mic is open and turns start by voice. For push-to-talk
   // alone the mic may stay open, but nothing is heard until Caps Lock is held.
-  const handsFreeOn = () =>
-    liveHandsFree.current ||
-    (!!handsFree.current?.active && handsFree.current.auto);
   // Whether Friday's voice is playing, by either path.
   const fridayTalking = () => !!audio.current || !!live.current?.speaking;
   const audio = useRef<HTMLAudioElement | null>(null);
@@ -558,7 +554,7 @@ function StageSession({
           spokenWaiter.current = null;
           if (main) {
             speakingMain.current = false;
-            setPhase(handsFreeOn() ? 'listening' : 'off');
+            setPhase('off');
           }
         }
       }
@@ -592,7 +588,7 @@ function StageSession({
         }
         if (main) {
           speakingMain.current = false;
-          setPhase(handsFreeOn() ? 'listening' : 'off');
+          setPhase('off');
         }
       }
     }
@@ -661,9 +657,7 @@ function StageSession({
         stopping.current = false;
         await setStopped(false);
       }
-      setPhase((current) =>
-        current === 'speaking' ? current : handsFreeOn() ? 'listening' : 'off',
-      );
+      setPhase((current) => (current === 'speaking' ? current : 'off'));
     }
   };
 
@@ -690,7 +684,7 @@ function StageSession({
         };
       } catch (e) {
         setRunning(false);
-        setPhase(handsFreeOn() ? 'listening' : 'off');
+        setPhase('off');
         setError(friendlyError(e, 'Could not do that. Try again.'));
         return;
       }
@@ -762,10 +756,7 @@ function StageSession({
   // What to do with something the owner said (from either voice path).
   const respond = async (text: string, startedOverFriday: boolean) => {
     if (!text) {
-      if (!startedOverFriday)
-        setPhase(
-          runningRef.current ? 'thinking' : handsFreeOn() ? 'listening' : 'off',
-        );
+      if (!startedOverFriday) setPhase(runningRef.current ? 'thinking' : 'off');
       return;
     }
     const intent = intentOf(text);
@@ -839,7 +830,6 @@ function StageSession({
         onEvent: (event) => liveEventRef.current(event),
         onClosed: () => {
           if (live.current === voice) live.current = null;
-          liveHandsFree.current = false;
         },
       });
       try {
@@ -896,34 +886,6 @@ function StageSession({
     }
   };
 
-  const toggleListening = async () => {
-    if (starting.current) return; // a second tap while the mic is opening
-    setError('');
-    const voice = await ensureLive();
-    if (voice) {
-      if (liveHandsFree.current) {
-        stopSpeaking();
-        liveHandsFree.current = false;
-        voice.handsFree(false);
-        setPhase(running ? 'thinking' : 'off');
-      } else {
-        liveHandsFree.current = true;
-        voice.handsFree(true);
-        setPhase(running ? 'thinking' : 'listening');
-      }
-      return;
-    }
-    if (handsFreeOn()) {
-      stopSpeaking();
-      handsFree.current?.stop();
-      handsFree.current = null;
-      setPhase(running ? 'thinking' : 'off');
-      return;
-    }
-    if (!(await openMic(true))) return;
-    setPhase(running ? 'thinking' : 'listening');
-  };
-
   // Hold Caps Lock to talk: recording runs while it is held and is sent when
   // it is let go. Signals come from the page itself or, in any app, from the
   // services' keyboard hook.
@@ -944,27 +906,25 @@ function StageSession({
     holding.current = true;
     stopSpeaking();
     setError('');
+    setSubtitle('');
+    setPhase('hearing'); // "Listening…" the moment the key goes down
     overFriday.current = false;
     const voice = await ensureLive();
     if (voice) {
       if (!holding.current) return; // let go while connecting
       voice.pushToTalk(true);
-      setPhase('hearing');
       return;
     }
     const mic = await openMic(false);
-    if (!mic || !holding.current) return;
+    if (!mic) return setPhase('off');
+    if (!holding.current) return;
     mic.hold();
-    setPhase('hearing');
   };
   const pushRef = useRef(pushToTalk);
   pushRef.current = pushToTalk;
-  const toggleRef = useRef(toggleListening);
-  toggleRef.current = toggleListening;
   controlRef.current = (action) => {
     if (action === 'ptt_down') void pushRef.current(true);
     else if (action === 'ptt_up') void pushRef.current(false);
-    else if (action === 'wake' && !handsFreeOn()) void toggleRef.current();
   };
 
   useEffect(() => {
@@ -1000,25 +960,8 @@ function StageSession({
     if (!voice || !loaded) return;
     voice.stop();
     live.current = null;
-    const wasHandsFree = liveHandsFree.current;
-    liveHandsFree.current = false;
-    void ensureLive().then((next) => {
-      if (next && wasHandsFree) {
-        liveHandsFree.current = true;
-        next.handsFree(true);
-      }
-    });
+    void ensureLive();
   }, [language]);
-
-  // A double clap opens this page with ?wake=1: start listening at once.
-  const woke = useRef(false);
-  useEffect(() => {
-    if (!loaded || woke.current) return;
-    if (!new URLSearchParams(location.search).has('wake')) return;
-    woke.current = true;
-    history.replaceState(null, '', location.pathname + location.hash);
-    void toggleRef.current();
-  }, [loaded]);
 
   // Narrate helper activity while a task runs.
   const narrated = useRef(0);
@@ -1050,7 +993,7 @@ function StageSession({
     ),
   ];
   const screenshot = [...recent].reverse().find((event) => event.image)?.image;
-  const listening = handsFreeOn();
+  const listening = phase === 'hearing';
   const clock = useClock(listening || running);
 
   const mode: OrbMode =
@@ -1077,7 +1020,7 @@ function StageSession({
               ? 'Got it…'
               : listening
                 ? 'Listening…'
-                : 'Tap the orb to talk';
+                : 'Hold Caps Lock to talk';
   const line =
     error ||
     (paused
@@ -1086,8 +1029,8 @@ function StageSession({
         ? 'Say yes or no, or use the buttons.'
         : subtitle ||
           (listening
-            ? 'Go ahead. Tap the orb again to stop.'
-            : 'Or hold Caps Lock while you speak.'));
+            ? 'Let go of Caps Lock when you are done.'
+            : 'Friday hears you only while the key is held.'));
   const status =
     voiceReady === false
       ? { tone: 'warn' as const, label: 'Voice needs GNANI_API_KEY' }
@@ -1135,10 +1078,9 @@ function StageSession({
       <button
         type="button"
         className={`stage-orb-hit ${listening ? 'on' : ''}`}
-        aria-label={listening ? 'Stop listening' : 'Start talking to Friday'}
-        aria-pressed={listening}
+        aria-label="How to talk to Friday"
         disabled={!loaded || voiceReady === false}
-        onClick={() => void toggleListening()}
+        onClick={() => setSubtitle('Hold Caps Lock while you speak.')}
       />
       {recent.length > 0 && (
         <aside

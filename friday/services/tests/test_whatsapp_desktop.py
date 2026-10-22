@@ -145,3 +145,26 @@ def test_window_controls_are_numbered_and_passwords_refused():
     assert save.clicked == 1
     with pytest.raises(DesktopError, match="WhatsApp"):
         apps.snapshot("whatsapp")
+
+
+def test_writes_into_an_open_window_or_opens_the_app_first():
+    note = FakeWindow("Untitled - Notepad", [])
+    apps, typed, launched = make_apps([note])
+    result = apps.write("notepad", "Milk (2)\nBread")
+    assert result == {"app": "Notepad", "window": "Untitled - Notepad", "opened": False}
+    assert launched == []  # Notepad was already open
+    assert typed == ["Milk {(}2{)}", "{ENTER}", "Bread"]
+    with pytest.raises(DesktopError, match="WhatsApp tools"):
+        apps.write("whatsapp", "hi")
+
+
+def test_write_opens_a_closed_app():
+    windows: list = []
+    apps, typed, launched = make_apps(windows)
+    apps._launch = lambda app_id: (
+        launched.append(app_id),
+        windows.append(FakeWindow("Calculator", [])),
+    )
+    apps.write("calculator", "12+30")
+    assert launched == ["calc"]
+    assert typed == ["12{+}30"]

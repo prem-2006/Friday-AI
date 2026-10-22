@@ -185,6 +185,20 @@ class FakeBrowserAgent:
         }
 
 
+class PretendWindow:
+    def __init__(self, title: str):
+        self.title = title
+
+    def window_text(self):
+        return self.title
+
+    def is_visible(self):
+        return True
+
+    def set_focus(self):
+        pass
+
+
 def free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -196,10 +210,14 @@ def server(settings: Settings):
     dialer, call = FakeDialer(), FakeCall()
     browser, whatsapp, agent = FakeBrowser(), FakeWhatsAppUI(), FakeBrowserAgent()
     launched, looked, snapped = [], [], []
+    typed: list[str] = []
+    notepad = PretendWindow("Untitled - Notepad")
+    # Everything is pretend: tests never see or type into real windows.
     desktop = DesktopApps(
         list_apps=lambda: [{"name": "Notepad", "app_id": "notepad"}],
         launch=launched.append,
-        window_titles=lambda: ["Untitled - Notepad"] if launched else [],
+        desktop=SimpleNamespace(windows=lambda: [notepad] if launched else []),
+        send_keys=lambda keys, **_: typed.append(keys),
     )
 
     def look(question):
@@ -241,6 +259,7 @@ def server(settings: Settings):
         browser_agent=agent,
         whatsapp=whatsapp,
         launched=launched,
+        typed=typed,
         looked=looked,
         snapped=snapped,
     )

@@ -4,8 +4,8 @@ Push-to-talk: hold Caps Lock, speak, let go. A quick tap still toggles Caps
 Lock as usual; only a hold counts. Works in any app, through a low-level
 keyboard hook that acts on Caps Lock alone.
 
-Double clap: two sharp claps within about half a second wake Friday: the voice
-screen starts listening, or opens if it is not open yet. The idea comes from
+Double clap: two sharp claps within about half a second open Friday's voice
+screen if it is not open. (Friday hears only while Caps Lock is held.) The idea comes from
 Julian Ivanov's jarvis-voice-assistant (MIT); here it is a small detector on
 16 kHz mic blocks. Only loudness peaks are examined; no audio is kept or sent.
 

@@ -25,6 +25,12 @@ def test_quick_tools_and_which_only_look(server):
     assert set(tools) == {
         "open_app",
         "write_in_app",
+        "clear_in_app",
+        "press_keys_in_app",
+        "media_control",
+        "find_files",
+        "open_file",
+        "schedule_meeting",
         "send_email",
         "open_website",
         "play_youtube",
@@ -147,3 +153,62 @@ def test_main_page_google_and_shortcut_routes(server):
     assert opened.json() == {"url": "https://example.test/", "title": "Example"}
     bad = httpx.post(f"{server.url}/browser/open", headers=AUTH, json={"url": "file:///c:/"})
     assert bad.status_code == 400
+
+
+def test_media_control_uses_the_youtube_tab_or_else_the_media_keys(server):
+    client = quick(server)
+    said = client.call("media_control", {"action": "pause"})["data"]["friday_say"]
+    assert said == "Paused." and server.media_keys == ["pause"]  # no YouTube tab
+    server.browser.youtube_open = True
+    paused = client.call("media_control", {"action": "pause"})["data"]
+    assert paused["title"] == "Lo-fi beats" and paused["paused"] is True
+    assert server.media_keys == ["pause"]  # the tab handled it
+
+
+def test_clear_and_keys_in_apps(server):
+    client = quick(server)
+    assert client.call("clear_in_app", {"app": "notepad"})["data"]["friday_say"] == (
+        "Notepad is cleared."
+    )
+    client.call("press_keys_in_app", {"app": "notepad", "keys": ["Ctrl+S"]})
+    client.call("write_in_app", {"app": "notepad", "text": "Eggs", "replace": True})
+    assert server.typed == ["^a", "{DELETE}", "^s", "^a", "Eggs"]
+
+
+def test_finds_and_opens_files_but_never_programs(server):
+    client = quick(server)
+    found = client.call("find_files", {"query": "resume"})["data"]
+    names = {item["name"] for item in found["files"]}
+    assert names == {"Resume 2026.pdf", "setup resume.exe"}
+    pdf = next(item["path"] for item in found["files"] if item["name"].endswith(".pdf"))
+    assert client.call("open_file", {"path": pdf})["data"]["friday_say"] == (
+        "Opened Resume 2026.pdf."
+    )
+    exe = str(server.folder / "setup resume.exe")
+    refused = client.call("open_file", {"path": exe})
+    assert refused["isError"] and "program" in refused["text"]
+    outside = client.call("open_file", {"path": "C:/Windows/notepad.exe"})
+    assert outside["isError"] and "your own folders" in outside["text"]
+    assert server.opened_files == [pdf]
+
+
+def test_meetings_are_marked_as_sending_and_filled_in(server):
+    client = quick(server)
+    tool = client.tools()["schedule_meeting"]
+    assert tool["annotations"]["destructiveHint"] is True
+    done = client.call(
+        "schedule_meeting",
+        {
+            "title": "Project sync",
+            "start": "2026-10-24T15:00",
+            "minutes": 45,
+            "guests": ["ruchita@example.com"],
+        },
+    )["data"]
+    assert done["friday_say"] == "Project sync is on your calendar, and 1 invitation sent."
+    _, url, invite = next(entry for entry in server.browser.log if entry[0] == "meeting")
+    assert invite is True
+    assert "dates=20261024T150000%2F20261024T154500" in url
+    assert "add=ruchita%40example.com" in url and "ctz=Asia%2FKolkata" in url
+    bad = client.call("schedule_meeting", {"title": "x", "start": "tomorrow 3pm"})
+    assert bad["isError"] and "date and time" in bad["text"]

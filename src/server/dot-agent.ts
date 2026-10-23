@@ -38,6 +38,7 @@ import {
   fridayToolTimeoutMs,
 } from '../friday/server/agent-limits.js';
 import { delegateTool, type Delegate } from '../friday/server/delegate.js';
+import { rememberTool } from '../friday/server/remember.js';
 import {
   fridayModelOptions,
   fridayModelRetries,
@@ -385,6 +386,8 @@ export class DotAgent extends AbstractAgent {
               check,
               controller.signal,
             ),
+            // FRIDAY: remember, so the owner can say "remember that…".
+            ...rememberTool(dot, this.store, check),
             ...appTools,
             ...pageTools(pages),
             ...(computer.configured

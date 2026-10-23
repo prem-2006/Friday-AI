@@ -27,6 +27,7 @@ export const ABILITIES: Ability[] = [
       'Search, open sites and work in your Google account in Friday’s Chrome window.',
     tools: [
       { dot: 'Navigator', connection: 'browser' },
+      { dot: 'Coder', connection: 'browser' },
       {
         dot: 'Friday',
         connection: 'quick',
@@ -43,7 +44,14 @@ export const ABILITIES: Ability[] = [
       {
         dot: 'Friday',
         connection: 'quick',
-        names: ['open_app', 'write_in_app', 'snap_window'],
+        names: [
+          'open_app',
+          'write_in_app',
+          'clear_in_app',
+          'press_keys_in_app',
+          'snap_window',
+          'media_control',
+        ],
       },
     ],
   },
@@ -53,6 +61,28 @@ export const ABILITIES: Ability[] = [
     detail:
       'Describe what is on screen when you ask. The screenshot goes to your AI model.',
     tools: [{ dot: 'Friday', connection: 'quick', names: ['look_at_screen'] }],
+  },
+  {
+    id: 'files',
+    title: 'Find and open my files',
+    detail:
+      'Search your Desktop, Documents, Downloads, Pictures, Music and Videos by name. Programs are never opened.',
+    tools: [
+      {
+        dot: 'Friday',
+        connection: 'quick',
+        names: ['find_files', 'open_file'],
+      },
+    ],
+  },
+  {
+    id: 'meetings',
+    title: 'Schedule meetings',
+    detail: 'Add events to your Google Calendar and invite people.',
+    alwaysAsks: true,
+    tools: [
+      { dot: 'Friday', connection: 'quick', names: ['schedule_meeting'] },
+    ],
   },
   {
     id: 'email',

@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import json
+import os
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Any
@@ -31,7 +32,8 @@ from friday_services.calls.twilio import (
     valid_signature,
 )
 from friday_services.config import CALL_SETTINGS, REPO_ROOT, Settings
-from friday_services.desktop import DesktopApps
+from friday_services.desktop import DesktopApps, press_media_key
+from friday_services.files import owner_folders
 from friday_services.mcp_browser import build_browser_server
 from friday_services.mcp_calendar import build_calendar_server
 from friday_services.mcp_desktop import build_desktop_server, build_whatsapp_server
@@ -54,6 +56,9 @@ def create_app(
     desktop: DesktopApps | None = None,
     look: Callable[[str], str] | None = None,
     snap: Callable[[str, str], dict] | None = None,
+    media_key: Callable[[str], None] | None = None,
+    file_roots: Callable[[], list] | None = None,
+    open_path: Callable[[str], None] | None = None,
     wake: bool = False,
     whatsapp_ui: WhatsAppUI | None = None,
 ) -> FastAPI:
@@ -91,6 +96,10 @@ def create_app(
             look=look
             or (lambda question: describe_screen(capture_screen(), question, settings.values)),
             snap=snap or snap_window,
+            media_key=media_key or press_media_key,
+            file_roots=file_roots or owner_folders,
+            open_path=open_path or os.startfile,
+            timezone=settings.timezone,
         ),
         "/calendar": build_calendar_server(calendar, settings.calendar_url),
         "/phone": build_phone_server(store, dialer or TwilioDialer(settings), settings),

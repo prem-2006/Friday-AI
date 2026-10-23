@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from mcp.server.mcpserver import MCPServer
@@ -22,14 +23,32 @@ from pydantic import Field
 from friday_services.activity import ActivityFeed
 from friday_services.browser import BrowserError, OnScreenBrowser
 from friday_services.desktop import DesktopApps, DesktopError
+from friday_services.files import FilesError, find_files, open_file
+from friday_services.meetings import MeetingError, calendar_event_url
 from friday_services.screen import POSITIONS, Position, ScreenError
 from friday_services.worker import Worker
 
 ACT = ToolAnnotations(read_only_hint=False, destructive_hint=False)
 SENDS = ToolAnnotations(read_only_hint=False, destructive_hint=True)
 LOOK = ToolAnnotations(read_only_hint=True)
-FAILURES = (BrowserError, DesktopError, ScreenError)
-IN_BROWSER = {"open_website", "play_youtube", "browser_search", "send_email"}
+FAILURES = (BrowserError, DesktopError, ScreenError, FilesError, MeetingError)
+MediaAction = Literal["pause", "play", "next", "previous", "volume_up", "volume_down", "mute"]
+MEDIA_SAID = {
+    "pause": "Paused.",
+    "play": "Playing.",
+    "next": "Next one.",
+    "previous": "Going back.",
+    "volume_up": "Louder.",
+    "volume_down": "Quieter.",
+    "mute": "Sound toggled.",
+}
+IN_BROWSER = {
+    "open_website",
+    "play_youtube",
+    "browser_search",
+    "send_email",
+    "schedule_meeting",
+}
 
 
 def _short(title: str, limit: int = 70) -> str:
@@ -45,6 +64,10 @@ def build_quick_server(
     feed: ActivityFeed,
     look: Callable[[str], str],
     snap: Callable[[str, str], dict[str, Any]],
+    media_key: Callable[[str], None],
+    file_roots: Callable[[], list[Path]],
+    open_path: Callable[[str], None],
+    timezone: str = "Asia/Kolkata",
 ) -> MCPServer:
     server = MCPServer(
         name="friday-quick",
@@ -97,13 +120,140 @@ def build_quick_server(
     async def write_in_app(
         app: Annotated[str, Field(min_length=1, max_length=80)],
         text: Annotated[str, Field(min_length=1, max_length=4000)],
+        replace: Annotated[
+            bool, Field(description="True to replace everything already in the app with text.")
+        ] = False,
     ) -> dict:
         written = await act(
             "write_in_app",
             f"Writing in {app}…",
-            lambda: desktop_worker.run(desktop.write, app, text),
+            lambda: desktop_worker.run(desktop.write, app, text, replace),
         )
         return {**written, "friday_say": f"Done, it is written in {written['app']}."}
+
+    @server.tool(
+        name="clear_in_app",
+        description="Remove all the text in an app's window, e.g. clear Notepad.",
+        annotations=ACT,
+    )
+    async def clear_in_app(app: Annotated[str, Field(min_length=1, max_length=80)]) -> dict:
+        cleared = await act(
+            "clear_in_app", f"Clearing {app}…", lambda: desktop_worker.run(desktop.clear, app)
+        )
+        return {**cleared, "friday_say": f"{cleared['app']} is cleared."}
+
+    @server.tool(
+        name="press_keys_in_app",
+        description=(
+            "Press keys in an app's window: Ctrl+S to save, Ctrl+Z to undo, Ctrl+Y to redo, "
+            "Enter, Escape, Ctrl+N for new and so on."
+        ),
+        annotations=ACT,
+    )
+    async def press_keys_in_app(
+        app: Annotated[str, Field(min_length=1, max_length=80)],
+        keys: Annotated[list[str], Field(min_length=1, max_length=10)],
+    ) -> dict:
+        pressed = await act(
+            "press_keys_in_app",
+            f"Pressing {', '.join(keys)} in {app}.",
+            lambda: desktop_worker.run(desktop.keys_in, app, keys),
+        )
+        return {**pressed, "friday_say": "Done."}
+
+    @server.tool(
+        name="media_control",
+        description=(
+            "Control what is playing: pause, play, next, previous, volume_up, volume_down "
+            "or mute. Works on Friday's YouTube tab, otherwise on any player (YouTube app, "
+            "Spotify) through the media keys."
+        ),
+        annotations=ACT,
+    )
+    async def media_control(action: MediaAction) -> dict:
+        async def run():
+            video = await browser_worker.run(browser.youtube_control, action)
+            if video is not None:
+                return video
+            await desktop_worker.run(media_key, action)
+            return {"media_key": action}
+
+        done = await act("media_control", f"Media: {action.replace('_', ' ')}.", run)
+        return {**done, "friday_say": MEDIA_SAID[action]}
+
+    @server.tool(
+        name="find_files",
+        description=(
+            "Find files on the owner's PC by name (Desktop, Documents, Downloads, Pictures, "
+            "Music, Videos), newest first."
+        ),
+        annotations=LOOK,
+    )
+    async def find_files_tool(query: Annotated[str, Field(min_length=1, max_length=120)]) -> dict:
+        found = await act(
+            "find_files",
+            f'Looking for "{query}" in your files.',
+            lambda: asyncio.to_thread(find_files, query, file_roots()),
+        )
+        names = [item["name"] for item in found[:3]]
+        say = (
+            f"I found {len(found)}: " + "; ".join(names) + "."
+            if found
+            else f'No file named like "{query}" in your folders.'
+        )
+        return {"files": found, "friday_say": say}
+
+    @server.tool(
+        name="open_file",
+        description="Open a file that find_files found, by its full path, in its usual app.",
+        annotations=ACT,
+    )
+    async def open_file_tool(path: Annotated[str, Field(min_length=3, max_length=600)]) -> dict:
+        opened = await act(
+            "open_file",
+            "Opening the file…",
+            lambda: asyncio.to_thread(open_file, path, file_roots(), open_path),
+        )
+        return {**opened, "friday_say": f"Opened {opened['opened']}."}
+
+    @server.tool(
+        name="schedule_meeting",
+        description=(
+            "Add an event to the owner's Google Calendar in Friday's Chrome, inviting guests "
+            "by email. start is local date and time, e.g. 2026-10-24T15:00. The owner "
+            "approves every meeting before it is saved and invitations go out."
+        ),
+        annotations=SENDS,
+    )
+    async def schedule_meeting(
+        title: Annotated[str, Field(min_length=1, max_length=200)],
+        start: Annotated[str, Field(min_length=10, max_length=25)],
+        minutes: Annotated[int, Field(ge=5, le=1440)] = 30,
+        guests: Annotated[list[str], Field(max_length=20)] = [],  # noqa: B006
+        details: Annotated[str, Field(max_length=2000)] = "",
+    ) -> dict:
+        try:
+            url = calendar_event_url(title, start, minutes, guests, details, timezone)
+        except MeetingError as error:
+            raise ToolError(str(error)) from error
+        saved = await act(
+            "schedule_meeting",
+            f"Scheduling {title}…",
+            in_browser(browser.schedule_meeting),
+            url,
+            bool(guests),
+        )
+        say = (
+            f"{title} is on your calendar"
+            + (
+                f", and {len(guests)} invitation{'s' if len(guests) > 1 else ''} sent."
+                if guests
+                else "."
+            )
+            if saved.get("saved")
+            else "I filled in the meeting, but Calendar did not confirm it was saved."
+        )
+        return {**saved, "friday_say": say}
 
     @server.tool(
         name="open_website",

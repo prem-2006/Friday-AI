@@ -7,6 +7,7 @@
 //              delegate_to_dot to hand bigger work to the helpers
 //   Navigator  drives a Chrome window on your screen (browser tools)
 //   Operator   opens and works desktop apps (desktop tools)
+//   Coder      solves practice problems on LeetCode-style sites (browser tools)
 //
 // Helpers work in their own conversations without approval cards, so their
 // tools run without "Ask first"; WhatsApp stays with Friday, behind your OK.
@@ -46,13 +47,15 @@ const DOTS = [
     persona: '../dots/operator.md',
     connections: ['desktop'],
   },
+  // Coding practice (LeetCode and similar) in Friday's Chrome window.
+  { name: 'Coder', persona: '../dots/coder.md', connections: ['browser'] },
 ];
 // Parked skills that older setups connected to Friday.
 const RETIRED = ['phone', 'calendar', 'telegram'];
 // Run without an approval card: one-step actions that send nothing and buy
 // nothing; except these, which always ask the owner first.
 const NO_APPROVAL = ['quick'];
-const ALWAYS_ASK = ['send_email'];
+const ALWAYS_ASK = ['send_email', 'schedule_meeting'];
 
 async function api(path, method = 'GET', body) {
   const response = await fetch(`${APP_URL}/api${path}`, {

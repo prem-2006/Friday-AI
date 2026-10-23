@@ -16,8 +16,26 @@ FOLDERS = ("Desktop", "Documents", "Downloads", "Pictures", "Music", "Videos")
 SKIP_DIRS = {"node_modules", ".git", "__pycache__", ".venv", "AppData", "$RECYCLE.BIN"}
 # Opening these would run something rather than show it.
 NEVER_OPEN = {
-    ".exe", ".msi", ".bat", ".cmd", ".com", ".ps1", ".vbs", ".vbe", ".js", ".jse",
-    ".wsf", ".wsh", ".scr", ".lnk", ".url", ".reg", ".hta", ".cpl", ".jar", ".py",
+    ".exe",
+    ".msi",
+    ".bat",
+    ".cmd",
+    ".com",
+    ".ps1",
+    ".vbs",
+    ".vbe",
+    ".js",
+    ".jse",
+    ".wsf",
+    ".wsh",
+    ".scr",
+    ".lnk",
+    ".url",
+    ".reg",
+    ".hta",
+    ".cpl",
+    ".jar",
+    ".py",
 }
 MAX_SCANNED = 40_000
 MAX_DEPTH = 6
@@ -44,9 +62,7 @@ def find_files(query: str, roots: Iterable[Path], limit: int = 8) -> list[dict]:
     for root in roots:
         base_depth = len(root.parts)
         for folder, dirs, names in os.walk(root):
-            dirs[:] = [
-                d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")
-            ][: 200]
+            dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")][:200]
             if len(Path(folder).parts) - base_depth >= MAX_DEPTH:
                 dirs[:] = []
             for name in names:

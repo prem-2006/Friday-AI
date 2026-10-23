@@ -356,7 +356,7 @@ function PermissionsCard({ dots }: { dots: { id: string; name: string }[] }) {
       const entries = await Promise.all(
         dots
           .filter((dot) =>
-            ['Friday', 'Navigator', 'Operator'].includes(dot.name),
+            ['Friday', 'Navigator', 'Operator', 'Coder'].includes(dot.name),
           )
           .map(
             async (dot) =>

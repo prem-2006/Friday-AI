@@ -163,6 +163,18 @@ class FakeBrowser:
         self.log.append(("connect_google", email))
         return {"url": "https://accounts.google.com/", "title": "Sign in"}
 
+    youtube_open = False
+
+    def youtube_control(self, action):
+        self.log.append(("youtube", action))
+        if not self.youtube_open:
+            return None
+        return {"title": "Lo-fi beats", "paused": action == "pause", "volume": 80, "muted": False}
+
+    def schedule_meeting(self, url, invite):
+        self.log.append(("meeting", url, invite))
+        return {"saved": True, "url": "https://calendar.google.com/calendar/r"}
+
     def send_open_email(self):
         self.log.append(("send_email",))
         return {"sent": True}
@@ -217,7 +229,7 @@ def free_port() -> int:
 
 
 @pytest.fixture
-def server(settings: Settings):
+def server(settings: Settings, tmp_path: Path):
     dialer, call = FakeDialer(), FakeCall()
     browser, whatsapp, agent = FakeBrowser(), FakeWhatsAppUI(), FakeBrowserAgent()
     launched, looked, snapped = [], [], []
@@ -239,8 +251,18 @@ def server(settings: Settings):
         snapped.append((window, position))
         return {"window": "Untitled - Notepad", "position": position}
 
+    media_keys: list[str] = []
+    opened_files: list[str] = []
+    folder = tmp_path / "Documents"
+    folder.mkdir()
+    (folder / "Resume 2026.pdf").write_text("pdf")
+    (folder / "notes.txt").write_text("hi")
+    (folder / "setup resume.exe").write_text("program")
     app = create_app(
         settings,
+        media_key=media_keys.append,
+        file_roots=lambda: [folder],
+        open_path=opened_files.append,
         dialer=dialer,
         call_runner=call,
         browser=browser,
@@ -271,6 +293,9 @@ def server(settings: Settings):
         whatsapp=whatsapp,
         launched=launched,
         typed=typed,
+        media_keys=media_keys,
+        opened_files=opened_files,
+        folder=folder,
         looked=looked,
         snapped=snapped,
     )

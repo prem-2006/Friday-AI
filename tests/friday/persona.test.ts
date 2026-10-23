@@ -31,7 +31,7 @@ it('keeps the rules Friday must follow', () => {
 });
 
 it('keeps every helper persona within the limit', () => {
-  for (const name of ['navigator', 'operator']) {
+  for (const name of ['navigator', 'operator', 'coder']) {
     const text = readFileSync(
       new URL(`../../friday/dots/${name}.md`, import.meta.url),
       'utf8',

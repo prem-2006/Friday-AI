@@ -1,7 +1,7 @@
 """Ways to reach Friday without touching the screen.
 
 Push-to-talk: hold Caps Lock, speak, let go. A quick tap still toggles Caps
-Lock as usual; only a hold counts. Works in any app, through a low-level
+Lock as usual; only a hold counts. Ctrl + Caps Lock hides or shows the notch. Works in any app, through a low-level
 keyboard hook that acts on Caps Lock alone.
 
 Double clap: two sharp claps within about half a second open Friday's voice
@@ -32,7 +32,10 @@ class PushToTalkKey:
         hook_key: Callable[..., Any] | None = None,
         send: Callable[[str], None] | None = None,
         hold_seconds: float = HOLD_SECONDS,
+        ctrl_held: Callable[[], bool] | None = None,
     ):
+        self._ctrl_held = ctrl_held
+        self._toggling = False
         self._signal = signal
         self._hook_key = hook_key
         self._send = send
@@ -49,6 +52,7 @@ class PushToTalkKey:
 
             self._hook_key = self._hook_key or keyboard.hook_key
             self._send = self._send or keyboard.send
+            self._ctrl_held = self._ctrl_held or (lambda: keyboard.is_pressed("ctrl"))
         self._remove = self._hook_key("caps lock", self.on_event, suppress=True)
 
     def stop(self) -> None:
@@ -65,6 +69,16 @@ class PushToTalkKey:
 
     def on_event(self, event: Any) -> bool:
         """Returns False so Windows never sees the real Caps Lock press."""
+        if event.event_type == "down" and not self._down_at and not self._toggling:
+            if self._ctrl_held and self._ctrl_held():
+                # Ctrl + Caps Lock: hide or show the notch; nothing is heard.
+                self._toggling = True
+                self._signal("notch_toggle")
+                return False
+        if self._toggling:
+            if event.event_type == "up":
+                self._toggling = False
+            return False
         if event.event_type == "down":
             with self._lock:
                 if self._down_at is not None:

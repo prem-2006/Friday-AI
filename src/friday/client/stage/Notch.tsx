@@ -11,6 +11,7 @@ export type NotchState =
 interface Desktop {
   setInteractive: (on: boolean) => void;
   open: (hash: string) => void;
+  toggle: () => void;
 }
 const desktop = () => (globalThis as { fridayDesktop?: Desktop }).fridayDesktop;
 

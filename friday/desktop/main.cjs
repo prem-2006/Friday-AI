@@ -125,7 +125,14 @@ function createNotch() {
     void shell.openExternal(url);
     return { action: 'deny' };
   });
-  const show = () => notch && !notch.isVisible() && notch.showInactive();
+  // Shown once at start; after that, hiding with Ctrl + Caps Lock sticks.
+  let shown = false;
+  const show = () => {
+    if (notch && !shown) {
+      shown = true;
+      notch.showInactive();
+    }
+  };
   notch.once('ready-to-show', show);
   notch.webContents.on('did-finish-load', show);
   void notch.loadURL(`${WEB}/#/notch`);
@@ -156,6 +163,10 @@ function createTray() {
         type: 'checkbox',
         checked: startsWithWindows(),
         click: (item) => setStartWithWindows(item.checked),
+      },
+      {
+        label: 'Hide or show the notch (Ctrl + Caps Lock)',
+        click: toggleNotch,
       },
       { label: 'Reload', click: () => notch?.reload() },
       { type: 'separator' },
@@ -199,6 +210,14 @@ function watchSelf() {
 ipcMain.on('friday:interactive', (_event, on) =>
   notch?.setIgnoreMouseEvents(!on, { forward: true }),
 );
+// Ctrl + Caps Lock or the tray: hide the notch, or bring it back. Voice
+// keeps working while it is hidden.
+function toggleNotch() {
+  if (!notch) return;
+  if (notch.isVisible()) notch.hide();
+  else notch.showInactive();
+}
+ipcMain.on('friday:toggle', toggleNotch);
 ipcMain.on('friday:open', (_event, hash) =>
   openMain(typeof hash === 'string' && hash.startsWith('#/') ? hash : '#/home'),
 );

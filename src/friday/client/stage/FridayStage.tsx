@@ -951,6 +951,10 @@ function StageSession({
   controlRef.current = (action) => {
     if (action === 'ptt_down') void pushRef.current(true);
     else if (action === 'ptt_up') void pushRef.current(false);
+    else if (action === 'notch_toggle' && variant === 'notch')
+      (
+        globalThis as { fridayDesktop?: { toggle: () => void } }
+      ).fridayDesktop?.toggle();
   };
 
   useEffect(() => {

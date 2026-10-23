@@ -47,7 +47,11 @@ class ActivityFeed:
         """Tell the voice screen to do something (e.g. ptt_down, wake). Not kept
         in the history, so a page that connects later never replays it."""
         event = Activity(next(self._ids), "control", action, "", state="done")
-        if self._voices:
+        if action == "notch_toggle":
+            # Only the notch acts on it, wherever it is in the list.
+            for queue in self._voices:
+                queue.put_nowait(event)
+        elif self._voices:
             self._voices[-1].put_nowait(event)
 
     @property

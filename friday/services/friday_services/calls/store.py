@@ -19,6 +19,8 @@ class CallRecord:
     goal: str
     language: str
     context: str
+    # business: Friday calls someone for the owner; owner: Friday calls the owner.
+    kind: str = "business"
     id: str = field(default_factory=lambda: f"call_{uuid.uuid4().hex[:12]}")
     # queued -> ringing -> in_progress -> answered | no_answer | failed
     status: str = "queued"
@@ -74,8 +76,10 @@ class CallStore:
         self._finished: dict[str, asyncio.Event] = {}
         self._dir = data_dir / "calls" if data_dir else None
 
-    def create(self, *, phone: str, goal: str, language: str, context: str) -> CallRecord:
-        record = CallRecord(phone=phone, goal=goal, language=language, context=context)
+    def create(
+        self, *, phone: str, goal: str, language: str, context: str, kind: str = "business"
+    ) -> CallRecord:
+        record = CallRecord(phone=phone, goal=goal, language=language, context=context, kind=kind)
         self._calls[record.id] = record
         self._finished[record.id] = asyncio.Event()
         return record

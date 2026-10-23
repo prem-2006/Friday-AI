@@ -95,6 +95,13 @@ export const ABILITIES: Ability[] = [
     ],
   },
   {
+    id: 'calls',
+    title: 'Call my phone',
+    detail:
+      'Friday rings your mobile for deadlines and when you ask, at most once in 10 minutes.',
+    tools: [{ dot: 'Friday', connection: 'quick', names: ['call_me'] }],
+  },
+  {
     id: 'email',
     title: 'Send email',
     detail: 'Send drafts from your Gmail.',

@@ -8,8 +8,10 @@ import asyncio
 import hmac
 import json
 import os
+import re
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
+from datetime import datetime
 from typing import Any
 
 from dotenv import load_dotenv
@@ -28,6 +30,7 @@ from friday_services.calls.store import CallStore
 from friday_services.calls.twilio import (
     NOT_CONNECTED,
     TwilioDialer,
+    point_number_at,
     stream_twiml,
     valid_signature,
 )
@@ -45,8 +48,11 @@ from friday_services.organizer import (
     Reminders,
     parse_when,
     speak_with_windows,
+    spoken_time,
 )
+from friday_services.owner_calls import OwnerCaller, owner_phone
 from friday_services.screen import capture_screen, describe_screen, snap_window
+from friday_services.tunnel import QuickTunnel, TunnelGuard
 from friday_services.whatsapp import DesktopWhatsAppUI, WhatsApp, WhatsAppUI
 from friday_services.worker import Worker, com_thread
 
@@ -67,6 +73,7 @@ def create_app(
     file_roots: Callable[[], list] | None = None,
     open_path: Callable[[str], None] | None = None,
     wake: bool = False,
+    tunnel: bool = False,
     speak: Callable[[str], None] | None = None,
     whatsapp_ui: WhatsAppUI | None = None,
 ) -> FastAPI:
@@ -90,6 +97,8 @@ def create_app(
     browser_worker = Worker("friday-browser")
     desktop_worker = Worker("friday-desktop", initializer=com_thread)
     desktop = desktop or DesktopApps()
+    dialer = dialer or TwilioDialer(settings)
+    owner_caller = OwnerCaller(settings, store, dialer)
     reminders = Reminders(settings.data_dir / "reminders.json")
     notes = Notes(settings.data_dir / "notes.txt")
     whatsapp = WhatsApp(whatsapp_ui or DesktopWhatsAppUI(), settings.owner_name)
@@ -111,11 +120,12 @@ def create_app(
             open_path=open_path or os.startfile,
             reminders=reminders,
             notes=notes,
+            call_owner=owner_caller.call,
             data_dir=settings.data_dir,
             timezone=settings.timezone,
         ),
         "/calendar": build_calendar_server(calendar, settings.calendar_url),
-        "/phone": build_phone_server(store, dialer or TwilioDialer(settings), settings),
+        "/phone": build_phone_server(store, dialer, settings),
     }
     mcp_apps = {
         path: (
@@ -136,11 +146,24 @@ def create_app(
         else:
             (speak or speak_with_windows)(text)
 
+    # Friday also phones the owner: for a "call me" request, and for deadlines
+    # an hour and 15 minutes before and when due (FRIDAY_CALL_DEADLINES=false
+    # turns that off).
+    def should_call(due) -> bool:
+        if due.kind == "call":
+            return True
+        calls_for_deadlines = settings.get("FRIDAY_CALL_DEADLINES", "true").lower() != "false"
+        return due.kind == "deadline" and calls_for_deadlines and due.minutes_left <= 60
+
     async def reminder_clock() -> None:
         while True:
             try:
-                for text in await asyncio.to_thread(reminders.due_now):
-                    announce(text)
+                for due in await asyncio.to_thread(reminders.due_now):
+                    announce(f"Calling your phone: {due.text}" if due.kind == "call" else due.text)
+                    if should_call(due):
+                        placed = await owner_caller.call(due.text, urgent=due.minutes_left == 0)
+                        if not placed["called"]:
+                            feed.emit("friday", "call_owner", placed["why"], state="failed")
             except Exception:
                 pass  # a bad reminders file must not stop the clock
             await asyncio.sleep(5)
@@ -157,6 +180,23 @@ def create_app(
                 stack.callback(start_wake(settings, feed, asyncio.get_running_loop()))
             clock = asyncio.create_task(reminder_clock(), name="friday-reminders")
             stack.callback(clock.cancel)
+            if (
+                tunnel
+                and not settings.get("PUBLIC_URL")
+                and settings.get("FRIDAY_TUNNEL", "cloudflared") != "off"
+            ):
+                # Twilio reaches the call routes through a free quick tunnel;
+                # its address is passed with each call.
+                def tunnel_ready(url: str) -> None:
+                    settings.values["PUBLIC_URL"] = url
+                    try:
+                        print(f"Phone calls: {point_number_at(settings, url)}")
+                    except Exception as error:
+                        print(f"Phone calls: could not point the Twilio number here: {error}")
+
+                quick = QuickTunnel(settings.port, tunnel_ready)
+                if await asyncio.to_thread(quick.start):
+                    stack.callback(quick.stop)
             # Starting Chrome takes about five seconds; do it before the first request.
             if settings.browser_prewarm:
                 opening = asyncio.ensure_future(browser_worker.run(browser.warm))
@@ -174,6 +214,8 @@ def create_app(
         desktop_worker.close()
 
     app = FastAPI(title="Friday services", lifespan=lifespan)
+    # Through the public tunnel only the Twilio call routes are reachable.
+    app.add_middleware(TunnelGuard)
     app.state.settings = settings
     app.state.calls = store
     app.state.calendar = calendar
@@ -350,6 +392,47 @@ def create_app(
             raise HTTPException(status_code=404, detail="Unknown call.")
         return Response(stream_twiml(settings, record), media_type="application/xml")
 
+    @app.post("/twilio/incoming")
+    async def twilio_incoming(request: Request) -> Response:
+        """The owner phoned Friday's number: Friday answers with their updates."""
+        params = await twilio_params(request)
+        caller = re.sub(r"\D", "", params.get("From", ""))
+        mine = re.sub(r"\D", "", owner_phone(settings) or "")
+        say = '<?xml version="1.0" encoding="UTF-8"?><Response><Say>{}</Say><Hangup/></Response>'
+        if not mine or caller != mine:
+            # Only the owner may talk to Friday by phone.
+            return Response(
+                say.format("Sorry, Friday only takes calls from its owner."),
+                media_type="application/xml",
+            )
+        if store.active():
+            return Response(
+                say.format("Friday is on another call. Please try again in a minute."),
+                media_type="application/xml",
+            )
+        upcoming = [
+            f"- {item.text} ({item.kind}), {spoken_time(datetime.fromtimestamp(item.due))}"
+            for item in reminders.upcoming()[:6]
+        ]
+        today = [
+            f"- {event['detail']}"
+            for event in feed.recent(60)
+            if event["state"] == "done" and event["actor"] != "control"
+        ][-8:]
+        context = "Coming up:\n" + ("\n".join(upcoming) or "- nothing")
+        if today:
+            context += "\nDone today:\n" + "\n".join(today)
+        record = store.create(
+            phone=params.get("From", ""),
+            goal="The owner called for an update.",
+            language=settings.get("FRIDAY_CALL_LANGUAGE", "en-IN"),
+            context=context,
+            kind="owner_in",
+        )
+        record.twilio_sid = params.get("CallSid")
+        feed.emit("friday", "call_in", "You phoned Friday.", state="done")
+        return Response(stream_twiml(settings, record), media_type="application/xml")
+
     @app.post("/twilio/status/{call_id}")
     async def twilio_status(call_id: str, request: Request) -> Response:
         params = await twilio_params(request)
@@ -455,7 +538,7 @@ def main() -> None:
     load_dotenv(REPO_ROOT / ".env")
     settings = Settings.from_env()
     uvicorn.run(
-        create_app(settings, wake=True),
+        create_app(settings, wake=True, tunnel=True),
         host=settings.host,
         port=settings.port,
         # The voice screen's live streams never end by themselves; do not wait on them.

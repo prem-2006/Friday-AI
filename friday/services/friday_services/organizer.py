@@ -61,6 +61,13 @@ class Reminder:
     done: bool = False
 
 
+@dataclass
+class Due:
+    kind: str  # timer | reminder | deadline | call
+    text: str
+    minutes_left: int  # 0 when it is due now
+
+
 class Reminders:
     def __init__(self, path: Path, clock=time.time):
         self._path = path
@@ -117,10 +124,10 @@ class Reminders:
                 self._save(items)
         return match
 
-    def due_now(self) -> list[str]:
+    def due_now(self) -> list[Due]:
         """What to say now; each announcement is said once."""
         now = self._clock()
-        said: list[str] = []
+        said: list[Due] = []
         with self._lock:
             items = self._load()
             changed = False
@@ -134,16 +141,21 @@ class Reminders:
                         if minutes >= 120
                         else ("1 hour" if minutes == 60 else f"{minutes} minutes")
                     )
-                    said.append(f"Reminder: {item.text} is due in {left}.")
+                    said.append(Due(item.kind, f"Reminder: {item.text} is due in {left}.", minutes))
                     changed = True
                 if now >= item.due:
                     item.done = True
                     changed = True
                     said.append(
-                        {
-                            "timer": f"Your timer is done: {item.text}.",
-                            "deadline": f"{item.text} is due now.",
-                        }.get(item.kind, f"Reminder: {item.text}.")
+                        Due(
+                            item.kind,
+                            {
+                                "timer": f"Your timer is done: {item.text}.",
+                                "deadline": f"{item.text} is due now.",
+                                "call": item.text,
+                            }.get(item.kind, f"Reminder: {item.text}."),
+                            0,
+                        )
                     )
             if changed:
                 self._save(items)

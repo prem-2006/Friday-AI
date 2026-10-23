@@ -33,11 +33,20 @@ from pipecat.transports.websocket.fastapi import (
 from pipecat.workers.runner import WorkerRunner
 from pipecat_gnani import GnaniTTSService
 
-from friday_services.calls.prompts import OUTCOMES, SUMMARY_PROMPT, phone_prompt
+from friday_services.calls.prompts import (
+    OUTCOMES,
+    SUMMARY_PROMPT,
+    owner_inbound_prompt,
+    owner_prompt,
+    phone_prompt,
+)
 from friday_services.calls.store import CallRecord, CallStore
 from friday_services.calls.stt import FramedGnaniSTTService
 from friday_services.config import Settings
 from friday_services.voices import voice_for
+
+# Who Friday is talking to: someone for the owner, or the owner (either way).
+PROMPTS = {"owner": owner_prompt, "owner_in": owner_inbound_prompt}
 
 TELEPHONY_SAMPLE_RATE = 8000
 # The pinned Gnani SDK defaults to timbre-v2.0; Friday speaks with Timbre v2.5.
@@ -153,7 +162,9 @@ def build_call_pipeline(
         messages=[
             {
                 "role": "system",
-                "content": phone_prompt(record, settings.owner_name, settings.timezone),
+                "content": PROMPTS.get(record.kind, phone_prompt)(
+                    record, settings.owner_name, settings.timezone
+                ),
             },
             {"role": "user", "content": "[The call has just been answered. Speak first.]"},
         ],

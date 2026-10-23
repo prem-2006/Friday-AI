@@ -11,7 +11,7 @@ src/friday/server/quick-finish.ts).
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -88,6 +88,7 @@ def build_quick_server(
     reminders: Reminders,
     notes: Notes,
     data_dir: Path,
+    call_owner: Callable[[str], Awaitable[dict]],
     timezone: str = "Asia/Kolkata",
 ) -> MCPServer:
     server = MCPServer(
@@ -340,6 +341,34 @@ def build_quick_server(
             raise ToolError(f"Nothing called {title} is coming up.")
         feed.emit("friday", "finish_reminder", f"Done: {done.text}.", state="done")
         return {"friday_say": f"Done, {done.text} is off the list."}
+
+    @server.tool(
+        name="call_me",
+        description=(
+            "Phone the owner's mobile: now, or at a time to remind them (when is the "
+            "owner's local time in India with no time zone, e.g. 2026-10-24T17:00). Friday "
+            "says why it is calling and talks briefly."
+        ),
+        annotations=ACT,
+    )
+    async def call_me(
+        message: Annotated[str, Field(min_length=3, max_length=300)],
+        when: Annotated[str, Field(max_length=25)] = "",
+    ) -> dict:
+        if when:
+            due = time_of(when)
+            await act(
+                "call_me",
+                f"Calling you {spoken_time(due)}: {message}",
+                lambda: asyncio.to_thread(reminders.add, "call", message, due),
+            )
+            return {"friday_say": f"Okay, I'll call you {spoken_time(due)}."}
+        feed.guard()
+        placed = await call_owner(message)
+        if not placed["called"]:
+            raise ToolError(placed["why"])
+        feed.emit("friday", "call_me", f"Calling your phone: {message}", state="done")
+        return {"friday_say": "Calling your phone now."}
 
     @server.tool(name="take_note", description="Save a note the owner dictates.", annotations=ACT)
     async def take_note(text: Annotated[str, Field(min_length=1, max_length=2000)]) -> dict:

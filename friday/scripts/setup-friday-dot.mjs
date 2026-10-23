@@ -35,7 +35,7 @@ const DOTS = [
   {
     name: 'Friday',
     persona: '../persona.md',
-    connections: ['whatsapp', 'quick'],
+    connections: ['whatsapp', 'quick', 'phone'],
   },
   {
     name: 'Navigator',
@@ -51,11 +51,17 @@ const DOTS = [
   { name: 'Coder', persona: '../dots/coder.md', connections: ['browser'] },
 ];
 // Parked skills that older setups connected to Friday.
-const RETIRED = ['phone', 'calendar', 'telegram'];
+const RETIRED = ['calendar', 'telegram'];
 // Run without an approval card: one-step actions that send nothing and buy
 // nothing; except these, which always ask the owner first.
-const NO_APPROVAL = ['quick'];
-const ALWAYS_ASK = ['send_email', 'schedule_meeting', 'lock_screen'];
+const NO_APPROVAL = ['quick', 'phone'];
+const ALWAYS_ASK = [
+  'send_email',
+  'schedule_meeting',
+  'lock_screen',
+  // Calling anyone but the owner.
+  'start_call',
+];
 
 async function api(path, method = 'GET', body) {
   const response = await fetch(`${APP_URL}/api${path}`, {

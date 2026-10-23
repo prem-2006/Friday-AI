@@ -58,6 +58,31 @@ NOT_CONNECTED = {
 }
 
 
+def point_number_at(settings: Settings, public_url: str) -> str:
+    """Makes calls to Friday's Twilio number ring Friday at this address (the
+    tunnel's address changes when it restarts)."""
+    sid = settings.get("TWILIO_ACCOUNT_SID")
+    token = settings.get("TWILIO_AUTH_TOKEN")
+    number = settings.get("TWILIO_FROM_NUMBER")
+    if not (sid and token and number):
+        return "Twilio is not set up."
+    auth = (sid, token)
+    base = f"{TWILIO_API}/Accounts/{sid}/IncomingPhoneNumbers"
+    found = httpx.get(f"{base}.json", params={"PhoneNumber": number}, auth=auth, timeout=15)
+    found.raise_for_status()
+    numbers = found.json().get("incoming_phone_numbers") or []
+    if not numbers:
+        return f"{number} is not a number in this Twilio account."
+    updated = httpx.post(
+        f"{base}/{numbers[0]['sid']}.json",
+        data={"VoiceUrl": f"{public_url}/twilio/incoming", "VoiceMethod": "POST"},
+        auth=auth,
+        timeout=15,
+    )
+    updated.raise_for_status()
+    return f"Calls to {number} now reach Friday."
+
+
 class TwilioDialer:
     def __init__(self, settings: Settings, client: httpx.AsyncClient | None = None):
         self._settings = settings

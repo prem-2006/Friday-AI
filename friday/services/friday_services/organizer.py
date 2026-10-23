@@ -29,11 +29,14 @@ class OrganizerError(ValueError):
 
 
 def parse_when(text: str) -> datetime:
-    """A local date and time like 2026-10-24T17:00."""
+    """A local date and time like 2026-10-24T17:00. A time with a zone (such as
+    UTC) is converted to this PC's local time, not just stripped of its zone."""
     try:
         when = datetime.fromisoformat(text.strip())
     except ValueError as error:
         raise OrganizerError("Give the time as a date and time, e.g. 2026-10-24T17:00.") from error
+    if when.tzinfo is not None:
+        when = when.astimezone()
     return when.replace(tzinfo=None)
 
 

@@ -85,16 +85,20 @@ export function Notch({
     document.documentElement.classList.add('friday-notch-page');
     return () => document.documentElement.classList.remove('friday-notch-page');
   }, []);
-  // The window lets clicks through to the desktop, except over the pill.
-  const hover = (on: boolean) => desktop()?.setInteractive(on);
+  // The notch window ignores the mouse entirely, so it never changes the
+  // pointer or catches a click meant for the app under it; only an approval
+  // on screen takes clicks, for its two buttons.
+  const asking = state === 'asking' && !!onDecide;
+  useEffect(() => {
+    desktop()?.setInteractive(asking);
+    return () => desktop()?.setInteractive(false);
+  }, [asking]);
   return (
     <div className={`friday-notch ${state}`}>
       {note && (
         <div
           className="notch-note"
           role={state === 'asking' ? 'dialog' : 'status'}
-          onMouseEnter={() => hover(true)}
-          onMouseLeave={() => hover(false)}
         >
           <span>{note}</span>
           {state === 'asking' && onDecide && (
@@ -117,8 +121,7 @@ export function Notch({
         type="button"
         className="notch-pill"
         aria-label="Friday. Hold Caps Lock to talk; click to open Friday."
-        onMouseEnter={() => hover(true)}
-        onMouseLeave={() => hover(false)}
+        tabIndex={-1}
         onClick={() => desktop()?.open('#/home')}
       >
         {state === 'hearing' && (

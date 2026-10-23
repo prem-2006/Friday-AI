@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 STAMP = "%Y%m%dT%H%M%S"
 
@@ -31,7 +32,9 @@ def calendar_event_url(
     except ValueError as error:
         raise MeetingError("Give the start as a date and time, e.g. 2026-10-24T15:00.") from error
     if begins.tzinfo is not None:
-        begins = begins.replace(tzinfo=None)  # read as local time in `timezone`
+        # A time with a zone (the model sometimes writes UTC, e.g. 16:30Z for
+        # 10 PM in India) is converted, never just stripped of its zone.
+        begins = begins.astimezone(ZoneInfo(timezone)).replace(tzinfo=None)
     if not 5 <= minutes <= 24 * 60:
         raise MeetingError("A meeting runs between 5 minutes and a day.")
     for guest in guests or []:

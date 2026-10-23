@@ -266,7 +266,7 @@ def build_quick_server(
         name="add_reminder",
         description=(
             "Remind the owner of something at a time; Friday says it out loud then. "
-            "when is local date and time, e.g. 2026-10-24T17:00."
+            "when is the owner's local time in India with no time zone, e.g. 2026-10-24T17:00."
         ),
         annotations=ACT,
     )
@@ -287,7 +287,7 @@ def build_quick_server(
         description=(
             "Save a deadline (an assignment, a bill, a project). Friday reminds the owner "
             "24 hours, 3 hours, 1 hour and 15 minutes before, and when it is due. due is "
-            "local date and time, e.g. 2026-10-24T17:00."
+            "the owner's local time in India with no time zone, e.g. 2026-10-24T17:00."
         ),
         annotations=ACT,
     )
@@ -506,7 +506,7 @@ def build_quick_server(
         name="schedule_meeting",
         description=(
             "Add an event to the owner's Google Calendar in Friday's Chrome, inviting guests "
-            "by email. start is local date and time, e.g. 2026-10-24T15:00. The owner "
+            "by email. start is the owner's local time in India with no time zone, e.g. 2026-10-24T22:00 for 10 PM. The owner "
             "approves every meeting before it is saved and invitations go out."
         ),
         annotations=SENDS,

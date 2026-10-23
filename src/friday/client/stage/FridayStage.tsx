@@ -29,6 +29,7 @@ import {
 import { HandsFree } from './handsFree';
 import { friendlyError } from './errors';
 import { intentOf, isEcho } from './intent';
+import { fixMishearings } from './corrections';
 import { LiveVoice, type LiveEvent } from './liveVoice';
 import { Notch, type NotchState } from './Notch';
 import { ACTOR_NAMES, narrate, type ActivityEvent } from './narration';
@@ -788,7 +789,8 @@ function StageSession({
   };
 
   // What to do with something the owner said (from either voice path).
-  const respond = async (text: string, startedOverFriday: boolean) => {
+  const respond = async (heardText: string, startedOverFriday: boolean) => {
+    const text = fixMishearings(heardText, languageRef.current);
     if (!text) {
       if (!startedOverFriday) setPhase(runningRef.current ? 'thinking' : 'off');
       return;

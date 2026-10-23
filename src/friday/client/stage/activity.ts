@@ -12,6 +12,8 @@ export function ownerHeaders(): Record<string, string> {
   }
 }
 
+const STREAM_SILENCE_MS = 40_000;
+
 export function followActivity(
   onEvent: (event: ActivityEvent) => void,
   onStatus: (connected: boolean) => void,
@@ -21,13 +23,25 @@ export function followActivity(
   const controller = new AbortController();
   const run = async () => {
     while (!controller.signal.aborted) {
+      // The services send a keep-alive every 15 s. A stream silent for 40 s
+      // died without saying so (the services restarted under the app), so
+      // drop it and connect again; otherwise Caps Lock would reach no one.
+      const attempt = new AbortController();
+      const stopAttempt = () => attempt.abort();
+      controller.signal.addEventListener('abort', stopAttempt);
+      let silence: ReturnType<typeof setTimeout> | undefined;
+      const heardFrom = () => {
+        clearTimeout(silence);
+        silence = setTimeout(stopAttempt, STREAM_SILENCE_MS);
+      };
       try {
+        heardFrom();
         // ?voice=1: this window handles Caps Lock (the newest one does).
         const response = await fetch(
           `/api/friday/activity/stream${voice ? '?voice=1' : ''}`,
           {
             headers: ownerHeaders(),
-            signal: controller.signal,
+            signal: attempt.signal,
           },
         );
         if (!response.ok || !response.body) throw new Error('unavailable');
@@ -38,6 +52,7 @@ export function followActivity(
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
+          heardFrom();
           buffer += decoder.decode(value, { stream: true });
           let split;
           while ((split = buffer.indexOf('\n\n')) >= 0) {
@@ -53,6 +68,9 @@ export function followActivity(
         }
       } catch {
         if (controller.signal.aborted) return;
+      } finally {
+        clearTimeout(silence);
+        controller.signal.removeEventListener('abort', stopAttempt);
       }
       onStatus(false);
       await new Promise((resolve) => setTimeout(resolve, 3000));

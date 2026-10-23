@@ -121,8 +121,10 @@ function createNotch() {
     },
   });
   notch.setAlwaysOnTop(true, 'screen-saver');
-  // Clicks pass through to whatever is underneath, except on the pill itself.
-  notch.setIgnoreMouseEvents(true, { forward: true });
+  // The notch never touches the mouse: clicks, hovering and the pointer all
+  // belong to whatever is underneath. Only an approval takes clicks, while it
+  // is on screen (the page asks for it).
+  notch.setIgnoreMouseEvents(true);
   place(notch);
   notch.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
@@ -233,7 +235,7 @@ function watchSelf() {
 }
 
 ipcMain.on('friday:interactive', (_event, on) =>
-  notch?.setIgnoreMouseEvents(!on, { forward: true }),
+  on ? notch?.setIgnoreMouseEvents(false) : notch?.setIgnoreMouseEvents(true),
 );
 // Ctrl + Caps Lock or the tray: hide the notch, or bring it back. Voice
 // keeps working while it is hidden.

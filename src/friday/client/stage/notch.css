@@ -18,9 +18,12 @@
   font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   pointer-events: none;
 }
-.friday-notch .notch-pill,
+/* Nothing here reacts to the mouse except an approval's buttons. */
 .friday-notch .notch-note {
   pointer-events: auto;
+}
+.friday-notch .notch-pill {
+  pointer-events: none;
 }
 .friday-notch .notch-pill {
   display: flex;
@@ -34,14 +37,9 @@
   border: 1px solid rgba(255, 255, 255, 0.32) !important;
   background: #050507 !important;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
-  cursor: pointer;
   transition:
     width 0.22s cubic-bezier(0.2, 0.8, 0.2, 1),
     height 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.friday-notch.idle .notch-pill:hover {
-  width: 112px;
-  height: 16px;
 }
 .notch-ready {
   width: 4px;

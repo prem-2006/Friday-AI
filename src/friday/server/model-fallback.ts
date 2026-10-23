@@ -1,16 +1,27 @@
-// Friday: a backup model for when the main one is rate limited.
+// Friday: more models for when the main one is rate limited.
 //
 // Free model keys run out quickly (Gemini answers 429 after a few requests a
-// minute). When FRIDAY_FALLBACK_* is set, a 429 or 503 from the main endpoint
-// is answered by sending the same request to the backup instead, at once,
-// rather than retrying and making the owner wait. For a minute after that,
-// requests go straight to the backup, skipping a refusal round trip each time.
+// minute, and each model has its own small daily allowance). A 429 or 503
+// from the main endpoint is answered at once, rather than retrying and making
+// the owner wait, by trying in turn:
+//   1. the same endpoint with each key in FRIDAY_PRIMARY_KEYS and each model
+//      in FRIDAY_PRIMARY_MODELS (comma-separated; each model and key has its
+//      own quota), then
+//   2. the backup, FRIDAY_FALLBACK_*.
+// A model and key that ran out rest for a while, so later requests skip the
+// refusal round trip and go straight to one that still answers.
 import { voiceLog } from './voice-log.js';
 
 type Fetch = typeof fetch;
 
 const trim = (url: string) => url.replace(/\/+$/, '');
+const list = (value?: string) =>
+  (value ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 const COOL_DOWN_MS = 60_000;
+const OUT_OF_QUOTA_MS = 10 * 60_000;
 
 export function fallbackFromEnv(env: Record<string, string | undefined>) {
   const baseUrl = env.FRIDAY_FALLBACK_BASE_URL?.trim();
@@ -21,6 +32,9 @@ export function fallbackFromEnv(env: Record<string, string | undefined>) {
     : undefined;
 }
 
+const limited = (response: Response) =>
+  response.status === 429 || response.status === 503;
+
 export function fridayFallbackFetch(
   primaryBaseUrl: string | undefined,
   env: Record<string, string | undefined> = process.env,
@@ -28,45 +42,69 @@ export function fridayFallbackFetch(
   now: () => number = Date.now,
 ): Fetch | undefined {
   const backup = fallbackFromEnv(env);
-  if (!backup || !primaryBaseUrl) return undefined;
+  const extraModels = list(env.FRIDAY_PRIMARY_MODELS);
+  const extraKeys = list(env.FRIDAY_PRIMARY_KEYS);
+  if (!primaryBaseUrl || (!backup && !extraModels.length && !extraKeys.length))
+    return undefined;
   const primary = trim(primaryBaseUrl);
-  let limitedUntil = 0;
+  // When each model and key may be tried again.
+  const resting = new Map<string, number>();
   return async (input, init) => {
-    const skip = now() < limitedUntil;
-    const response = skip
-      ? new Response(null, { status: 429 })
-      : await baseFetch(input, init);
     const url =
       typeof input === 'string'
         ? input
         : input instanceof URL
           ? input.href
           : input.url;
-    if (
-      (response.status !== 429 && response.status !== 503) ||
-      !url.startsWith(primary) ||
-      typeof init?.body !== 'string'
-    )
-      return response;
-    let body: Record<string, unknown>;
-    try {
-      body = JSON.parse(init.body) as Record<string, unknown>;
-    } catch {
-      return response;
-    }
+    let body: Record<string, unknown> | undefined;
+    if (url.startsWith(primary) && typeof init?.body === 'string')
+      try {
+        body = JSON.parse(init.body) as Record<string, unknown>;
+      } catch {
+        body = undefined;
+      }
+    if (!body) return baseFetch(input, init);
+    const ownKey =
+      new Headers(init?.headers)
+        .get('authorization')
+        ?.replace(/^Bearer\s+/i, '') ?? '';
+    const ownModel = String(body.model ?? '');
+    const keys = [...new Set([ownKey, ...extraKeys])];
+    const models = [...new Set([ownModel, ...extraModels])];
+    let refused: Response | undefined;
+    for (const key of keys)
+      for (const model of models) {
+        const id = `${key.slice(-8)}:${model}`;
+        if ((resting.get(id) ?? 0) > now()) continue;
+        const own = key === ownKey && model === ownModel;
+        const headers = new Headers(init?.headers);
+        headers.set('authorization', `Bearer ${key}`);
+        const response = await baseFetch(
+          input,
+          own
+            ? init
+            : { ...init, headers, body: JSON.stringify({ ...body, model }) },
+        );
+        if (!limited(response)) return response;
+        resting.set(
+          id,
+          now() + (response.status === 429 ? OUT_OF_QUOTA_MS : COOL_DOWN_MS),
+        );
+        void refused?.body?.cancel().catch(() => {});
+        refused = response;
+      }
+    if (!backup) return refused ?? new Response(null, { status: 429 });
     // Options meant for the main provider may be rejected by the backup.
     delete body.reasoning_effort;
     body.model = backup.model;
-    const headers = new Headers(init.headers);
+    const headers = new Headers(init?.headers);
     headers.set('authorization', `Bearer ${backup.apiKey}`);
-    if (!skip) {
-      limitedUntil = now() + COOL_DOWN_MS;
+    if (refused)
       voiceLog('model_fallback', {
-        status: response.status,
+        status: refused.status,
         model: backup.model,
       });
-    }
-    void response.body?.cancel().catch(() => {});
+    void refused?.body?.cancel().catch(() => {});
     return baseFetch(backup.baseUrl + url.slice(primary.length), {
       ...init,
       headers,

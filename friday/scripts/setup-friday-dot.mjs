@@ -59,8 +59,8 @@ const ALWAYS_ASK = [
   'send_email',
   'schedule_meeting',
   'lock_screen',
-  // Calling anyone but the owner.
-  'start_call',
+  // start_call (calling someone for the owner) runs without an OK: the owner
+  // asked for that on 2026-10-23.
 ];
 
 async function api(path, method = 'GET', body) {

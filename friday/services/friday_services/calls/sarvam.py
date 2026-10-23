@@ -1,0 +1,95 @@
+"""Friday phones its owner through a Sarvam voice agent.
+
+Sarvam places the call from its Indian number and runs the conversation
+with the agent made on indus.sarvam.ai. That agent's greeting is the input
+variable {{opening_line}}, so the call opens with this call's reminder; the
+variables `reason` and `updates` carry the rest for its instructions.
+
+  POST https://apps.sarvam.ai/api/outbounds/v1/orgs/{org}/workspaces/{ws}/outbounds
+
+Every value comes from the Sarvam website (see .env.example, SARVAM_*).
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any
+
+import httpx
+
+from friday_services.config import Settings
+
+SARVAM_API = "https://apps.sarvam.ai/api/outbounds/v1"
+SARVAM_SETTINGS = (
+    "SARVAM_API_KEY",
+    "SARVAM_ORG_ID",
+    "SARVAM_WORKSPACE_ID",
+    "SARVAM_APP_ID",
+    "SARVAM_APP_VERSION",
+    "SARVAM_CONNECTION_ID",
+    "SARVAM_AGENT_NUMBER",
+)
+
+
+class SarvamError(RuntimeError):
+    pass
+
+
+class SarvamDialer:
+    name = "sarvam"
+
+    def __init__(self, settings: Settings, client: httpx.AsyncClient | None = None):
+        self._settings = settings
+        self._client = client
+
+    @property
+    def ready(self) -> bool:
+        return not self._settings.missing(SARVAM_SETTINGS)
+
+    async def call(
+        self, *, phone: str, greeting: str, prompt: str, reference: str, note: str, updates: str
+    ) -> str:
+        """Ring the owner with this call's opening line. Returns Sarvam's reply."""
+        get = self._settings.get
+        digits = re.sub(r"\D", "", phone)
+        if len(digits) < 11:
+            raise SarvamError(f"{phone} is not a full international number.")
+        body: dict[str, Any] = {
+            "app_config": {
+                "app_id": get("SARVAM_APP_ID"),
+                "app_version": int(get("SARVAM_APP_VERSION", "1")),
+                "connection_config": {
+                    "connection_id": get("SARVAM_CONNECTION_ID"),
+                    "agent_phone_number": get("SARVAM_AGENT_NUMBER"),
+                },
+                "agent_variables": {
+                    "opening_line": greeting,
+                    "reason": note,
+                    "updates": updates or "none",
+                },
+                # Sarvam ignores this when the greeting is {{opening_line}}; kept
+                # so an agent with a plain greeting still opens with the reason.
+                "app_overrides": {
+                    "initial_bot_message": greeting,
+                    "initial_language_name": get("SARVAM_CALL_LANGUAGE", "English"),
+                },
+            },
+            "user_config": {"user_phone_number": f"+{digits}"},
+        }
+        url = (
+            f"{SARVAM_API}/orgs/{get('SARVAM_ORG_ID')}"
+            f"/workspaces/{get('SARVAM_WORKSPACE_ID')}/outbounds"
+        )
+        client = self._client or httpx.AsyncClient(timeout=15)
+        try:
+            response = await client.post(
+                url, json=body, headers={"X-API-Key": get("SARVAM_API_KEY")}
+            )
+        finally:
+            if not self._client:
+                await client.aclose()
+        if response.status_code >= 400:
+            raise SarvamError(
+                f"Sarvam refused the call (HTTP {response.status_code}): {response.text[:200]}"
+            )
+        return response.text[:200]

@@ -1,8 +1,9 @@
 """Friday phones its owner: for deadlines, and when asked ("call me at 5").
 
-With INYA_API_KEY set the call goes through Gnani's Inya voice agent
-(calls/inya.py): an Indian call with no trial notice, where Friday says the
-reminder in its own words and keeps talking. Otherwise it uses the same
+With a voice agent set up the call goes through it: Sarvam (calls/sarvam.py,
+SARVAM_*) first, else Gnani's Inya (calls/inya.py, INYA_API_KEY). Either is an
+Indian call with no trial notice, where Friday says the reminder in its own
+words and keeps talking. Otherwise it uses the same
 Twilio + Gnani pipeline as Friday's calls to businesses (calls/bot.py), with
 the owner prompt. Calls are limited so a mistake can never ring the owner
 again and again.
@@ -49,20 +50,33 @@ class OwnerCaller:
         dialer: Any,
         clock=time.time,
         gnani: InyaDialer | None = None,
+        sarvam: Any = None,
     ):
         self._settings = settings
         self._store = store
         self._dialer = dialer
         self._clock = clock
         self._gnani = gnani
+        self._sarvam = sarvam
         self._calls: list[float] = []
 
     @property
-    def uses_gnani(self) -> bool:
-        return bool(self._gnani and self._gnani.ready)
+    def agent(self) -> Any:
+        """The voice agent that places calls to the owner, if one is set up."""
+        for agent in (self._sarvam, self._gnani):
+            if agent and agent.ready:
+                return agent
+        return None
+
+    @property
+    def via(self) -> str:
+        agent = self.agent
+        if agent is None:
+            return "twilio"
+        return "sarvam" if agent is self._sarvam else "gnani"
 
     def missing(self) -> list[str]:
-        missing = [] if self.uses_gnani else self._settings.missing(CALL_SETTINGS)
+        missing = [] if self.agent else self._settings.missing(CALL_SETTINGS)
         if not owner_phone(self._settings):
             missing.append("your phone number (Your details, or FRIDAY_OWNER_PHONE)")
         return missing
@@ -80,8 +94,8 @@ class OwnerCaller:
             return {"called": False, "why": "I called you less than 10 minutes ago."}
         if self._store.active():
             return {"called": False, "why": "Another call is in progress."}
-        if self.uses_gnani:
-            return await self._call_with_gnani(reason, updates, now)
+        if self.agent:
+            return await self._call_with_agent(reason, updates, now)
         record = self._store.create(
             phone=owner_phone(self._settings) or "",
             goal=reason,
@@ -98,21 +112,23 @@ class OwnerCaller:
         self._calls.append(now)
         return {"called": True, "call_id": record.id}
 
-    async def _call_with_gnani(self, reason: str, updates: str, now: float) -> dict[str, Any]:
-        assert self._gnani
+    async def _call_with_agent(self, reason: str, updates: str, now: float) -> dict[str, Any]:
+        agent = self.agent
         note = reason + (f"\nThe updates:\n{updates}" if updates else "")
-        greeting = await self._gnani.greeting(note)
+        greeting = await (self._gnani or InyaDialer(self._settings)).greeting(note)
         prompt = gnani_owner_prompt(
             self._settings.owner_name, greeting, reason, updates, self._settings.timezone
         )
         try:
-            await self._gnani.call(
+            extra = {"note": reason, "updates": updates} if agent is self._sarvam else {}
+            await agent.call(
                 phone=owner_phone(self._settings) or "",
                 greeting=greeting,
                 prompt=prompt,
                 reference=f"friday-{int(now)}",
+                **extra,
             )
         except Exception as error:
             return {"called": False, "why": f"The call could not be placed: {error}"}
         self._calls.append(now)
-        return {"called": True, "via": "gnani"}
+        return {"called": True, "via": self.via}

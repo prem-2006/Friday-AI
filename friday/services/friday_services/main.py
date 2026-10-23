@@ -27,6 +27,7 @@ from friday_services.calendar.page import add_calendar_page
 from friday_services.calendar.store import CalendarStore
 from friday_services.calls.bot import run_call
 from friday_services.calls.inya import InyaDialer
+from friday_services.calls.sarvam import SarvamDialer
 from friday_services.calls.store import CallStore
 from friday_services.calls.twilio import (
     NOT_CONNECTED,
@@ -99,7 +100,9 @@ def create_app(
     desktop_worker = Worker("friday-desktop", initializer=com_thread)
     desktop = desktop or DesktopApps()
     dialer = dialer or TwilioDialer(settings)
-    owner_caller = OwnerCaller(settings, store, dialer, gnani=InyaDialer(settings))
+    owner_caller = OwnerCaller(
+        settings, store, dialer, gnani=InyaDialer(settings), sarvam=SarvamDialer(settings)
+    )
     ringing_back: set[asyncio.Task] = set()
     reminders = Reminders(settings.data_dir / "reminders.json")
     notes = Notes(settings.data_dir / "notes.txt")
@@ -385,7 +388,7 @@ def create_app(
             "ok": True,
             "calls": {"ready": not calls_missing, "missing": calls_missing},
             "owner_calls": {
-                "via": "gnani" if owner_caller.uses_gnani else "twilio",
+                "via": owner_caller.via,
                 "missing": owner_caller.missing(),
             },
             "calendar": {"ready": True, "missing": [], "browser_url": settings.calendar_url},
@@ -430,7 +433,7 @@ def create_app(
         context = "Coming up:\n" + ("\n".join(upcoming) or "- nothing")
         if today:
             context += "\nDone today:\n" + "\n".join(today)
-        if owner_caller.uses_gnani:
+        if owner_caller.agent:
             # A missed call is enough: Friday does not answer (so the call costs
             # nothing and no trial notice plays) and Gnani rings back with the
             # updates.

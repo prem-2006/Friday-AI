@@ -133,6 +133,7 @@ export function Notch({
             <i />
           </span>
         )}
+        {state === 'idle' && <span className="notch-ready" aria-hidden />}
         {state === 'offline' && <span className="notch-warn" aria-hidden />}
       </button>
     </div>

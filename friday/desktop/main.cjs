@@ -6,7 +6,9 @@
 // #/notch page from the folder's dev server, so any change to the folder shows
 // up at once, and this file restarts the shell when it changes itself. No
 // reinstall is ever needed. If the app or services are not running, the shell
-// starts them (logs go to data/desktop-*.log).
+// starts them (logs go to data/desktop-*.log), checks every 30 seconds and
+// starts again whatever stopped. It starts with Windows unless the owner turns
+// that off in the tray menu.
 const {
   app,
   BrowserWindow,
@@ -33,7 +35,7 @@ if (!app.requestSingleInstanceLock()) app.exit(0);
 // Friday speaks without anyone clicking first.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
-const children = [];
+const children = new Map(); // name -> the process this shell started
 let notch = null;
 let tray = null;
 
@@ -46,7 +48,11 @@ async function reachable(url) {
   }
 }
 
+const running = (child) => child && child.exitCode === null && !child.killed;
+
 function start(name, command, args, cwd) {
+  // Still starting up from last time: give it time.
+  if (running(children.get(name))) return;
   const log = fs.openSync(path.join(REPO, 'data', `desktop-${name}.log`), 'a');
   const child = spawn(command, args, {
     cwd,
@@ -54,11 +60,12 @@ function start(name, command, args, cwd) {
     windowsHide: true,
     shell: process.platform === 'win32',
   });
-  children.push(child);
+  children.set(name, child);
 }
 
-// Starts what is not running yet, and waits until the notch page can load.
-async function ensureFriday() {
+// Starts whatever is not running: the app (web page and API) and the services
+// (tools, live voice, Caps Lock). Something the owner runs in a terminal counts.
+async function keepFridayRunning() {
   fs.mkdirSync(path.join(REPO, 'data'), { recursive: true });
   if (!(await reachable(`${API}/api/workspace`)) || !(await reachable(WEB)))
     start('app', 'npm', ['run', 'dev'], REPO);
@@ -69,6 +76,10 @@ async function ensureFriday() {
       ['-m', 'uv', 'run', 'python', '-m', 'friday_services'],
       path.join(REPO, 'friday', 'services'),
     );
+}
+
+async function ensureFriday() {
+  await keepFridayRunning();
   for (let i = 0; i < 120 && !(await reachable(WEB)); i++)
     await new Promise((resolve) => setTimeout(resolve, 1000));
 }
@@ -114,12 +125,16 @@ function createNotch() {
     void shell.openExternal(url);
     return { action: 'deny' };
   });
-  notch.once('ready-to-show', () => notch.showInactive());
+  const show = () => notch && !notch.isVisible() && notch.showInactive();
+  notch.once('ready-to-show', show);
+  notch.webContents.on('did-finish-load', show);
   void notch.loadURL(`${WEB}/#/notch`);
-  // If the dev server restarts, load the page again.
-  notch.webContents.on('did-fail-load', () =>
-    setTimeout(() => notch && void notch.loadURL(`${WEB}/#/notch`), 2000),
-  );
+  const reload = () =>
+    setTimeout(() => notch && void notch.loadURL(`${WEB}/#/notch`), 2000);
+  // If the dev server restarts, or the page crashes or hangs, load it again.
+  notch.webContents.on('did-fail-load', reload);
+  notch.webContents.on('render-process-gone', reload);
+  notch.on('unresponsive', reload);
 }
 
 function trayIcon() {
@@ -140,11 +155,7 @@ function createTray() {
         label: 'Start with Windows',
         type: 'checkbox',
         checked: startsWithWindows(),
-        click: (item) =>
-          app.setLoginItemSettings({
-            ...loginItem(),
-            openAtLogin: item.checked,
-          }),
+        click: (item) => setStartWithWindows(item.checked),
       },
       { label: 'Reload', click: () => notch?.reload() },
       { type: 'separator' },
@@ -156,7 +167,20 @@ function createTray() {
 
 // Starting with Windows runs this same folder through Electron.
 function loginItem() {
-  return { path: process.execPath, args: [__dirname] };
+  return { name: 'Friday', path: process.execPath, args: [__dirname] };
+}
+
+// On by default, so Friday is always there after a restart; the owner's
+// choice in the tray menu is remembered.
+const choiceFile = () =>
+  path.join(app.getPath('userData'), 'start-with-windows.json');
+function setStartWithWindows(on) {
+  app.setLoginItemSettings({ ...loginItem(), openAtLogin: on });
+  fs.mkdirSync(path.dirname(choiceFile()), { recursive: true });
+  fs.writeFileSync(choiceFile(), JSON.stringify({ on }));
+}
+function startWithWindowsByDefault() {
+  if (!fs.existsSync(choiceFile())) setStartWithWindows(true);
 }
 
 // The shell itself updates by restarting when its own files change.
@@ -195,10 +219,12 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionCheckHandler(
     (_contents, permission, origin) => permission === 'media' && local(origin),
   );
+  startWithWindowsByDefault();
   createTray();
   await ensureFriday();
   createNotch();
   watchSelf();
+  setInterval(() => void keepFridayRunning(), 30_000);
   screen.on('display-metrics-changed', () => notch && place(notch));
 });
 
@@ -208,8 +234,8 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   // Stops what the shell started, with everything those started in turn.
-  for (const child of children)
-    if (child.pid)
+  for (const child of children.values())
+    if (running(child) && child.pid)
       spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
         windowsHide: true,
       });

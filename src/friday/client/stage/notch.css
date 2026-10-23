@@ -26,11 +26,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 64px;
-  height: 8px;
+  /* Small, but always findable against any wallpaper or window. */
+  width: 96px;
+  height: 14px;
   padding: 0;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  border: 1px solid rgba(255, 255, 255, 0.32) !important;
   background: #050507 !important;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
   cursor: pointer;
@@ -39,8 +40,15 @@
     height 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .friday-notch.idle .notch-pill:hover {
-  width: 84px;
-  height: 10px;
+  width: 112px;
+  height: 16px;
+}
+.notch-ready {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #8b7bff;
+  box-shadow: 0 0 6px #8b7bff;
 }
 .friday-notch.hearing .notch-pill,
 .friday-notch.speaking .notch-pill {

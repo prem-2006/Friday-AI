@@ -1,9 +1,11 @@
 """Friday phones its owner: for deadlines, and when asked ("call me at 5").
 
-The call uses the same Twilio + Gnani pipeline as Friday's calls to
-businesses (calls/bot.py), with the owner prompt: Friday says why it is
-calling, answers briefly, says bye and hangs up. Calls are limited so a
-mistake can never ring the owner again and again.
+With INYA_API_KEY set the call goes through Gnani's Inya voice agent
+(calls/inya.py): an Indian call with no trial notice, where Friday says the
+reminder in its own words and keeps talking. Otherwise it uses the same
+Twilio + Gnani pipeline as Friday's calls to businesses (calls/bot.py), with
+the owner prompt. Calls are limited so a mistake can never ring the owner
+again and again.
 """
 
 from __future__ import annotations
@@ -14,6 +16,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from friday_services.calls.inya import InyaDialer
+from friday_services.calls.prompts import gnani_owner_prompt
 from friday_services.calls.store import CallStore
 from friday_services.config import CALL_SETTINGS, REPO_ROOT, Settings
 
@@ -38,20 +42,32 @@ def owner_phone(settings: Settings, profile_path: Path | None = None) -> str | N
 
 
 class OwnerCaller:
-    def __init__(self, settings: Settings, store: CallStore, dialer: Any, clock=time.time):
+    def __init__(
+        self,
+        settings: Settings,
+        store: CallStore,
+        dialer: Any,
+        clock=time.time,
+        gnani: InyaDialer | None = None,
+    ):
         self._settings = settings
         self._store = store
         self._dialer = dialer
         self._clock = clock
+        self._gnani = gnani
         self._calls: list[float] = []
 
+    @property
+    def uses_gnani(self) -> bool:
+        return bool(self._gnani and self._gnani.ready)
+
     def missing(self) -> list[str]:
-        missing = self._settings.missing(CALL_SETTINGS)
+        missing = [] if self.uses_gnani else self._settings.missing(CALL_SETTINGS)
         if not owner_phone(self._settings):
             missing.append("your phone number (Your details, or FRIDAY_OWNER_PHONE)")
         return missing
 
-    async def call(self, reason: str, urgent: bool = False) -> dict[str, Any]:
+    async def call(self, reason: str, urgent: bool = False, updates: str = "") -> dict[str, Any]:
         """Rings the owner now. Returns what happened, never raises for limits."""
         missing = self.missing()
         if missing:
@@ -64,6 +80,8 @@ class OwnerCaller:
             return {"called": False, "why": "I called you less than 10 minutes ago."}
         if self._store.active():
             return {"called": False, "why": "Another call is in progress."}
+        if self.uses_gnani:
+            return await self._call_with_gnani(reason, updates, now)
         record = self._store.create(
             phone=owner_phone(self._settings) or "",
             goal=reason,
@@ -79,3 +97,22 @@ class OwnerCaller:
         self._store.set_stage(record.id, "ringing")
         self._calls.append(now)
         return {"called": True, "call_id": record.id}
+
+    async def _call_with_gnani(self, reason: str, updates: str, now: float) -> dict[str, Any]:
+        assert self._gnani
+        note = reason + (f"\nThe updates:\n{updates}" if updates else "")
+        greeting = await self._gnani.greeting(note)
+        prompt = gnani_owner_prompt(
+            self._settings.owner_name, greeting, reason, updates, self._settings.timezone
+        )
+        try:
+            await self._gnani.call(
+                phone=owner_phone(self._settings) or "",
+                greeting=greeting,
+                prompt=prompt,
+                reference=f"friday-{int(now)}",
+            )
+        except Exception as error:
+            return {"called": False, "why": f"The call could not be placed: {error}"}
+        self._calls.append(now)
+        return {"called": True, "via": "gnani"}

@@ -26,6 +26,7 @@ from friday_services.browser_agent import BrowserAgent, agent_from_settings
 from friday_services.calendar.page import add_calendar_page
 from friday_services.calendar.store import CalendarStore
 from friday_services.calls.bot import run_call
+from friday_services.calls.inya import InyaDialer
 from friday_services.calls.store import CallStore
 from friday_services.calls.twilio import (
     NOT_CONNECTED,
@@ -98,7 +99,8 @@ def create_app(
     desktop_worker = Worker("friday-desktop", initializer=com_thread)
     desktop = desktop or DesktopApps()
     dialer = dialer or TwilioDialer(settings)
-    owner_caller = OwnerCaller(settings, store, dialer)
+    owner_caller = OwnerCaller(settings, store, dialer, gnani=InyaDialer(settings))
+    ringing_back: set[asyncio.Task] = set()
     reminders = Reminders(settings.data_dir / "reminders.json")
     notes = Notes(settings.data_dir / "notes.txt")
     whatsapp = WhatsApp(whatsapp_ui or DesktopWhatsAppUI(), settings.owner_name)
@@ -381,6 +383,10 @@ def create_app(
         return {
             "ok": True,
             "calls": {"ready": not calls_missing, "missing": calls_missing},
+            "owner_calls": {
+                "via": "gnani" if owner_caller.uses_gnani else "twilio",
+                "missing": owner_caller.missing(),
+            },
             "calendar": {"ready": True, "missing": [], "browser_url": settings.calendar_url},
         }
 
@@ -394,7 +400,8 @@ def create_app(
 
     @app.post("/twilio/incoming")
     async def twilio_incoming(request: Request) -> Response:
-        """The owner phoned Friday's number: Friday answers with their updates."""
+        """The owner phoned Friday's number: Friday answers with their updates
+        (with Gnani set up: lets it ring out and calls back)."""
         params = await twilio_params(request)
         caller = re.sub(r"\D", "", params.get("From", ""))
         mine = re.sub(r"\D", "", owner_phone(settings) or "")
@@ -422,6 +429,28 @@ def create_app(
         context = "Coming up:\n" + ("\n".join(upcoming) or "- nothing")
         if today:
             context += "\nDone today:\n" + "\n".join(today)
+        if owner_caller.uses_gnani:
+            # A missed call is enough: Friday does not answer (so the call costs
+            # nothing and no trial notice plays) and Gnani rings back with the
+            # updates.
+            async def ring_back() -> None:
+                await asyncio.sleep(3)
+                placed = await owner_caller.call(
+                    "You gave me a missed call, so here are your updates.",
+                    urgent=True,
+                    updates=context,
+                )
+                if not placed["called"]:
+                    feed.emit("friday", "call_owner", placed["why"], state="failed")
+
+            task = asyncio.create_task(ring_back(), name="friday-ring-back")
+            ringing_back.add(task)
+            task.add_done_callback(ringing_back.discard)
+            feed.emit("friday", "call_in", "Missed call from you: calling you back.", state="done")
+            return Response(
+                '<?xml version="1.0" encoding="UTF-8"?><Response><Reject reason="busy"/></Response>',
+                media_type="application/xml",
+            )
         record = store.create(
             phone=params.get("From", ""),
             goal="The owner called for an update.",

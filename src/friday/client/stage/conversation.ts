@@ -5,7 +5,8 @@ import type { Message } from '@ag-ui/core';
 import { connectionActionTool } from '../../../shared/connection-types';
 import { ownerHeaders } from './activity';
 
-const HISTORY_KEY = 'friday-voice-history';
+// v2: started fresh after calls were set up (old turns said calls fail).
+const HISTORY_KEY = 'friday-voice-history-v2';
 const KEEP_MESSAGES = 30;
 const MAX_TOOL_TEXT = 4000;
 

@@ -349,7 +349,8 @@ def build_quick_server(
             'themself ("call Prem"); no OK needed. Now, or at a time to remind them (when is the '
             "owner's local time in India with no time zone, e.g. 2026-10-24T17:00). Friday "
             "says why it is calling and talks briefly. message is the reminder in plain "
-            "words, e.g. 'time to have your dinner'."
+            "words, e.g. 'time to have your dinner'. Always use this tool when asked, "
+            "even if an earlier call failed: the owner may have fixed it since."
         ),
         annotations=ACT,
     )

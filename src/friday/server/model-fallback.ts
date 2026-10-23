@@ -79,13 +79,25 @@ export function fridayFallbackFetch(
         const own = key === ownKey && model === ownModel;
         const headers = new Headers(init?.headers);
         headers.set('authorization', `Bearer ${key}`);
+        // Options tuned for the main model may be rejected by another one
+        // (gemini-flash-lite-latest refuses reasoning_effort "none").
+        const plain = { ...body };
+        delete plain.reasoning_effort;
         const response = await baseFetch(
           input,
           own
             ? init
-            : { ...init, headers, body: JSON.stringify({ ...body, model }) },
+            : {
+                ...init,
+                headers,
+                body: JSON.stringify(
+                  model === ownModel ? { ...body, model } : { ...plain, model },
+                ),
+              },
         );
-        if (!limited(response)) return response;
+        // Another model that refuses the request is skipped, not fatal.
+        if (!limited(response) && (own || response.status !== 400))
+          return response;
         resting.set(
           id,
           now() + (response.status === 429 ? OUT_OF_QUOTA_MS : COOL_DOWN_MS),

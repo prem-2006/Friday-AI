@@ -59,13 +59,16 @@ class Reminder:
     # Minutes before `due` still to announce (deadlines), then the due time itself.
     stages: list[int] = field(default_factory=list)
     done: bool = False
+    # contact_call: who to phone and what to say (phone, name, goal, opening).
+    extra: dict = field(default_factory=dict)
 
 
 @dataclass
 class Due:
-    kind: str  # timer | reminder | deadline | call
+    kind: str  # timer | reminder | deadline | call | contact_call
     text: str
     minutes_left: int  # 0 when it is due now
+    extra: dict = field(default_factory=dict)
 
 
 class Reminders:
@@ -84,7 +87,7 @@ class Reminders:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._path.write_text(json.dumps([asdict(item) for item in items], indent=2), "utf-8")
 
-    def add(self, kind: str, text: str, due: datetime) -> Reminder:
+    def add(self, kind: str, text: str, due: datetime, extra: dict | None = None) -> Reminder:
         when = due.timestamp()
         if when <= self._clock():
             raise OrganizerError("That time has already passed.")
@@ -92,7 +95,7 @@ class Reminders:
         if kind == "deadline":
             minutes_left = (when - self._clock()) / 60
             stages = [m for m in DEADLINE_STAGES if m < minutes_left]
-        item = Reminder(uuid.uuid4().hex[:8], kind, text.strip(), when, stages)
+        item = Reminder(uuid.uuid4().hex[:8], kind, text.strip(), when, stages, extra=extra or {})
         with self._lock:
             items = self._load()
             items.append(item)
@@ -153,8 +156,10 @@ class Reminders:
                                 "timer": f"Your timer is done: {item.text}.",
                                 "deadline": f"{item.text} is due now.",
                                 "call": item.text,
+                                "contact_call": item.text,
                             }.get(item.kind, f"Reminder: {item.text}."),
                             0,
+                            item.extra,
                         )
                     )
             if changed:

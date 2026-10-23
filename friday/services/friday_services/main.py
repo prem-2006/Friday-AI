@@ -42,7 +42,7 @@ from friday_services.files import owner_folders
 from friday_services.mcp_browser import build_browser_server
 from friday_services.mcp_calendar import build_calendar_server
 from friday_services.mcp_desktop import build_desktop_server, build_whatsapp_server
-from friday_services.mcp_phone import Dialer, build_phone_server
+from friday_services.mcp_phone import Dialer, build_phone_server, call_someone
 from friday_services.mcp_quick import build_quick_server
 from friday_services.organizer import (
     Notes,
@@ -130,7 +130,9 @@ def create_app(
             timezone=settings.timezone,
         ),
         "/calendar": build_calendar_server(calendar, settings.calendar_url),
-        "/phone": build_phone_server(store, dialer, settings, sarvam=SarvamDialer(settings)),
+        "/phone": build_phone_server(
+            store, dialer, settings, sarvam=SarvamDialer(settings), reminders=reminders
+        ),
     }
     mcp_apps = {
         path: (
@@ -160,10 +162,28 @@ def create_app(
         calls_for_deadlines = settings.get("FRIDAY_CALL_DEADLINES", "true").lower() != "false"
         return due.kind == "deadline" and calls_for_deadlines and due.minutes_left <= 60
 
+    async def place_contact_call(due) -> None:
+        """A call to someone else that was scheduled for now."""
+        who = due.extra.get("name") or due.extra.get("phone")
+        try:
+            await call_someone(
+                SarvamDialer(settings),
+                settings,
+                due.extra["phone"],
+                due.extra.get("goal") or due.text,
+                due.extra.get("opening") or "",
+            )
+            feed.emit("friday", "schedule_call", f"Calling {who} now.", state="done")
+        except Exception as error:
+            feed.emit("friday", "schedule_call", f"Could not call {who}: {error}", state="failed")
+
     async def reminder_clock() -> None:
         while True:
             try:
                 for due in await asyncio.to_thread(reminders.due_now):
+                    if due.kind == "contact_call":
+                        await place_contact_call(due)
+                        continue
                     announce(f"Calling your phone: {due.text}" if due.kind == "call" else due.text)
                     if should_call(due):
                         placed = await owner_caller.call(due.text, urgent=due.minutes_left == 0)

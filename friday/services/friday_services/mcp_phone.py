@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import Annotated, Protocol
 
@@ -13,6 +14,7 @@ from pydantic import Field
 from friday_services.calls.sarvam import SarvamDialer
 from friday_services.calls.store import CallRecord, CallStore
 from friday_services.config import CALL_SETTINGS, Settings
+from friday_services.organizer import OrganizerError, Reminders, parse_when, spoken_time
 from friday_services.voices import DEFAULT_LANGUAGE, LANGUAGES
 
 PHONE_NUMBER = re.compile(r"^\+[1-9]\d{7,14}$")
@@ -24,8 +26,33 @@ class Dialer(Protocol):
     async def place(self, record: CallRecord) -> str: ...
 
 
+async def call_someone(
+    sarvam: SarvamDialer,
+    settings: Settings,
+    phone: str,
+    goal: str,
+    opening_line: str = "",
+    context: str = "",
+) -> None:
+    """Has the Sarvam agent phone someone other than the owner, for the owner."""
+    owner = settings.owner_name
+    greeting = (
+        opening_line.strip() or f"Hello, this is Friday, an AI assistant calling for {owner}."
+    )
+    note = f"You are calling someone for {owner}, not {owner} themself. Goal: {goal}" + (
+        f" What you may share or accept: {context}" if context else ""
+    )
+    await sarvam.call(
+        phone=phone, greeting=greeting, prompt="", reference="", note=note, updates="none"
+    )
+
+
 def build_phone_server(
-    store: CallStore, dialer: Dialer, settings: Settings, sarvam: SarvamDialer | None = None
+    store: CallStore,
+    dialer: Dialer,
+    settings: Settings,
+    sarvam: SarvamDialer | None = None,
+    reminders: Reminders | None = None,
 ) -> MCPServer:
     server = MCPServer(
         name="friday-phone",
@@ -91,22 +118,8 @@ def build_phone_server(
         if sarvam and sarvam.ready:
             # Sarvam's agent runs the call (an Indian number, no trial notice);
             # Twilio is the fallback when Sarvam refuses.
-            owner = settings.owner_name
-            greeting = opening_line.strip() or (
-                f"Hello, this is Friday, an AI assistant calling for {owner}."
-            )
-            note = f"You are calling someone for {owner}, not {owner} themself. Goal: {goal}" + (
-                f" What you may share or accept: {context}" if context else ""
-            )
             try:
-                await sarvam.call(
-                    phone=phone,
-                    greeting=greeting,
-                    prompt="",
-                    reference="",
-                    note=note,
-                    updates="none",
-                )
+                await call_someone(sarvam, settings, phone, goal, opening_line, context)
                 return {
                     "call_id": f"sarvam-{abs(hash((phone, goal))) % 10**8}",
                     "status": "placed",
@@ -136,6 +149,44 @@ def build_phone_server(
             **record.result(),
             "next_step": "Call get_call_result with this call_id to wait for the outcome.",
         }
+
+    @server.tool(
+        name="schedule_call",
+        title="Schedule a phone call",
+        description=(
+            "Phone someone else at a later time, through Sarvam: when is the owner's local "
+            "time in India with no time zone, e.g. 2026-10-24T12:00. Use the owner's "
+            "contacts for names. goal is everything to say or ask; opening_line is the "
+            "warm first sentence, e.g. 'Hi Didi, this is Friday, Prem's assistant. Time "
+            "for lunch!'. For the owner themself use call_me with when instead."
+        ),
+        annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False),
+    )
+    async def schedule_call(
+        phone: Annotated[
+            str, Field(description="Number in international format, e.g. +919812345678.")
+        ],
+        when: Annotated[str, Field(max_length=25)],
+        goal: Annotated[str, Field(min_length=5, max_length=500)],
+        opening_line: Annotated[str, Field(max_length=400)] = "",
+        name: Annotated[str, Field(description="Who is called, e.g. Didi.", max_length=60)] = "",
+    ) -> dict:
+        if not PHONE_NUMBER.match(phone):
+            raise ToolError("Use an international number such as +919812345678.")
+        if reminders is None or not (sarvam and sarvam.ready):
+            raise ToolError("Scheduled calls need Sarvam set up.")
+        try:
+            due = parse_when(when)
+            await asyncio.to_thread(
+                reminders.add,
+                "contact_call",
+                f"Call {name or phone}: {goal}",
+                due,
+                {"phone": phone, "name": name, "goal": goal, "opening": opening_line},
+            )
+        except OrganizerError as error:
+            raise ToolError(str(error)) from error
+        return {"friday_say": f"Okay, I'll call {name or 'them'} {spoken_time(due)}."}
 
     @server.tool(
         name="get_call_result",

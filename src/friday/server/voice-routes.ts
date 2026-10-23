@@ -125,6 +125,29 @@ export function fridayVoiceRoutes({
     return c.json({ ok: true });
   });
 
+  // What the voice screen or notch did with Caps Lock and approvals, so a
+  // press that seemed to do nothing can be traced in data/friday-voice.log.
+  app.post('/friday/voice/event', async (c) => {
+    const input = z
+      .object({
+        event: z.enum(['ptt', 'heard', 'decide', 'decide_failed']),
+        detail: z.record(
+          z.string(),
+          z.union([z.string(), z.number(), z.boolean()]),
+        ),
+      })
+      .safeParse(await c.req.json().catch(() => null));
+    if (input.success)
+      voiceLog(`screen_${input.data.event}`, {
+        ...Object.fromEntries(
+          Object.entries(input.data.detail)
+            .slice(0, 8)
+            .map(([k, v]) => [k, typeof v === 'string' ? v.slice(0, 120) : v]),
+        ),
+      });
+    return c.json({ ok: true });
+  });
+
   app.post('/friday/voice/tts', async (c) => {
     if (!key) return notReady();
     const input = z

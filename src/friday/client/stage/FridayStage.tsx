@@ -700,8 +700,25 @@ function StageSession({
     }
   };
 
+  // Traces Caps Lock and approvals into data/friday-voice.log.
+  const trace = (
+    event: 'ptt' | 'heard' | 'decide' | 'decide_failed',
+    detail: Record<string, string | number | boolean>,
+  ) =>
+    void fetch('/api/friday/voice/event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...ownerHeaders() },
+      body: JSON.stringify({ event, detail: { ...detail, window: variant } }),
+    }).catch(() => {});
+
   const decide = async (approve: boolean) => {
     const pending = pendingApproval;
+    trace('decide', {
+      approve,
+      pending: !!pending,
+      running,
+      thread: !!threadId.current,
+    });
     if (!pending || running) return;
     caption('friday', approve ? 'Approved.' : 'Declined.');
     let answer: Record<string, unknown> = {
@@ -722,6 +739,7 @@ function StageSession({
           ...(await runApprovedAction(threadId.current, pending)),
         };
       } catch (e) {
+        trace('decide_failed', { error: String(e) });
         setRunning(false);
         setPhase('off');
         setError(friendlyError(e, 'Could not do that. Try again.'));
@@ -800,6 +818,11 @@ function StageSession({
       return;
     }
     const intent = intentOf(text);
+    trace('heard', {
+      intent,
+      pending: !!pendingApproval,
+      running: runningRef.current,
+    });
     if (intent === 'stop') return stopEverything();
     // Speech that began while Friday was talking: ignore it if it is Friday's
     // own voice coming back through the mic, otherwise the owner is talking
@@ -934,6 +957,14 @@ function StageSession({
   // services' keyboard hook.
   const holding = useRef(false);
   const pushToTalk = async (down: boolean) => {
+    trace('ptt', {
+      down,
+      live: !!live.current?.connected,
+      holding: holding.current,
+      loaded,
+      voiceReady: String(voiceReady),
+      paused,
+    });
     if (!down) {
       if (!holding.current) return;
       holding.current = false;

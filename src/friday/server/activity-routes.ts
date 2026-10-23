@@ -74,6 +74,8 @@ export function fridayActivityRoutes({
   app.post('/friday/browser/open', async (c) =>
     relay('/browser/open', 'POST', undefined, await c.req.text()),
   );
+  // The main page's Calls card: Friday's phone calls and what was said.
+  app.get('/friday/calls', () => relay('/calls/recent'));
   // The main page's reminders panel (timers, reminders, deadlines).
   app.get('/friday/reminders', () => relay('/reminders'));
   app.post('/friday/reminders', async (c) =>

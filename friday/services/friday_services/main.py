@@ -27,7 +27,7 @@ from friday_services.calendar.page import add_calendar_page
 from friday_services.calendar.store import CalendarStore
 from friday_services.calls.bot import run_call
 from friday_services.calls.inya import InyaDialer
-from friday_services.calls.sarvam import SarvamDialer
+from friday_services.calls.sarvam import SarvamDialer, recent_conversations
 from friday_services.calls.store import CallStore
 from friday_services.calls.twilio import (
     NOT_CONNECTED,
@@ -328,6 +328,27 @@ def create_app(
         )
 
     # The main page's reminders panel.
+    @app.get("/calls/recent", dependencies=[Depends(owner)])
+    async def calls_recent() -> list[dict]:
+        """Friday's last Sarvam calls and what was said, for the main page."""
+        if not SarvamDialer(settings).ready:
+            return []
+        names: dict[str, str] = {}
+        try:
+            contacts = json.loads((REPO_ROOT / "data" / "friday-contacts.json").read_text("utf-8"))
+            names = {
+                re.sub(r"\D", "", str(c.get("phone", ""))): str(c.get("name")) for c in contacts
+            }
+        except (OSError, ValueError, AttributeError):
+            pass
+        mine = re.sub(r"\D", "", owner_phone(settings) or "")
+        if mine:
+            names[mine] = "You"
+        try:
+            return await recent_conversations(settings, names)
+        except Exception as error:
+            raise HTTPException(502, f"Could not read calls from Sarvam: {error}") from error
+
     @app.get("/reminders", dependencies=[Depends(owner)])
     async def reminders_list() -> list[dict]:
         return [

@@ -541,6 +541,56 @@
   border: 1px solid var(--line, rgba(127, 127, 127, 0.2));
   border-radius: 10px;
 }
+.home-link {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.home-calls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.home-calls li {
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.2));
+  border-radius: 10px;
+  overflow: hidden;
+}
+.home-call-head {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.home-call-lines {
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px 12px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.home-call-lines p {
+  margin: 0;
+}
+.home-call-lines p.friday b {
+  color: var(--accent, #6d5ef6);
+}
 .home-contacts button {
   display: grid;
   place-items: center;

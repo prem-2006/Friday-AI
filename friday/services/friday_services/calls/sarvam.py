@@ -93,3 +93,62 @@ class SarvamDialer:
                 f"Sarvam refused the call (HTTP {response.status_code}): {response.text[:200]}"
             )
         return response.text[:200]
+
+
+SARVAM_ANALYTICS = "https://apps.sarvam.ai/api/analytics/v1"
+
+
+async def recent_conversations(
+    settings: Settings,
+    names: dict[str, str],
+    days: int = 7,
+    limit: int = 20,
+    client: httpx.AsyncClient | None = None,
+) -> list[dict[str, Any]]:
+    """The agent's last calls with what was said, newest first. `names` maps
+    a number's digits to a contact's name; other numbers show masked."""
+    from datetime import UTC, datetime, timedelta
+
+    get = settings.get
+    end = datetime.now(UTC)
+    url = (
+        f"{SARVAM_ANALYTICS}/{get('SARVAM_ORG_ID')}/{get('SARVAM_WORKSPACE_ID')}"
+        f"/{get('SARVAM_APP_ID')}/interactions"
+    )
+    params = {
+        "start_datetime": (end - timedelta(days=days)).isoformat(timespec="seconds"),
+        "end_datetime": end.isoformat(timespec="seconds"),
+        "include_transcript": "true",
+        "sort_by": "start_datetime",
+        "sort_order": "desc",
+        "limit": str(limit),
+    }
+    http = client or httpx.AsyncClient(timeout=20)
+    try:
+        response = await http.get(url, params=params, headers={"X-API-Key": get("SARVAM_API_KEY")})
+    finally:
+        if not client:
+            await http.aclose()
+    if response.status_code >= 400:
+        raise SarvamError(f"Sarvam refused (HTTP {response.status_code}): {response.text[:200]}")
+    calls = []
+    for item in response.json().get("items") or []:
+        digits = re.sub(r"\D", "", str(item.get("user_contact") or ""))
+        name = next((n for d, n in names.items() if d and digits.endswith(d[-10:])), None)
+        calls.append(
+            {
+                "id": item.get("interaction_id"),
+                "who": name or item.get("user_contact_masked") or "Unknown",
+                "started": f"{item.get('start_datetime')}+00:00",
+                "seconds": round(float(item.get("duration_in_seconds") or 0)),
+                "ended_by": item.get("ended_by"),
+                "lines": [
+                    {
+                        "who": "Friday" if line.get("role") == "agent" else "Them",
+                        "text": line.get("text", ""),
+                    }
+                    for line in item.get("original_transcript") or []
+                ],
+            }
+        )
+    return calls

@@ -267,6 +267,96 @@ function ContactsCard() {
   );
 }
 
+interface CallLog {
+  id: string;
+  who: string;
+  started: string;
+  seconds: number;
+  lines: { who: 'Friday' | 'Them'; text: string }[];
+}
+
+// Friday's phone calls (through Sarvam) and what was said on each.
+function CallsCard() {
+  const [calls, setCalls] = useState<CallLog[]>();
+  const [open, setOpen] = useState<string>();
+  const [status, setStatus] = useState('');
+  const load = useCallback(async () => {
+    try {
+      setCalls(await api<CallLog[]>('/friday/calls'));
+      setStatus('');
+    } catch (error) {
+      setStatus(
+        error instanceof Error ? error.message : 'Could not load the calls.',
+      );
+    }
+  }, []);
+  useEffect(() => {
+    void load();
+    const refresh = setInterval(() => void load(), 30_000);
+    return () => clearInterval(refresh);
+  }, [load]);
+  return (
+    <section className="home-card">
+      <header>
+        <Phone size={18} />
+        <h2>Calls</h2>
+        <button type="button" className="home-link" onClick={() => void load()}>
+          Refresh
+        </button>
+      </header>
+      <p className="home-muted">
+        {status ||
+          (calls === undefined
+            ? 'Loading…'
+            : calls.length
+              ? 'Friday’s calls from the last 7 days. Click one to read it.'
+              : 'No calls in the last 7 days.')}
+      </p>
+      {calls && calls.length > 0 && (
+        <ul className="home-calls">
+          {calls.map((call) => (
+            <li key={call.id}>
+              <button
+                type="button"
+                className="home-call-head"
+                aria-expanded={open === call.id}
+                onClick={() => setOpen(open === call.id ? undefined : call.id)}
+              >
+                <span>{call.who}</span>
+                <span className="home-muted">
+                  {new Date(call.started).toLocaleString('en-IN', {
+                    day: 'numeric',
+                    month: 'short',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })}{' '}
+                  · {call.seconds}s
+                </span>
+              </button>
+              {open === call.id && (
+                <div className="home-call-lines">
+                  {call.lines.length === 0 && (
+                    <p className="home-muted">Nothing was said.</p>
+                  )}
+                  {call.lines.map((line, index) => (
+                    <p
+                      key={index}
+                      className={line.who === 'Friday' ? 'friday' : ''}
+                    >
+                      <b>{line.who === 'Friday' ? 'Friday' : call.who}:</b>{' '}
+                      {line.text}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 // Gmail, Calendar and Drive in the account Friday is signed in to, even if
 // more Google accounts get signed in to Friday's Chrome later.
 export function googleShortcuts(email?: string | null) {
@@ -607,6 +697,7 @@ export function FridayHome({
           <div className="home-column">
             <GoogleCard profile={profile} onSaved={setProfile} />
             <ContactsCard />
+            <CallsCard />
             <PermissionsCard dots={workspace?.dots ?? []} />
           </div>
         </div>

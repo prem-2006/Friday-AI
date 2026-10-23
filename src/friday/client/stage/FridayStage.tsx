@@ -996,7 +996,10 @@ function StageSession({
         setPhase('transcribing');
         // Gnani sends the last piece after the trailing second of silence.
         finishHearingIn(RELEASE_WAIT_MS);
-      } else handsFree.current?.release();
+      } else if (handsFree.current?.active) handsFree.current.release();
+      // Let go before the voice connected: nothing was heard, so the notch
+      // must not keep saying "Listening…".
+      else setPhase((phase) => (phase === 'hearing' ? 'off' : phase));
       return;
     }
     if (holding.current || !loaded || voiceReady === false || paused) return;
@@ -1008,7 +1011,11 @@ function StageSession({
     overFriday.current = false;
     const voice = await ensureLive();
     if (voice) {
-      if (!holding.current) return; // let go while connecting
+      if (!holding.current) {
+        // Let go while connecting: nothing to hear.
+        setPhase((phase) => (phase === 'hearing' ? 'off' : phase));
+        return;
+      }
       voice.pushToTalk(true);
       return;
     }

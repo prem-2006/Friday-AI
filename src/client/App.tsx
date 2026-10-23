@@ -274,6 +274,10 @@ export function App() {
       setBusy(false);
     }
   };
+  // FRIDAY: the desktop notch is a tiny window; while the app is starting it
+  // shows its offline pill (which retries), never the full-page screens below.
+  if (fridayScreen === 'notch' && (needsAuth || !state || !workspace || !dot))
+    return <FridayStage variant="notch" configured={false} onExit={() => {}} />;
   if (needsAuth)
     return (
       <main className="unlock">

@@ -290,6 +290,24 @@ function Header({
   );
 }
 
+// The notch while Friday cannot be reached (the app restarting, say). It has
+// no voice connection, so Caps Lock would do nothing: it reloads until Friday
+// is back.
+function OfflineNotch({ setUp }: { setUp: boolean }) {
+  useEffect(() => {
+    const retry = setTimeout(() => location.reload(), 8000);
+    return () => clearTimeout(retry);
+  }, []);
+  return (
+    <Notch
+      state="offline"
+      level={() => 0}
+      spectrum={() => null}
+      note={setUp ? 'Friday is not set up yet.' : undefined}
+    />
+  );
+}
+
 export function FridayStage({
   workspace,
   configured,
@@ -332,15 +350,7 @@ export function FridayStage({
         variant={variant}
       />
     );
-  if (variant === 'notch')
-    return (
-      <Notch
-        state="offline"
-        level={() => 0}
-        spectrum={() => null}
-        note={workspace ? 'Friday is not set up yet.' : undefined}
-      />
-    );
+  if (variant === 'notch') return <OfflineNotch setUp={!!workspace} />;
 
   const missing = !workspace
     ? 'Connecting…'

@@ -34,6 +34,9 @@ if (!app.requestSingleInstanceLock()) app.exit(0);
 
 // Friday speaks without anyone clicking first.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+// Lets the notch page be inspected from this PC (127.0.0.1 only) when
+// something goes wrong.
+app.commandLine.appendSwitch('remote-debugging-port', '9334');
 
 const children = new Map(); // name -> the process this shell started
 let notch = null;
@@ -194,6 +197,28 @@ function startWithWindowsByDefault() {
   if (!fs.existsSync(choiceFile())) setStartWithWindows(true);
 }
 
+// The notch must always be connected for Caps Lock to work: if its page is
+// stuck offline or did not render (the app restarted under it, say), reload it.
+function watchNotch() {
+  let strikes = 0;
+  setInterval(async () => {
+    if (!notch) return;
+    let healthy = false;
+    try {
+      healthy = await notch.webContents.executeJavaScript(
+        "!!document.querySelector('.friday-notch:not(.offline)')",
+      );
+    } catch {
+      healthy = false;
+    }
+    strikes = healthy ? 0 : strikes + 1;
+    if (strikes >= 2) {
+      strikes = 0;
+      void notch.loadURL(`${WEB}/#/notch`);
+    }
+  }, 20_000);
+}
+
 // The shell itself updates by restarting when its own files change.
 function watchSelf() {
   let timer;
@@ -243,6 +268,7 @@ app.whenReady().then(async () => {
   await ensureFriday();
   createNotch();
   watchSelf();
+  watchNotch();
   setInterval(() => void keepFridayRunning(), 30_000);
   screen.on('display-metrics-changed', () => notch && place(notch));
 });

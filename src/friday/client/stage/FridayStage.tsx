@@ -743,6 +743,14 @@ function StageSession({
         setRunning(false);
         setPhase('off');
         setError(friendlyError(e, 'Could not do that. Try again.'));
+        // Answer the request so its card goes away instead of staying stuck.
+        setHistory([
+          ...messagesRef.current,
+          toolAnswer(pending, {
+            approved: false,
+            message: `This could not run: ${String(e)}`,
+          }),
+        ]);
         return;
       }
     }

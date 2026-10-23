@@ -1,6 +1,7 @@
 import { toolDefinition } from '@tanstack/ai';
 import { connectionActionTool } from '../shared/connection-types.js';
 import type { ConnectionService } from './connections.js';
+import { ownerCallInstead } from '../friday/server/owner-call.js';
 // Connected MCP tools for one Dot. Tools that need approval never execute
 // here: the model is told to request owner approval, and only the owner's
 // approval route runs them.
@@ -24,8 +25,19 @@ export function connectionTools(
     }).server(async (args) => {
       check();
       // Re-resolve so a tool the owner just disabled or gated is honored.
-      const current = connections.resolve(dotId, exposed.name);
-      const input = (args ?? {}) as Record<string, unknown>;
+      let current = connections.resolve(dotId, exposed.name);
+      let input = (args ?? {}) as Record<string, unknown>;
+      // FRIDAY: a call to the owner's own number is call_me, with no OK.
+      const owner = ownerCallInstead(current.tool.name, input);
+      const ownerTool =
+        owner &&
+        connections
+          .tools(dotId)
+          .find((item) => item.tool.name === owner.tool);
+      if (owner && ownerTool) {
+        current = ownerTool;
+        input = owner.input;
+      }
       if (current.tool.requiresApproval)
         return approvals
           ? {

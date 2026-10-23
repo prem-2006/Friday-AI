@@ -70,6 +70,26 @@ export function pendingApprovalOf(
       .filter((message) => message.role === 'tool')
       .map((message) => (message as { toolCallId?: string }).toolCallId),
   );
+  // The approvals the server saved this turn. Models sometimes ask for the
+  // OK in the same step as the action itself, before its approvalId exists,
+  // and make one up; the saved one is the one that can run.
+  const saved: string[] = [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.role === 'user') break;
+    if (message.role !== 'tool' || typeof message.content !== 'string')
+      continue;
+    try {
+      const result = JSON.parse(message.content);
+      if (
+        result?.status === 'approval_required' &&
+        typeof result.approvalId === 'string'
+      )
+        saved.unshift(result.approvalId);
+    } catch {
+      // Not JSON: not an approval.
+    }
+  }
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (message.role === 'user') return undefined;
@@ -82,10 +102,13 @@ export function pendingApprovalOf(
     if (!call) continue;
     try {
       const args = JSON.parse(call.function.arguments || '{}');
-      if (typeof args.approvalId !== 'string') return undefined;
+      const approvalId = saved.includes(args.approvalId)
+        ? (args.approvalId as string)
+        : saved.at(-1);
+      if (!approvalId) return undefined;
       return {
         toolCallId: call.id,
-        approvalId: args.approvalId,
+        approvalId,
         summary:
           typeof args.summary === 'string' && args.summary
             ? args.summary

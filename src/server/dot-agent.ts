@@ -33,6 +33,7 @@ import { fridayLocalTime } from '../friday/server/time.js';
 import { ownerDetailsPrompt } from '../friday/server/profile.js';
 import { fridayLoopStrategy } from '../friday/server/quick-finish.js';
 import { fridayFallbackFetch } from '../friday/server/model-fallback.js';
+import { withToolCallIndexes } from '../friday/server/tool-call-index.js';
 import {
   fridayToolRounds,
   fridayToolTimeoutMs,
@@ -356,7 +357,10 @@ export class DotAgent extends AbstractAgent {
           api: 'chat-completions',
           maxRetries: fridayModelRetries(), // FRIDAY: ride out rate limits
           // FRIDAY: a rate-limited request goes to the backup model at once.
-          fetch: fridayFallbackFetch(this.config.baseUrl),
+          // FRIDAY: Gemini's tool calls come without an index; add it.
+          fetch: withToolCallIndexes(
+            fridayFallbackFetch(this.config.baseUrl) ?? fetch,
+          ),
         });
         const start = async () => {
           const appTools =

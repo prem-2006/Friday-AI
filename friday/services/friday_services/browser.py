@@ -107,6 +107,60 @@ RESULTS_JS = r"""
 }
 """
 
+# The video on a YouTube page, for pause, play and volume.
+VIDEO_JS = """
+(action) => {
+  const video = document.querySelector('video');
+  if (!video) return false;
+  if (action === 'pause') video.pause();
+  if (action === 'play') video.play();
+  if (action === 'mute') video.muted = !video.muted;
+  if (action === 'volume_up') { video.muted = false; video.volume = Math.min(1, video.volume + 0.2); }
+  if (action === 'volume_down') video.volume = Math.max(0, video.volume - 0.2);
+  return true;
+}
+"""
+VIDEO_STATE_JS = """
+() => {
+  const video = document.querySelector('video');
+  return video ? { paused: video.paused, volume: Math.round(video.volume * 100), muted: video.muted } : null;
+}
+"""
+
+# Code editors on coding-practice sites, read and replaced through their own
+# APIs: typing code key by key would set off auto-indent and closing brackets.
+EDITOR_JS = """
+(code) => {
+  const monaco = window.monaco && window.monaco.editor;
+  if (monaco) {
+    const models = monaco.getModels();
+    const model = models.find((m) => m.getLanguageId() !== 'plaintext') || models[0];
+    if (model) {
+      if (code !== null) model.setValue(code);
+      return { editor: 'monaco', language: model.getLanguageId(), code: model.getValue() };
+    }
+  }
+  const cm5 = document.querySelector('.CodeMirror');
+  if (cm5 && cm5.CodeMirror) {
+    if (code !== null) cm5.CodeMirror.setValue(code);
+    return { editor: 'codemirror', language: String(cm5.CodeMirror.getOption('mode') || ''), code: cm5.CodeMirror.getValue() };
+  }
+  const cm6 = document.querySelector('.cm-content');
+  if (cm6 && cm6.cmView) {
+    const view = cm6.cmView.view;
+    if (code !== null) view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: code } });
+    return { editor: 'codemirror6', language: '', code: view.state.doc.toString() };
+  }
+  const ace = document.querySelector('.ace_editor');
+  if (ace && window.ace) {
+    const editor = window.ace.edit(ace);
+    if (code !== null) editor.setValue(code, 1);
+    return { editor: 'ace', language: String(editor.session.getMode().$id || ''), code: editor.getValue() };
+  }
+  return null;
+}
+"""
+
 SENSITIVE_FIELD_JS = """
 (el) => el.type === 'password' || /^cc-|one-time-code/.test(el.autocomplete || '')
 """
@@ -344,11 +398,25 @@ class OnScreenBrowser:
         text = page.evaluate("() => document.body ? document.body.innerText : ''")
         return {"url": page.url, "title": page.title(), "text": " ".join(text.split())[:8000]}
 
+    def _youtube_page(self):
+        """Friday's one YouTube tab, reused for every song and search."""
+        current = self._page(front=False)
+        for page in self._context.pages:
+            if not page.is_closed() and "youtube.com" in page.url:
+                page.bring_to_front()
+                return page
+        if current.url in ("about:blank", "chrome://newtab/", ""):
+            page = current  # an empty tab: use it rather than open another
+        else:
+            page = self._context.new_page()
+        page.bring_to_front()
+        return page
+
     def search(self, site: str, query: str) -> dict:
         """Type a query into YouTube's or Google's own search box, like a person."""
         if site not in ("youtube", "google"):
             raise BrowserError("Search YouTube or Google.")
-        page = self._page()
+        page = self._youtube_page() if site == "youtube" else self._page()
         used = self._search_on(page, site, query)
         if used == "google" and (
             "/sorry/" in page.url or page.locator("form#captcha-form").count()
@@ -379,8 +447,8 @@ class OnScreenBrowser:
         """Start the first full video (not a Short) YouTube finds for the query.
 
         Goes straight to the results page: for playing, typing into the home
-        page's search box would only add a page load."""
-        page = self._page()
+        page's search box would only add a page load. Always in the same tab."""
+        page = self._youtube_page()
         page.goto(
             SEARCH_SITES["youtube"]["results"] + quote_plus(query),
             wait_until="domcontentloaded",
@@ -405,6 +473,63 @@ class OnScreenBrowser:
         except Exception:
             page.goto(video["url"], wait_until="domcontentloaded", timeout=20_000)
         return {"title": video["title"], "url": page.url}
+
+    def code_editor(self, code: str | None = None) -> dict:
+        """Reads the code editor on the current page, or replaces its code."""
+        page = self._page()
+        found = page.evaluate(EDITOR_JS, code)
+        if not found:
+            raise BrowserError("No code editor found on this page.")
+        if code is not None:
+            found["code"] = f"{len(found['code'])} characters written"
+        else:
+            found["code"] = found["code"][:6000]
+        return {"url": page.url, "title": page.title(), **found}
+
+    def schedule_meeting(self, url: str, invite: bool) -> dict:
+        """Saves a Google Calendar event from its pre-filled page (the owner
+        approved it first) and sends the invitations when there are guests."""
+        page = self._context.new_page() if self._context else self._page()
+        page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+        page.bring_to_front()
+        if "accounts.google." in page.url:
+            raise BrowserError("Friday's Chrome is not signed in to Google yet.")
+        save = page.get_by_role("button", name=re.compile(r"^save$", re.IGNORECASE)).first
+        try:
+            save.wait_for(state="visible", timeout=15_000)
+        except Exception as error:
+            raise BrowserError("Google Calendar's Save button did not appear.") from error
+        save.click()
+        if invite:
+            send = page.get_by_role("button", name=re.compile(r"^send$", re.IGNORECASE)).first
+            try:
+                send.wait_for(state="visible", timeout=6_000)
+                send.click()
+            except Exception:
+                pass  # Calendar did not ask; it saves and invites by itself
+        page.wait_for_timeout(1500)
+        return {"saved": "eventedit" not in page.url, "url": page.url}
+
+    def youtube_control(self, action: str) -> dict | None:
+        """Pause, play, skip or change the volume of the video in Friday's
+        YouTube tab; None when there is no YouTube tab."""
+        self._page(front=False)
+        page = next(
+            (p for p in self._context.pages if not p.is_closed() and "youtube.com" in p.url),
+            None,
+        )
+        if page is None:
+            return None
+        if action == "next":
+            page.keyboard.press("Shift+N")  # YouTube's own "next video" key
+            page.wait_for_timeout(1500)
+        elif action == "previous":
+            page.go_back(wait_until="domcontentloaded", timeout=15_000)
+            page.wait_for_timeout(800)
+        else:
+            page.evaluate(VIDEO_JS, action)
+        state = page.evaluate(VIDEO_STATE_JS)
+        return {"title": page.title().removesuffix(" - YouTube"), **(state or {})}
 
     def _search_on(self, page, site: str, query: str) -> str:
         config = SEARCH_SITES[site]

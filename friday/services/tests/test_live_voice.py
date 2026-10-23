@@ -140,3 +140,29 @@ def test_offer_needs_the_token_and_an_sdp(server):
     assert httpx.post(url, json={}).status_code == 401
     bad = httpx.post(url, json={"type": "offer"}, headers={"Authorization": f"Bearer {TOKEN}"})
     assert bad.status_code == 400
+
+
+def test_routine_disconnects_are_not_shown_but_real_problems_are():
+    from pipecat.frames.frames import ErrorFrame
+
+    from friday_services.live_voice import is_routine
+
+    assert is_routine("Error sending TTS request: received 1001 (going away) Idle timeout exceeded")
+    assert is_routine("Gnani STT: Session closed: no speech segment received for 60 seconds.")
+    assert not is_routine("Gnani: invalid API key")
+    sent: list[dict] = []
+    asyncio.run(
+        run_test(
+            HeardRelay(sent.append, AudioGate()),
+            frames_to_send=[
+                ErrorFrame(error="Error sending TTS request: received 1001 (going away)"),
+                ErrorFrame(error="Gnani: invalid API key"),
+            ],
+            expected_down_frames=None,
+        )
+    )
+    # Friday stops waiting to speak after a voice error; only the real one shows.
+    assert [(m["event"], m.get("on"), m.get("message")) for m in sent] == [
+        ("speaking", False, None),
+        ("error", None, "Gnani: invalid API key"),
+    ]

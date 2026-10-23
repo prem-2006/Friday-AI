@@ -14,6 +14,8 @@ const LIMITS = {
   city: 80,
   address: 300,
   notes: 1000,
+  // The Google account Friday's Chrome signs in to (its own, or the owner's).
+  friday_google: 120,
 } as const;
 type Field = keyof typeof LIMITS;
 export type OwnerProfile = Partial<Record<Field, string>>;
@@ -25,6 +27,7 @@ const LABELS: Record<Field, string> = {
   city: 'City',
   address: 'Address',
   notes: 'Notes from the owner',
+  friday_google: 'Google account Friday uses (Gmail, Calendar, YouTube)',
 };
 
 export const profileSchema = z

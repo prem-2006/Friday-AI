@@ -133,6 +133,32 @@ def build_browser_server(
         }
 
     @server.tool(
+        name="code_editor_read",
+        description=(
+            "Read the code editor on the current page (LeetCode and similar sites): its "
+            "language and the starting code with the function signature."
+        ),
+        annotations=LOOK,
+    )
+    async def code_editor_read() -> dict:
+        return await act("code_editor_read", "Reading the code editor.", browser.code_editor)
+
+    @server.tool(
+        name="code_editor_write",
+        description=(
+            "Replace all the code in the page's code editor with this complete solution. "
+            "Keep the site's function signature."
+        ),
+        annotations=ACT,
+    )
+    async def code_editor_write(
+        code: Annotated[str, Field(min_length=1, max_length=20000)],
+    ) -> dict:
+        return await act(
+            "code_editor_write", "Writing the solution in the editor.", browser.code_editor, code
+        )
+
+    @server.tool(
         name="browser_snapshot",
         description="Describe the current page and its numbered elements.",
         annotations=LOOK,

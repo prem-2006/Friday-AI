@@ -112,16 +112,33 @@ def make_apps(windows):
     return apps, typed, launched
 
 
-def test_apps_open_by_name_but_never_whatsapp():
+def test_apps_open_by_name_whatsapp_included_but_nothing_is_typed_into_it():
     note = FakeWindow("Untitled - Notepad", [])
-    apps, _typed, launched = make_apps([note])
+    chat = FakeWindow("WhatsApp", [])
+    apps, typed, launched = make_apps([note, chat])
     assert apps.apps("visual") == ["Visual Studio Code", "Visual Studio Installer"]
     with pytest.raises(DesktopError, match="Several apps match"):
         apps.open("visual studio")
-    with pytest.raises(DesktopError, match="WhatsApp tools"):
-        apps.open("whatsapp")
     assert apps.open("notepad", wait_seconds=1)["window"] == "Untitled - Notepad"
-    assert launched == ["notepad"]
+    assert apps.open("whatsapp", wait_seconds=1)["opened"] == "WhatsApp"
+    assert launched == ["notepad", "wa"]
+    for action in (
+        lambda: apps.write("whatsapp", "hi"),
+        lambda: apps.clear("whatsapp"),
+        lambda: apps.keys_in("whatsapp", ["Enter"]),
+    ):
+        with pytest.raises(DesktopError, match="WhatsApp tools"):
+            action()
+    assert typed == []
+
+
+def test_clears_replaces_and_presses_keys_in_an_app():
+    note = FakeWindow("Untitled - Notepad", [])
+    apps, typed, _launched = make_apps([note])
+    apps.clear("notepad")
+    apps.write("notepad", "Eggs", replace=True)
+    apps.keys_in("notepad", ["Ctrl+S", "Ctrl+Z"])
+    assert typed == ["^a", "{DELETE}", "^a", "Eggs", "^s", "^z"]
 
 
 def test_window_controls_are_numbered_and_passwords_refused():

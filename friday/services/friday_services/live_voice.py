@@ -3,7 +3,11 @@
 The voice screen connects over WebRTC (audio both ways plus a data channel):
 
     mic -> AudioGate -> Silero VAD -> Gnani streaming STT -> HeardRelay
-        -> Gnani streaming TTS -> speaker -> SpeakingRelay
+        -> Gnani streaming TTS (SSE) -> speaker -> SpeakingRelay
+
+Speech goes out over Gnani's SSE stream, one request per reply: its WebSocket
+variant closes after a quiet spell ("Idle timeout exceeded") and does not come
+back, which left Friday unable to speak.
 
 Friday's thinking stays on the voice screen and the app (the Friday Dot, its
 quick actions and the helper Dots): this pipeline sends each final transcript
@@ -54,6 +58,17 @@ Send = Callable[[dict[str, Any]], None]
 
 def live_event(event: str, **fields: Any) -> dict[str, Any]:
     return {"type": "friday-live", "event": event, **fields}
+
+
+# Gnani closes quiet connections ("no speech segment received for 60 seconds",
+# "Idle timeout exceeded") and they reconnect on the next use: routine, not
+# something to show the owner.
+ROUTINE_ERRORS = ("idle timeout", "session closed", "1001", "going away", "no speech segment")
+
+
+def is_routine(error: str) -> bool:
+    text = error.casefold()
+    return any(marker in text for marker in ROUTINE_ERRORS)
 
 
 class AudioGate(FrameProcessor):
@@ -111,7 +126,12 @@ class HeardRelay(FrameProcessor):
         elif isinstance(frame, VADUserStartedSpeakingFrame) and self._gate.hands_free:
             self._send(live_event("speech_start"))
         elif isinstance(frame, ErrorFrame):
-            self._send(live_event("error", message=str(frame.error)[:300]))
+            message = str(frame.error)
+            if "tts" in message.casefold() or "speech" in message.casefold():
+                # Friday could not speak: the screen must not wait for it.
+                self._send(live_event("speaking", on=False))
+            if not is_routine(message):
+                self._send(live_event("error", message=message[:300]))
         await self.push_frame(frame, direction)
 
 
@@ -176,6 +196,7 @@ class LiveVoiceSession:
             await self._task.queue_frame(InterruptionFrame())
 
     async def run(self) -> None:
+        import aiohttp
         from pipecat.audio.vad.silero import SileroVADAnalyzer
         from pipecat.audio.vad.vad_analyzer import VADParams
         from pipecat.pipeline.pipeline import Pipeline
@@ -184,7 +205,7 @@ class LiveVoiceSession:
         from pipecat.processors.audio.vad_processor import VADProcessor
         from pipecat.transports.base_transport import TransportParams
         from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
-        from pipecat_gnani import GnaniSTTService, GnaniTTSService
+        from pipecat_gnani import GnaniSSETTSService, GnaniSTTService
 
         transport = SmallWebRTCTransport(
             webrtc_connection=self._connection,
@@ -194,7 +215,10 @@ class LiveVoiceSession:
             api_key=self._api_key,
             settings=GnaniSTTService.Settings(language=language_of(self._language)),
         )
-        tts = GnaniTTSService(api_key=self._api_key, voice_id=self._voice, model=TTS_MODEL)
+        http = aiohttp.ClientSession()
+        tts = GnaniSSETTSService(
+            api_key=self._api_key, aiohttp_session=http, voice_id=self._voice, model=TTS_MODEL
+        )
         vad = VADProcessor(
             vad_analyzer=SileroVADAnalyzer(params=VADParams(start_secs=0.25, stop_secs=0.5))
         )
@@ -214,6 +238,8 @@ class LiveVoiceSession:
             pipeline,
             params=PipelineParams(audio_in_sample_rate=16_000, audio_out_sample_rate=24_000),
             idle_timeout_secs=None,
+            # The screen speaks Friday's own messages (see the module notes), not RTVI.
+            enable_rtvi=False,
         )
 
         @self._connection.event_handler("app-message")
@@ -231,3 +257,4 @@ class LiveVoiceSession:
             pass
         finally:
             self._task = None
+            await http.close()

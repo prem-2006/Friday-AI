@@ -127,6 +127,27 @@ def visible_window_titles() -> list[str]:
     return titles
 
 
+# Windows media keys: they control whatever is playing (YouTube app, Spotify, …).
+MEDIA_KEYS = {
+    "play": 0xB3,  # play/pause toggles
+    "pause": 0xB3,
+    "next": 0xB0,
+    "previous": 0xB1,
+    "volume_up": 0xAF,
+    "volume_down": 0xAE,
+    "mute": 0xAD,
+}
+
+
+def press_media_key(action: str) -> None:
+    import ctypes
+
+    vk = MEDIA_KEYS[action]
+    user32 = ctypes.windll.user32
+    user32.keybd_event(vk, 0, 0, 0)
+    user32.keybd_event(vk, 0, 2, 0)  # KEYEVENTF_KEYUP
+
+
 def launch_app(app_id: str) -> None:
     subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{app_id}"])
 
@@ -224,9 +245,9 @@ class DesktopApps:
         return window
 
     def open(self, name: str, wait_seconds: float = 12) -> dict:
+        # Opening any app is fine, WhatsApp included; typing into WhatsApp is
+        # not (messages go through the WhatsApp tools, which ask first).
         app = self._find_app(name)
-        if any(guard in app["name"].casefold() for guard in GUARDED_WINDOWS):
-            raise DesktopError("Use the WhatsApp tools for WhatsApp; they ask the owner first.")
         before = set(self.windows())
         self._launch(app["app_id"])
         deadline = time.time() + wait_seconds
@@ -240,11 +261,9 @@ class DesktopApps:
                 return {"opened": app["name"], "window": (new or match)[0]}
         return {"opened": app["name"], "window": None, "note": "Started; no new window seen yet."}
 
-    def write(self, name: str, text: str) -> dict:
-        """Type text into an app: into its open window, or open it first.
-
-        Lines become separate lines (Enter between them). The text goes where
-        the app's cursor is, as if the owner typed it."""
+    def _focus_app(self, name: str):
+        """The app's window, in front and taking the keyboard; opens the app
+        first if it has no window. Never WhatsApp: its tools ask first."""
         if any(guard in name.casefold() for guard in GUARDED_WINDOWS):
             raise DesktopError("Use the WhatsApp tools for WhatsApp; they ask the owner first.")
         app = self._find_app(name)
@@ -261,6 +280,17 @@ class DesktopApps:
         except Exception:
             pass
         time.sleep(0.6 if opened else 0.2)  # let a new window take the keyboard
+        return app, window, opened
+
+    def write(self, name: str, text: str, replace: bool = False) -> dict:
+        """Type text into an app: into its open window, or open it first.
+
+        Lines become separate lines (Enter between them). The text goes where
+        the app's cursor is, as if the owner typed it; replace=True first
+        selects everything, so the new text takes the old text's place."""
+        app, window, opened = self._focus_app(name)
+        if replace:
+            self._keys("^a")
         lines = text.replace("\r\n", "\n").split("\n")
         for index, line in enumerate(lines):
             if line:
@@ -268,6 +298,21 @@ class DesktopApps:
             if index < len(lines) - 1:
                 self._keys("{ENTER}")
         return {"app": app["name"], "window": window.window_text(), "opened": opened}
+
+    def clear(self, name: str) -> dict:
+        """Removes all the text in an app's window (select all, delete)."""
+        app, window, _opened = self._focus_app(name)
+        self._keys("^a")
+        self._keys("{DELETE}")
+        return {"app": app["name"], "window": window.window_text()}
+
+    def keys_in(self, name: str, combos: list[str]) -> dict:
+        """Presses keys in an app's window, e.g. Ctrl+S to save, Ctrl+Z to undo."""
+        app, window, _opened = self._focus_app(name)
+        for combo in combos:
+            self._keys(to_send_keys(combo))
+            time.sleep(0.15)
+        return {"app": app["name"], "window": window.window_text(), "pressed": combos}
 
     def snapshot(self, title: str) -> dict:
         window = self._window_named(title)

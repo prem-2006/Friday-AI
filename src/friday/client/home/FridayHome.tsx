@@ -49,7 +49,10 @@ async function api<T>(path: string, init: RequestInit = {}) {
 }
 
 type Profile = Partial<
-  Record<'name' | 'email' | 'phone' | 'city' | 'address' | 'notes', string>
+  Record<
+    'name' | 'email' | 'phone' | 'city' | 'address' | 'notes' | 'friday_google',
+    string
+  >
 >;
 const FIELDS: {
   key: keyof Profile;
@@ -187,7 +190,28 @@ interface GoogleAccount {
 }
 type GoogleState = 'checking' | 'signed-in' | 'signed-out' | 'offline';
 
-function GoogleCard({ detailsEmail }: { detailsEmail?: string }) {
+function GoogleCard({
+  profile,
+  onSaved,
+}: {
+  profile: Profile;
+  onSaved: (profile: Profile) => void;
+}) {
+  const [accountDraft, setAccountDraft] = useState(profile.friday_google ?? '');
+  useEffect(() => setAccountDraft(profile.friday_google ?? ''), [profile]);
+  const saveAccount = async () => {
+    try {
+      onSaved(
+        await api<Profile>('/friday/profile', {
+          method: 'PUT',
+          body: JSON.stringify({ ...profile, friday_google: accountDraft }),
+        }),
+      );
+      setNote('Saved. Sign in with it below.');
+    } catch (error) {
+      setNote(error instanceof Error ? error.message : 'Could not save.');
+    }
+  };
   const [state, setState] = useState<GoogleState>('checking');
   const [account, setAccount] = useState<string | null>(null);
   const [note, setNote] = useState('');
@@ -202,7 +226,9 @@ function GoogleCard({ detailsEmail }: { detailsEmail?: string }) {
     }
   }, []);
   useEffect(() => void check(), [check]);
-  const wanted = detailsEmail?.trim().toLowerCase() || undefined;
+  // Friday's own account when set, otherwise the owner's email.
+  const wanted =
+    (profile.friday_google || profile.email)?.trim().toLowerCase() || undefined;
   const otherAccount =
     state === 'signed-in' && !!account && !!wanted && account !== wanted;
   const signIn = async () => {
@@ -253,14 +279,37 @@ function GoogleCard({ detailsEmail }: { detailsEmail?: string }) {
       </p>
       {otherAccount && (
         <p className="home-note">
-          Friday is signed in as {account}, but your details say {wanted}.
+          Friday is signed in as {account}, but it should use {wanted}.
         </p>
       )}
       {state === 'signed-out' && !wanted && (
         <p className="home-note">
-          Add your Gmail address under Your details to sign in with it.
+          Enter the Gmail address Friday should use, then sign in with it.
         </p>
       )}
+      <form
+        className="home-account"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void saveAccount();
+        }}
+      >
+        <label>
+          <span>Google account Friday uses</span>
+          <input
+            type="email"
+            placeholder={profile.email || 'you@gmail.com'}
+            value={accountDraft}
+            onChange={(event) => setAccountDraft(event.target.value)}
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={accountDraft === (profile.friday_google ?? '')}
+        >
+          Save
+        </button>
+      </form>
       <div className="home-row">
         {(state === 'signed-out' || otherAccount) && (
           <button
@@ -446,7 +495,7 @@ export function FridayHome({
             loadError={profileError}
           />
           <div className="home-column">
-            <GoogleCard detailsEmail={profile.email} />
+            <GoogleCard profile={profile} onSaved={setProfile} />
             <PermissionsCard dots={workspace?.dots ?? []} />
           </div>
         </div>

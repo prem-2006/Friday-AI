@@ -398,6 +398,12 @@ function StageSession({
   const [captions, setCaptions] = useState<Caption[]>([]);
   const [subtitle, setSubtitle] = useState('');
   const [error, setError] = useState('');
+  // A problem is shown briefly, then the screen (or notch) is clean again.
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(''), 6000);
+    return () => clearTimeout(timer);
+  }, [error]);
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const controlRef = useRef<(action: string) => void>(() => {});
 
@@ -899,6 +905,9 @@ function StageSession({
         spokenWaiter.current = null;
       }
     } else if (event.event === 'error') {
+      // Friday cannot be waiting to finish speaking after a voice problem.
+      spokenWaiter.current?.();
+      spokenWaiter.current = null;
       setError(friendlyError(new Error(event.message), 'Voice problem.'));
     }
   };

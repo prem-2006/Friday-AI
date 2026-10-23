@@ -57,8 +57,8 @@ export function fridayActivityRoutes({
   app.get('/friday/activity/stream', (c) =>
     relay(
       // A voice window (voice screen or notch) also gets Caps Lock signals.
-      c.req.query('voice') === '1'
-        ? '/activity/stream?voice=1'
+      ['1', 'notch'].includes(c.req.query('voice') ?? '')
+        ? `/activity/stream?voice=${c.req.query('voice')}`
         : '/activity/stream',
       'GET',
       c.req.raw.signal,

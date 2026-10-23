@@ -17,8 +17,9 @@ const STREAM_SILENCE_MS = 40_000;
 export function followActivity(
   onEvent: (event: ActivityEvent) => void,
   onStatus: (connected: boolean) => void,
-  /** A voice window (voice screen, notch) also receives Caps Lock signals. */
-  voice = true,
+  /** A voice window (voice screen, notch) also receives Caps Lock signals;
+   * the notch gets them first when it is open. */
+  voice: boolean | 'notch' = true,
 ) {
   const controller = new AbortController();
   const run = async () => {
@@ -36,9 +37,10 @@ export function followActivity(
       };
       try {
         heardFrom();
-        // ?voice=1: this window handles Caps Lock (the newest one does).
+        // ?voice=1: this window handles Caps Lock (the newest notch does, else
+        // the newest voice window).
         const response = await fetch(
-          `/api/friday/activity/stream${voice ? '?voice=1' : ''}`,
+          `/api/friday/activity/stream${voice ? `?voice=${voice === 'notch' ? 'notch' : '1'}` : ''}`,
           {
             headers: ownerHeaders(),
             signal: attempt.signal,

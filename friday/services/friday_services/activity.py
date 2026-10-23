@@ -31,8 +31,13 @@ class ActivityFeed:
         self._events: deque[Activity] = deque(maxlen=keep)
         self._listeners: set[asyncio.Queue[Activity]] = set()
         # Voice windows (the voice screen, the desktop notch), oldest first.
-        # Caps Lock goes to the newest only, so one request never runs twice.
+        # Caps Lock goes to one only, so one request never runs twice: the
+        # newest notch when one is open (a voice page left open in a browser
+        # must not take it over whenever its stream reconnects), else the
+        # newest voice window. Letting go goes where pressing went.
         self._voices: list[asyncio.Queue[Activity]] = []
+        self._notches: set[asyncio.Queue[Activity]] = set()
+        self._holder: asyncio.Queue[Activity] | None = None
         self._ids = itertools.count(1)
         self.stopped = False
 
@@ -51,8 +56,15 @@ class ActivityFeed:
             # Only the notch acts on it, wherever it is in the list.
             for queue in self._voices:
                 queue.put_nowait(event)
+        elif action == "ptt_up" and self._holder in self._voices:
+            self._holder.put_nowait(event)
+            self._holder = None
         elif self._voices:
-            self._voices[-1].put_nowait(event)
+            notches = [queue for queue in self._voices if queue in self._notches]
+            target = (notches or self._voices)[-1]
+            if action == "ptt_down":
+                self._holder = target
+            target.put_nowait(event)
 
     @property
     def watched(self) -> bool:
@@ -62,15 +74,18 @@ class ActivityFeed:
     def recent(self, limit: int = 30) -> list[dict]:
         return [event.public() for event in list(self._events)[-limit:]]
 
-    def listen(self, voice: bool = False) -> asyncio.Queue[Activity]:
+    def listen(self, voice: bool = False, notch: bool = False) -> asyncio.Queue[Activity]:
         queue: asyncio.Queue[Activity] = asyncio.Queue()
         self._listeners.add(queue)
-        if voice:
+        if voice or notch:
             self._voices.append(queue)
+        if notch:
+            self._notches.add(queue)
         return queue
 
     def unlisten(self, queue: asyncio.Queue[Activity]) -> None:
         self._listeners.discard(queue)
+        self._notches.discard(queue)
         if queue in self._voices:
             self._voices.remove(queue)
 

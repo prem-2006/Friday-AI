@@ -475,12 +475,16 @@ function StageSession({
     void voiceConfig()
       .then((config) => setVoiceReady(config.ready))
       .catch(() => setVoiceReady(false));
-    const unfollow = followActivity((event) => {
-      // Caps Lock and clap signals from friday/services, not helper activity.
-      if (event.actor === 'control')
-        return controlRef.current(event.action, event.detail);
-      setEvents((list) => [...list.slice(-40), event]);
-    }, setHelpersOnline);
+    const unfollow = followActivity(
+      (event) => {
+        // Caps Lock and clap signals from friday/services, not helper activity.
+        if (event.actor === 'control')
+          return controlRef.current(event.action, event.detail);
+        setEvents((list) => [...list.slice(-40), event]);
+      },
+      setHelpersOnline,
+      variant === 'notch' ? 'notch' : true,
+    );
     return () => {
       unfollow();
       live.current?.stop();

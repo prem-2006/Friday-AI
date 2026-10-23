@@ -233,8 +233,9 @@ def create_app(
         return {"stopped": feed.stopped, "events": feed.recent()}
 
     @app.get("/activity/stream", dependencies=[Depends(owner)])
-    async def activity_stream(request: Request, voice: bool = False) -> StreamingResponse:
-        queue = feed.listen(voice=voice)
+    async def activity_stream(request: Request, voice: str = "") -> StreamingResponse:
+        # voice=1: a voice window (gets Caps Lock); voice=notch: the desktop notch.
+        queue = feed.listen(voice=voice in ("1", "true"), notch=voice == "notch")
 
         async def events():
             try:

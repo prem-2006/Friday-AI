@@ -36,8 +36,11 @@ def build_phone_server(store: CallStore, dialer: Dialer, settings: Settings) -> 
         name="start_call",
         title="Start a phone call",
         description=(
-            "Phone a real number and let Friday, speaking as an AI assistant, pursue one goal. "
-            "Returns a call_id straight away; then call get_call_result with it."
+            "Phone someone else (a shop, a clinic, a friend) and let Friday, speaking as an "
+            "AI assistant, pursue one goal. Never for the owner themself: to phone "
+            f'{settings.owner_name} ("call me", "call {settings.owner_name}") use '
+            "call_me instead. Returns a call_id straight away; then call get_call_result "
+            "with it."
         ),
         annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False),
     )

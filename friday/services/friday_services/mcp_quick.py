@@ -345,7 +345,8 @@ def build_quick_server(
     @server.tool(
         name="call_me",
         description=(
-            "Phone the owner's mobile: now, or at a time to remind them (when is the "
+            'Phone the owner\'s own mobile, for "call me" or when the owner names '
+            'themself ("call Prem"); no OK needed. Now, or at a time to remind them (when is the '
             "owner's local time in India with no time zone, e.g. 2026-10-24T17:00). Friday "
             "says why it is calling and talks briefly. message is the reminder in plain "
             "words, e.g. 'time to have your dinner'."

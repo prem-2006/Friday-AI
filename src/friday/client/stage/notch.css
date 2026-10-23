@@ -102,8 +102,10 @@
   max-width: 440px;
   padding: 7px 8px 7px 14px;
   border-radius: 12px;
-  background: rgba(5, 5, 7, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(12, 12, 18, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(12px);
+  user-select: none;
   color: #e6e8f5;
   font-size: 12.5px;
   line-height: 1.35;

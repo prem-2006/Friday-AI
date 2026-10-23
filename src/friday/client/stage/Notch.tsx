@@ -103,13 +103,24 @@ export function Notch({
           <span>{note}</span>
           {state === 'asking' && onDecide && (
             <>
-              <button type="button" onClick={() => onDecide(false)}>
+              {/* Acts on the press: in this window that never takes focus,
+                  a press arrives but a full click may not. */}
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  onDecide(false);
+                }}
+              >
                 Decline
               </button>
               <button
                 type="button"
                 className="approve"
-                onClick={() => onDecide(true)}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  onDecide(true);
+                }}
               >
                 Approve
               </button>

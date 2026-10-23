@@ -18,11 +18,19 @@ export interface LiveVoiceOptions {
 }
 
 const BINS = 64;
+const MIC: MediaTrackConstraints = {
+  channelCount: 1,
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+};
 
 export class LiveVoice {
   private pc?: RTCPeerConnection;
   private channel?: RTCDataChannel;
   private stream?: MediaStream;
+  private sender?: RTCRtpSender;
+  private renewing = false;
   private context?: AudioContext;
   private micAnalyser?: AnalyserNode;
   private voiceAnalyser?: AnalyserNode;
@@ -37,18 +45,13 @@ export class LiveVoice {
   }
 
   async start() {
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
+    this.stream = await navigator.mediaDevices.getUserMedia({ audio: MIC });
     const pc = new RTCPeerConnection();
     this.pc = pc;
-    for (const track of this.stream.getAudioTracks())
-      pc.addTrack(track, this.stream);
+    const [track] = this.stream.getAudioTracks();
+    this.sender = pc.addTrack(track, this.stream);
+    track.addEventListener('ended', this.renewMic);
+    navigator.mediaDevices.addEventListener('devicechange', this.renewMic);
     const channel = pc.createDataChannel('friday');
     this.channel = channel;
     channel.onmessage = (message) => {
@@ -125,6 +128,34 @@ export class LiveVoice {
     });
   }
 
+  // A mic that is unplugged or switched (earbuds moving to the phone for a
+  // call, a headset pulled out) leaves Friday hearing silence, so Caps Lock
+  // seems dead: take the current mic again and swap it in, no reconnect.
+  private renewMic = async () => {
+    if (!this.sender || this.renewing) return;
+    this.renewing = true;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: MIC });
+      const [track] = stream.getAudioTracks();
+      if (!this.sender || !track) {
+        stream.getTracks().forEach((spare) => spare.stop());
+        return;
+      }
+      await this.sender.replaceTrack(track);
+      this.stream?.getTracks().forEach((old) => old.stop());
+      this.stream = stream;
+      track.addEventListener('ended', this.renewMic);
+      if (this.context)
+        this.micAnalyser = this.analyser(
+          this.context.createMediaStreamSource(stream),
+        );
+    } catch {
+      // No mic right now; the next device change tries again.
+    } finally {
+      this.renewing = false;
+    }
+  };
+
   private analyser(source: AudioNode) {
     const analyser = this.context!.createAnalyser();
     analyser.fftSize = BINS * 2;
@@ -174,6 +205,8 @@ export class LiveVoice {
   }
 
   stop() {
+    navigator.mediaDevices.removeEventListener('devicechange', this.renewMic);
+    this.sender = undefined;
     this.channel?.close();
     this.pc?.close();
     this.stream?.getTracks().forEach((track) => track.stop());

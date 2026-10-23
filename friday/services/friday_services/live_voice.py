@@ -36,6 +36,7 @@ import asyncio
 from collections.abc import Callable
 from typing import Any
 
+import numpy as np
 from loguru import logger
 from pipecat.frames.frames import (
     BotStartedSpeakingFrame,
@@ -80,6 +81,8 @@ class AudioGate(FrameProcessor):
         self.hands_free = False
         self._tail_seconds = tail_seconds
         self._tail_left = 0.0
+        self._held_audio = 0.0
+        self._loudest = 0
 
     @property
     def open(self) -> bool:
@@ -88,12 +91,26 @@ class AudioGate(FrameProcessor):
     def push_to_talk(self, down: bool) -> None:
         if self.held and not down:
             self._tail_left = self._tail_seconds
+            # One line per hold, so a press Friday did not hear can be traced:
+            # no audio at all, or only silence (a mic unplugged or switched).
+            logger.info(
+                "Caps Lock: {:.1f} s of mic audio, loudest {:.2f} (0 is silence)",
+                self._held_audio,
+                self._loudest / 32768,
+            )
+        if down and not self.held:
+            self._held_audio = 0.0
+            self._loudest = 0
         self.held = down
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
         if isinstance(frame, InputAudioRawFrame):
             if self.open:
+                if self.held and frame.audio:
+                    self._held_audio += frame.num_frames / frame.sample_rate
+                    samples = np.frombuffer(frame.audio, dtype=np.int16).astype(np.int32)
+                    self._loudest = max(self._loudest, int(np.abs(samples).max()))
                 await self.push_frame(frame, direction)
             elif self._tail_left > 0:
                 seconds = frame.num_frames / frame.sample_rate

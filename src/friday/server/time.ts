@@ -28,5 +28,5 @@ export function fridayLocalTime(now: Date, timeZone = fridayTimeZone()) {
     hour12: true,
     timeZoneName: 'short',
   }).format(now);
-  return `The owner's local time is ${local} (${timeZone}); read "today", "tomorrow" and "this evening" in that time zone.`;
+  return `The owner's local time is ${local} (${timeZone}); read "today", "tomorrow" and "this evening" in that time zone. A time said without AM or PM is the next one to come: at 9:48 PM, "9:50" means 9:50 PM today.`;
 }

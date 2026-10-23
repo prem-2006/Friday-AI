@@ -10,6 +10,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 from pydantic import Field
 
+from friday_services.calls.sarvam import SarvamDialer
 from friday_services.calls.store import CallRecord, CallStore
 from friday_services.config import CALL_SETTINGS, Settings
 from friday_services.voices import DEFAULT_LANGUAGE, LANGUAGES
@@ -23,7 +24,9 @@ class Dialer(Protocol):
     async def place(self, record: CallRecord) -> str: ...
 
 
-def build_phone_server(store: CallStore, dialer: Dialer, settings: Settings) -> MCPServer:
+def build_phone_server(
+    store: CallStore, dialer: Dialer, settings: Settings, sarvam: SarvamDialer | None = None
+) -> MCPServer:
     server = MCPServer(
         name="friday-phone",
         instructions=(
@@ -70,11 +73,52 @@ def build_phone_server(store: CallStore, dialer: Dialer, settings: Settings) -> 
                 max_length=2000,
             ),
         ] = "",
+        opening_line: Annotated[
+            str,
+            Field(
+                description=(
+                    "What Friday says first when they pick up, warm and short, e.g. "
+                    "'Hi Didi, this is Friday, Prem's assistant. Prem says please sleep early.'"
+                ),
+                max_length=400,
+            ),
+        ] = "",
     ) -> dict:
         if not PHONE_NUMBER.match(phone):
             raise ToolError("Use an international number such as +919812345678.")
         if language not in LANGUAGES:
             raise ToolError(f"Unsupported language. Use one of: {', '.join(LANGUAGES)}.")
+        if sarvam and sarvam.ready:
+            # Sarvam's agent runs the call (an Indian number, no trial notice);
+            # Twilio is the fallback when Sarvam refuses.
+            owner = settings.owner_name
+            greeting = opening_line.strip() or (
+                f"Hello, this is Friday, an AI assistant calling for {owner}."
+            )
+            note = f"You are calling someone for {owner}, not {owner} themself. Goal: {goal}" + (
+                f" What you may share or accept: {context}" if context else ""
+            )
+            try:
+                await sarvam.call(
+                    phone=phone,
+                    greeting=greeting,
+                    prompt="",
+                    reference="",
+                    note=note,
+                    updates="none",
+                )
+                return {
+                    "call_id": f"sarvam-{abs(hash((phone, goal))) % 10**8}",
+                    "status": "placed",
+                    "via": "sarvam",
+                    "next_step": (
+                        "Sarvam runs this call and does not report back. Tell the owner "
+                        "the call was placed; do not call get_call_result."
+                    ),
+                }
+            except Exception as error:
+                if settings.missing(CALL_SETTINGS):
+                    raise ToolError(f"The call could not be placed: {error}") from error
         missing = settings.missing(CALL_SETTINGS)
         if missing:
             raise ToolError(f"Phone calls are not set up. Missing in .env: {', '.join(missing)}.")
@@ -109,6 +153,8 @@ def build_phone_server(store: CallStore, dialer: Dialer, settings: Settings) -> 
             Field(description="How long to wait for the call to end.", ge=0, le=MAX_WAIT_SECONDS),
         ] = MAX_WAIT_SECONDS,
     ) -> dict:
+        if call_id.startswith("sarvam-"):
+            return {"call_id": call_id, "status": "placed", "via": "sarvam"}
         if not store.get(call_id):
             raise ToolError(f"No call with id {call_id}.")
         record = await store.wait(call_id, wait_seconds)

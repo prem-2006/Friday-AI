@@ -130,7 +130,7 @@ def create_app(
             timezone=settings.timezone,
         ),
         "/calendar": build_calendar_server(calendar, settings.calendar_url),
-        "/phone": build_phone_server(store, dialer, settings),
+        "/phone": build_phone_server(store, dialer, settings, sarvam=SarvamDialer(settings)),
     }
     mcp_apps = {
         path: (
@@ -189,6 +189,8 @@ def create_app(
                 tunnel
                 and not settings.get("PUBLIC_URL")
                 and settings.get("FRIDAY_TUNNEL", "cloudflared") != "off"
+                # Only Twilio reaches Friday through the tunnel.
+                and settings.get("TWILIO_ACCOUNT_SID")
             ):
                 # Twilio reaches the call routes through a free quick tunnel;
                 # its address is passed with each call.

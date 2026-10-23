@@ -32,6 +32,11 @@ class Settings:
     ) -> Settings:
         source = os.environ if env is None else env
         values = {name: value.strip() for name, value in source.items() if value}
+        if values.get("FRIDAY_TWILIO", "").lower() == "off":
+            # Twilio is kept but not used: every call goes through Sarvam.
+            values = {
+                name: value for name, value in values.items() if not name.startswith("TWILIO_")
+            }
         return cls(
             values=values,
             data_dir=data_dir or Path(values.get("FRIDAY_DATA_DIR") or SERVICES_ROOT / "data"),

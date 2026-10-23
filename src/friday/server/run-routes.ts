@@ -27,6 +27,28 @@ const CONVERSATION_ROLES = new Set(['user', 'assistant', 'tool']);
 const conversational = <T extends { role: string }>(items: T[]) =>
   items.filter((item) => CONVERSATION_ROLES.has(item.role));
 
+type HistoryItem = {
+  role: string;
+  content?: unknown;
+  toolCallId?: string;
+  toolCalls?: { id: string }[];
+};
+// An action that never got an answer (an approval that expired, a run cut
+// short) leaves a tool call with no result in the screen's history, and the
+// model then ends every later turn at once with nothing to say. Drop those.
+const answeredOnly = <T extends HistoryItem>(items: T[]) => {
+  const answered = new Set(
+    items.flatMap((item) => (item.role === 'tool' ? [item.toolCallId] : [])),
+  );
+  return items.flatMap((item) => {
+    if (item.role !== 'assistant' || !item.toolCalls?.length) return [item];
+    const toolCalls = item.toolCalls.filter((call) => answered.has(call.id));
+    if (toolCalls.length === item.toolCalls.length) return [item];
+    if (!toolCalls.length && !item.content) return [];
+    return [{ ...item, toolCalls: toolCalls.length ? toolCalls : undefined }];
+  });
+};
+
 type Run = typeof runDotDirectly;
 
 export function fridayRunRoutes(
@@ -61,7 +83,9 @@ export function fridayRunRoutes(
         platform,
         friday.id,
         thread.id,
-        conversational(input.data.messages) as unknown as Message[],
+        answeredOnly(
+          conversational(input.data.messages) as unknown as HistoryItem[],
+        ) as unknown as Message[],
         { approvals: true, signal: c.req.raw.signal },
       );
       // The screen keeps only the conversation itself, not a model's notes.

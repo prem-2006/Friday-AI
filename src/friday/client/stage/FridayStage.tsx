@@ -429,6 +429,8 @@ function StageSession({
   // available, Friday falls back to sending recorded clips to Gnani.
   const live = useRef<LiveVoice | null>(null);
   const liveConnecting = useRef<Promise<LiveVoice | null> | null>(null);
+  // The screen is closing: stop reconnecting the live voice.
+  const leaving = useRef(false);
   const liveEventRef = useRef<(event: LiveEvent) => void>(() => {});
   const spokenWaiter = useRef<(() => void) | null>(null);
   // What Friday said lately, to tell its echo from the owner talking over it.
@@ -486,6 +488,7 @@ function StageSession({
       variant === 'notch' ? 'notch' : true,
     );
     return () => {
+      leaving.current = true;
       unfollow();
       live.current?.stop();
       handsFree.current?.stop();
@@ -676,13 +679,14 @@ function StageSession({
       const next = [...history, ...result.newMessages];
       setHistory(next);
       if (pendingApprovalOf(next)) return;
-      const reply = lastReplyText(next);
-      if (reply) {
-        caption('friday', reply);
-        setSubtitle(reply);
-        replying.current = true;
-        await speak(reply, true, performance.now());
-      } else logTiming();
+      // Friday always answers something: silence looks like it never heard.
+      const reply =
+        lastReplyText(result.newMessages) ||
+        'Sorry, I missed that. Please say it again.';
+      caption('friday', reply);
+      setSubtitle(reply);
+      replying.current = true;
+      await speak(reply, true, performance.now());
     } catch (e) {
       if (!controller.signal.aborted)
         setError(friendlyError(e, 'That did not work. Try again.'));
@@ -900,7 +904,18 @@ function StageSession({
         language: languageRef.current,
         onEvent: (event) => liveEventRef.current(event),
         onClosed: () => {
-          if (live.current === voice) live.current = null;
+          if (live.current !== voice) return;
+          live.current = null;
+          // Connect again at once (the services restarted, say), so the next
+          // Caps Lock press is heard from its first word, not lost while
+          // connecting.
+          const reconnect = () => {
+            if (leaving.current || live.current) return;
+            void ensureLive().then((next) => {
+              if (!next) setTimeout(reconnect, 5000);
+            });
+          };
+          setTimeout(reconnect, 2000);
         },
       });
       try {

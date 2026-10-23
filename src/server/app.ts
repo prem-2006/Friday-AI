@@ -14,6 +14,7 @@ import { fridayVoiceRoutes } from '../friday/server/voice-routes.js';
 import { fridayActivityRoutes } from '../friday/server/activity-routes.js';
 import { fridayRunRoutes } from '../friday/server/run-routes.js';
 import { fridayProfileRoutes } from '../friday/server/profile.js';
+import { fridayContactsRoutes } from '../friday/server/contacts.js';
 const interval = z.number().int().min(60).max(31_536_000).nullable();
 export interface AppOptions {
   store: Store;
@@ -108,6 +109,7 @@ export function createApp({
   );
   // FRIDAY: the owner's details, edited on Friday's main page.
   app.route('/api', fridayProfileRoutes());
+  app.route('/api', fridayContactsRoutes());
   // FRIDAY: fast voice turns, run directly on this server.
   if (platform) app.route('/api', fridayRunRoutes(platform));
   if (platform) app.route('/api', computerRoutes(platform.computers));

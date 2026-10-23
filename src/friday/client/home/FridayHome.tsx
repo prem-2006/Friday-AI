@@ -9,9 +9,11 @@ import {
   Loader2,
   Mail,
   Mic,
+  Phone,
   Play,
   ShieldCheck,
   UserRound,
+  X,
 } from 'lucide-react';
 import type { Connection } from '../../../shared/connection-types';
 import type { WorkspaceState } from '../../../shared/types';
@@ -144,6 +146,120 @@ function ProfileCard({
           </span>
           <button type="submit" className="primary" disabled={!changed}>
             Save
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+interface Contact {
+  name: string;
+  phone: string;
+  note?: string;
+}
+
+// The people Friday may phone for the owner: "call Rahul" uses Rahul's number.
+function ContactsCard() {
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [draft, setDraft] = useState({ name: '', phone: '' });
+  const [status, setStatus] = useState('');
+  useEffect(() => {
+    void api<Contact[]>('/friday/contacts')
+      .then(setContacts)
+      .catch(() => setStatus('Could not load your contacts.'));
+  }, []);
+  const save = async (next: Contact[]) => {
+    setStatus('');
+    try {
+      setContacts(
+        await api<Contact[]>('/friday/contacts', {
+          method: 'PUT',
+          body: JSON.stringify(next),
+        }),
+      );
+      return true;
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Could not save.');
+      return false;
+    }
+  };
+  const add = async () => {
+    const name = draft.name.trim();
+    if (!name || !draft.phone.trim()) return;
+    const others = contacts.filter(
+      (contact) => contact.name.toLowerCase() !== name.toLowerCase(),
+    );
+    if (await save([...others, { name, phone: draft.phone.trim() }]))
+      setDraft({ name: '', phone: '' });
+  };
+  return (
+    <section className="home-card">
+      <header>
+        <Phone size={18} />
+        <h2>Contacts</h2>
+      </header>
+      <p className="home-muted">
+        People Friday can phone for you: say “call{' '}
+        {contacts[0]?.name ?? 'Rahul'}
+        ”. Kept on this PC.
+      </p>
+      {contacts.length > 0 && (
+        <ul className="home-contacts">
+          {contacts.map((contact) => (
+            <li key={contact.name}>
+              <span>{contact.name}</span>
+              <span className="home-muted">{contact.phone}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${contact.name}`}
+                onClick={() =>
+                  void save(contacts.filter((item) => item !== contact))
+                }
+              >
+                <X size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form
+        className="home-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void add();
+        }}
+      >
+        <label>
+          <span>Name</span>
+          <input
+            value={draft.name}
+            maxLength={60}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, name: event.target.value }))
+            }
+          />
+        </label>
+        <label>
+          <span>Phone</span>
+          <input
+            type="tel"
+            placeholder="98765 43210"
+            value={draft.phone}
+            maxLength={20}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, phone: event.target.value }))
+            }
+          />
+        </label>
+        <div className="home-actions wide">
+          <span className="home-muted">{status}</span>
+          <button
+            type="submit"
+            className="primary"
+            disabled={!draft.name.trim() || !draft.phone.trim()}
+          >
+            Add
           </button>
         </div>
       </form>
@@ -490,6 +606,7 @@ export function FridayHome({
           />
           <div className="home-column">
             <GoogleCard profile={profile} onSaved={setProfile} />
+            <ContactsCard />
             <PermissionsCard dots={workspace?.dots ?? []} />
           </div>
         </div>

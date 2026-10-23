@@ -14,6 +14,7 @@ Both send signals to the voice screen over the activity stream.
 
 from __future__ import annotations
 
+import ctypes
 import logging
 import threading
 import time
@@ -23,6 +24,14 @@ from typing import Any
 log = logging.getLogger("friday.wake")
 
 HOLD_SECONDS = 0.3  # shorter presses are ordinary Caps Lock taps
+VK_CONTROL = 0x11
+
+
+def ctrl_is_down() -> bool:
+    """Whether Ctrl is down right now, asked of Windows. The keyboard
+    library's own record can stay "pressed" after a missed key release, and
+    then every Caps Lock press hid the notch instead of listening."""
+    return bool(ctypes.windll.user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
 
 
 class PushToTalkKey:
@@ -52,7 +61,7 @@ class PushToTalkKey:
 
             self._hook_key = self._hook_key or keyboard.hook_key
             self._send = self._send or keyboard.send
-            self._ctrl_held = self._ctrl_held or (lambda: keyboard.is_pressed("ctrl"))
+            self._ctrl_held = self._ctrl_held or ctrl_is_down
         self._remove = self._hook_key("caps lock", self.on_event, suppress=True)
 
     def stop(self) -> None:

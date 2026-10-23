@@ -98,6 +98,16 @@ export function fridayFallbackFetch(
         // Another model that refuses the request is skipped, not fatal.
         if (!limited(response) && (own || response.status !== 400))
           return response;
+        if (response.status === 400)
+          voiceLog('model_refused', {
+            model,
+            error: (
+              await response
+                .clone()
+                .text()
+                .catch(() => '')
+            ).slice(0, 300),
+          });
         resting.set(
           id,
           now() + (response.status === 429 ? OUT_OF_QUOTA_MS : COOL_DOWN_MS),

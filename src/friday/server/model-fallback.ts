@@ -95,10 +95,11 @@ export function fridayFallbackFetch(
                 ),
               },
         );
-        // Another model that refuses the request is skipped, not fatal.
-        if (!limited(response) && (own || response.status !== 400))
-          return response;
-        if (response.status === 400)
+        // Another model or key that refuses the request, or does not offer
+        // that model (404: new projects lack the older ones), is skipped.
+        const refusedHere = [400, 403, 404].includes(response.status);
+        if (!limited(response) && (own || !refusedHere)) return response;
+        if (refusedHere)
           voiceLog('model_refused', {
             model,
             error: (

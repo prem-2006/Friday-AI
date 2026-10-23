@@ -261,6 +261,7 @@ def server(settings: Settings, tmp_path: Path):
     app = create_app(
         settings,
         media_key=media_keys.append,
+        speak=lambda text: None,
         file_roots=lambda: [folder],
         open_path=opened_files.append,
         dialer=dialer,

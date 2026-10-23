@@ -15,16 +15,21 @@ export function ownerHeaders(): Record<string, string> {
 export function followActivity(
   onEvent: (event: ActivityEvent) => void,
   onStatus: (connected: boolean) => void,
+  /** A voice window (voice screen, notch) also receives Caps Lock signals. */
+  voice = true,
 ) {
   const controller = new AbortController();
   const run = async () => {
     while (!controller.signal.aborted) {
       try {
         // ?voice=1: this window handles Caps Lock (the newest one does).
-        const response = await fetch('/api/friday/activity/stream?voice=1', {
-          headers: ownerHeaders(),
-          signal: controller.signal,
-        });
+        const response = await fetch(
+          `/api/friday/activity/stream${voice ? '?voice=1' : ''}`,
+          {
+            headers: ownerHeaders(),
+            signal: controller.signal,
+          },
+        );
         if (!response.ok || !response.body) throw new Error('unavailable');
         onStatus(true);
         const reader = response.body.getReader();

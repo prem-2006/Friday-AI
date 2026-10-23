@@ -15,6 +15,7 @@ sign in there. Tests use a headless Playwright Chrome instead.
 from __future__ import annotations
 
 import base64
+import json
 import os
 import re
 import shutil
@@ -199,6 +200,39 @@ SENDING_NEEDS_OK = (
 
 class BrowserError(RuntimeError):
     pass
+
+
+# The first full video (videoRenderer, so not a Short) in YouTube's results page.
+FIRST_VIDEO = re.compile(
+    r'"videoRenderer":\{"videoId":"([\w-]{11})".{0,4000}?"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"',
+    re.DOTALL,
+)
+
+
+def first_video(query: str) -> tuple[str, str] | None:
+    """Finds a video with one plain request, without loading YouTube in the window."""
+    import httpx
+
+    try:
+        html = httpx.get(
+            "https://www.youtube.com/results",
+            params={"search_query": query},
+            headers={
+                "Accept-Language": "en-IN,en;q=0.9",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130 Safari/537.36",
+            },
+            timeout=6,
+        ).text
+    except Exception:
+        return None
+    match = FIRST_VIDEO.search(html)
+    if not match:
+        return None
+    try:
+        title = json.loads(f'"{match.group(2)}"')
+    except ValueError:
+        title = match.group(2)
+    return match.group(1), title
 
 
 def find_chrome() -> str:
@@ -398,6 +432,14 @@ class OnScreenBrowser:
         text = page.evaluate("() => document.body ? document.body.innerText : ''")
         return {"url": page.url, "title": page.title(), "text": " ".join(text.split())[:8000]}
 
+    def open_tabs(self, urls: list[str]) -> dict:
+        """Opens each site in its own tab (a mode's sites)."""
+        self._page()
+        for url in urls:
+            page = self._context.new_page()
+            page.goto(_check_url(url), wait_until="domcontentloaded", timeout=30_000)
+        return {"opened": len(urls)}
+
     def _youtube_page(self):
         """Friday's one YouTube tab, reused for every song and search."""
         current = self._page(front=False)
@@ -449,6 +491,15 @@ class OnScreenBrowser:
         Goes straight to the results page: for playing, typing into the home
         page's search box would only add a page load. Always in the same tab."""
         page = self._youtube_page()
+        found = first_video(query)
+        if found:
+            video_id, title = found
+            page.goto(
+                f"https://www.youtube.com/watch?v={video_id}",
+                wait_until="domcontentloaded",
+                timeout=20_000,
+            )
+            return {"title": title, "url": page.url}
         page.goto(
             SEARCH_SITES["youtube"]["results"] + quote_plus(query),
             wait_until="domcontentloaded",

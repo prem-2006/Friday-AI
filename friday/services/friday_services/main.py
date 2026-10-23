@@ -39,6 +39,13 @@ from friday_services.mcp_calendar import build_calendar_server
 from friday_services.mcp_desktop import build_desktop_server, build_whatsapp_server
 from friday_services.mcp_phone import Dialer, build_phone_server
 from friday_services.mcp_quick import build_quick_server
+from friday_services.organizer import (
+    Notes,
+    OrganizerError,
+    Reminders,
+    parse_when,
+    speak_with_windows,
+)
 from friday_services.screen import capture_screen, describe_screen, snap_window
 from friday_services.whatsapp import DesktopWhatsAppUI, WhatsApp, WhatsAppUI
 from friday_services.worker import Worker, com_thread
@@ -60,6 +67,7 @@ def create_app(
     file_roots: Callable[[], list] | None = None,
     open_path: Callable[[str], None] | None = None,
     wake: bool = False,
+    speak: Callable[[str], None] | None = None,
     whatsapp_ui: WhatsAppUI | None = None,
 ) -> FastAPI:
     settings = settings or Settings.from_env()
@@ -82,6 +90,8 @@ def create_app(
     browser_worker = Worker("friday-browser")
     desktop_worker = Worker("friday-desktop", initializer=com_thread)
     desktop = desktop or DesktopApps()
+    reminders = Reminders(settings.data_dir / "reminders.json")
+    notes = Notes(settings.data_dir / "notes.txt")
     whatsapp = WhatsApp(whatsapp_ui or DesktopWhatsAppUI(), settings.owner_name)
     servers = {
         "/browser": build_browser_server(browser, browser_worker, feed, browser_agent),
@@ -99,6 +109,9 @@ def create_app(
             media_key=media_key or press_media_key,
             file_roots=file_roots or owner_folders,
             open_path=open_path or os.startfile,
+            reminders=reminders,
+            notes=notes,
+            data_dir=settings.data_dir,
             timezone=settings.timezone,
         ),
         "/calendar": build_calendar_server(calendar, settings.calendar_url),
@@ -114,6 +127,24 @@ def create_app(
         for path, server in servers.items()
     }
 
+    # Timers, reminders and deadlines: Friday says them when they come due, on
+    # the voice screen or the notch, or with Windows' voice if neither is open.
+    def announce(text: str) -> None:
+        feed.emit("friday", "reminder", text, state="done")
+        if feed.watched:
+            feed.signal("announce", text)
+        else:
+            (speak or speak_with_windows)(text)
+
+    async def reminder_clock() -> None:
+        while True:
+            try:
+                for text in await asyncio.to_thread(reminders.due_now):
+                    announce(text)
+            except Exception:
+                pass  # a bad reminders file must not stop the clock
+            await asyncio.sleep(5)
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         async with AsyncExitStack() as stack:
@@ -124,6 +155,8 @@ def create_app(
             warming.add_done_callback(lambda task: task.cancelled() or task.exception())
             if wake:
                 stack.callback(start_wake(settings, feed, asyncio.get_running_loop()))
+            clock = asyncio.create_task(reminder_clock(), name="friday-reminders")
+            stack.callback(clock.cancel)
             # Starting Chrome takes about five seconds; do it before the first request.
             if settings.browser_prewarm:
                 opening = asyncio.ensure_future(browser_worker.run(browser.warm))
@@ -243,6 +276,33 @@ def create_app(
             SmallWebRTCRequest(sdp=body["sdp"], type=body["type"], pc_id=body.get("pc_id")),
             started,
         )
+
+    # The main page's reminders panel.
+    @app.get("/reminders", dependencies=[Depends(owner)])
+    async def reminders_list() -> list[dict]:
+        return [
+            {"id": r.id, "kind": r.kind, "text": r.text, "due": r.due}
+            for r in await asyncio.to_thread(reminders.upcoming)
+        ]
+
+    @app.post("/reminders", dependencies=[Depends(owner)])
+    async def reminders_add(request: Request) -> dict:
+        body = await request.json()
+        kind = str((body or {}).get("kind") or "reminder")
+        text = str((body or {}).get("text") or "").strip()
+        if kind not in ("reminder", "deadline", "timer") or not text or len(text) > 200:
+            raise HTTPException(400, "Give a reminder or deadline with a short title.")
+        try:
+            item = await asyncio.to_thread(
+                reminders.add, kind, text, parse_when(str(body.get("when") or ""))
+            )
+        except OrganizerError as error:
+            raise HTTPException(400, str(error)) from error
+        return {"id": item.id, "kind": item.kind, "text": item.text, "due": item.due}
+
+    @app.post("/reminders/{reminder_id}/done", dependencies=[Depends(owner)])
+    async def reminders_done(reminder_id: str) -> dict:
+        return {"done": bool(await asyncio.to_thread(reminders.finish_id, reminder_id))}
 
     @app.post("/activity/stop", dependencies=[Depends(owner)])
     async def activity_stop() -> dict[str, bool]:

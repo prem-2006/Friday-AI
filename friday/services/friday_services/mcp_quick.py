@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -25,13 +26,28 @@ from friday_services.browser import BrowserError, OnScreenBrowser
 from friday_services.desktop import DesktopApps, DesktopError
 from friday_services.files import FilesError, find_files, open_file
 from friday_services.meetings import MeetingError, calendar_event_url
+from friday_services.organizer import (
+    Notes,
+    OrganizerError,
+    Reminders,
+    battery,
+    gmail_compose_url,
+    load_modes,
+    lock_screen,
+    maps_directions_url,
+    parse_when,
+    spoken_time,
+    status_sentence,
+    take_screenshot,
+    weather,
+)
 from friday_services.screen import POSITIONS, Position, ScreenError
 from friday_services.worker import Worker
 
 ACT = ToolAnnotations(read_only_hint=False, destructive_hint=False)
 SENDS = ToolAnnotations(read_only_hint=False, destructive_hint=True)
 LOOK = ToolAnnotations(read_only_hint=True)
-FAILURES = (BrowserError, DesktopError, ScreenError, FilesError, MeetingError)
+FAILURES = (BrowserError, DesktopError, ScreenError, FilesError, MeetingError, OrganizerError)
 MediaAction = Literal["pause", "play", "next", "previous", "volume_up", "volume_down", "mute"]
 MEDIA_SAID = {
     "pause": "Paused.",
@@ -43,6 +59,8 @@ MEDIA_SAID = {
     "mute": "Sound toggled.",
 }
 IN_BROWSER = {
+    "directions",
+    "draft_email",
     "open_website",
     "play_youtube",
     "browser_search",
@@ -67,6 +85,9 @@ def build_quick_server(
     media_key: Callable[[str], None],
     file_roots: Callable[[], list[Path]],
     open_path: Callable[[str], None],
+    reminders: Reminders,
+    notes: Notes,
+    data_dir: Path,
     timezone: str = "Asia/Kolkata",
 ) -> MCPServer:
     server = MCPServer(
@@ -215,6 +236,271 @@ def build_quick_server(
             lambda: asyncio.to_thread(open_file, path, file_roots(), open_path),
         )
         return {**opened, "friday_say": f"Opened {opened['opened']}."}
+
+    def time_of(text: str):
+        try:
+            return parse_when(text)
+        except OrganizerError as error:
+            raise ToolError(str(error)) from error
+
+    @server.tool(
+        name="set_timer",
+        description="Set a timer; Friday says out loud when it is done.",
+        annotations=ACT,
+    )
+    async def set_timer(
+        minutes: Annotated[float, Field(gt=0, le=720)],
+        label: Annotated[str, Field(max_length=120)] = "",
+    ) -> dict:
+        due = datetime.now() + timedelta(minutes=minutes)
+        name = label or f"{minutes:g} minutes"
+        await act(
+            "set_timer",
+            f"Timer: {name}.",
+            lambda: asyncio.to_thread(reminders.add, "timer", name, due),
+        )
+        span = f"{minutes:g} minute{'s' if minutes != 1 else ''}"
+        return {"friday_say": f"Timer set for {span}{f' for {label}' if label else ''}."}
+
+    @server.tool(
+        name="add_reminder",
+        description=(
+            "Remind the owner of something at a time; Friday says it out loud then. "
+            "when is local date and time, e.g. 2026-10-24T17:00."
+        ),
+        annotations=ACT,
+    )
+    async def add_reminder(
+        text: Annotated[str, Field(min_length=1, max_length=200)],
+        when: Annotated[str, Field(min_length=10, max_length=25)],
+    ) -> dict:
+        due = time_of(when)
+        await act(
+            "add_reminder",
+            f"Reminder: {text}.",
+            lambda: asyncio.to_thread(reminders.add, "reminder", text, due),
+        )
+        return {"friday_say": f"Okay, I'll remind you {spoken_time(due)}."}
+
+    @server.tool(
+        name="add_deadline",
+        description=(
+            "Save a deadline (an assignment, a bill, a project). Friday reminds the owner "
+            "24 hours, 3 hours, 1 hour and 15 minutes before, and when it is due. due is "
+            "local date and time, e.g. 2026-10-24T17:00."
+        ),
+        annotations=ACT,
+    )
+    async def add_deadline(
+        title: Annotated[str, Field(min_length=1, max_length=200)],
+        due: Annotated[str, Field(min_length=10, max_length=25)],
+    ) -> dict:
+        moment = time_of(due)
+        await act(
+            "add_deadline",
+            f"Deadline: {title}.",
+            lambda: asyncio.to_thread(reminders.add, "deadline", title, moment),
+        )
+        return {
+            "friday_say": f"Saved. {title} is due {spoken_time(moment)}; I'll remind you before."
+        }
+
+    @server.tool(
+        name="list_reminders",
+        description="Say what timers, reminders and deadlines are coming up.",
+        annotations=LOOK,
+    )
+    async def list_reminders() -> dict:
+        items = await asyncio.to_thread(reminders.upcoming)
+        listed = [
+            {
+                "text": item.text,
+                "kind": item.kind,
+                "due": datetime.fromtimestamp(item.due).isoformat(),
+            }
+            for item in items
+        ]
+        if not items:
+            say = "Nothing is coming up."
+        else:
+            first = "; ".join(
+                f"{item.text} {spoken_time(datetime.fromtimestamp(item.due))}" for item in items[:3]
+            )
+            say = f"You have {len(items)} coming up: {first}."
+        return {"items": listed, "friday_say": say}
+
+    @server.tool(
+        name="finish_reminder",
+        description="Mark a deadline as done or cancel a reminder or timer, by its name.",
+        annotations=ACT,
+    )
+    async def finish_reminder(title: Annotated[str, Field(min_length=1, max_length=200)]) -> dict:
+        done = await asyncio.to_thread(reminders.finish, title)
+        if not done:
+            raise ToolError(f"Nothing called {title} is coming up.")
+        feed.emit("friday", "finish_reminder", f"Done: {done.text}.", state="done")
+        return {"friday_say": f"Done, {done.text} is off the list."}
+
+    @server.tool(name="take_note", description="Save a note the owner dictates.", annotations=ACT)
+    async def take_note(text: Annotated[str, Field(min_length=1, max_length=2000)]) -> dict:
+        await act("take_note", "Saving a note.", lambda: asyncio.to_thread(notes.add, text))
+        return {"friday_say": "Noted."}
+
+    @server.tool(name="read_notes", description="Read the latest notes aloud.", annotations=LOOK)
+    async def read_notes(count: Annotated[int, Field(ge=1, le=10)] = 3) -> dict:
+        latest = await asyncio.to_thread(notes.latest, count)
+        say = (
+            ("Your latest notes: " + "; ".join(latest) + ".")
+            if latest
+            else "You have no notes yet."
+        )
+        return {"notes": latest, "friday_say": say}
+
+    @server.tool(name="show_notes", description="Open the notes file on screen.", annotations=ACT)
+    async def show_notes() -> dict:
+        if not notes.path.exists():
+            raise ToolError("You have no notes yet.")
+        await act(
+            "show_notes",
+            "Opening your notes.",
+            lambda: asyncio.to_thread(open_path, str(notes.path)),
+        )
+        return {"friday_say": "Your notes are on screen."}
+
+    @server.tool(
+        name="run_mode",
+        description=(
+            "Switch the PC into a mode that opens its sites, apps and music: work, study, "
+            "chill or news (more can be added in data/modes.json)."
+        ),
+        annotations=ACT,
+    )
+    async def run_mode(mode: Annotated[str, Field(min_length=1, max_length=40)]) -> dict:
+        modes = load_modes(data_dir / "modes.json")
+        chosen = modes.get(mode.strip().lower())
+        if not chosen:
+            raise ToolError(f"No {mode} mode. Modes: {', '.join(modes)}.")
+
+        async def run():
+            for app in chosen.get("apps", []):
+                try:
+                    await desktop_worker.run(desktop.open, app)
+                except DesktopError:
+                    pass  # not installed here; the rest still opens
+            if chosen.get("sites"):
+                await browser_worker.run(browser.open_tabs, chosen["sites"])
+            if chosen.get("music"):
+                await browser_worker.run(browser.play_youtube, chosen["music"])
+            return {"mode": mode}
+
+        await act("run_mode", f"{mode.title()} mode.", run)
+        return {"friday_say": chosen.get("say", f"{mode.title()} mode is on.")}
+
+    @server.tool(
+        name="focus_session",
+        description=(
+            "Start a focus session: opens the topic's file if there is one, plays focus music "
+            "and says when the time is up."
+        ),
+        annotations=ACT,
+    )
+    async def focus_session(
+        minutes: Annotated[int, Field(ge=1, le=180)] = 25,
+        topic: Annotated[str, Field(max_length=120)] = "",
+    ) -> dict:
+        async def run():
+            opened = ""
+            if topic:
+                found = await asyncio.to_thread(find_files, topic, file_roots(), 1)
+                if found:
+                    await asyncio.to_thread(open_file, found[0]["path"], file_roots(), open_path)
+                    opened = found[0]["name"]
+            await browser_worker.run(browser.play_youtube, "lofi focus music")
+            await asyncio.to_thread(
+                reminders.add,
+                "timer",
+                f"{minutes} minute focus session{f' on {topic}' if topic else ''}; take a short break",
+                datetime.now() + timedelta(minutes=minutes),
+            )
+            return {"opened": opened}
+
+        done = await act("focus_session", f"Focus session: {minutes} minutes.", run)
+        extra = f" I opened {done['opened']}." if done.get("opened") else ""
+        return {"friday_say": f"Focus for {minutes} minutes.{extra} I'll tell you when time is up."}
+
+    @server.tool(
+        name="system_status",
+        description="Say the time, the date and the battery level.",
+        annotations=LOOK,
+    )
+    async def system_status() -> dict:
+        power = await asyncio.to_thread(battery)
+        return {**power, "friday_say": status_sentence(power)}
+
+    @server.tool(
+        name="lock_screen",
+        description="Lock the PC. The owner approves it first.",
+        annotations=SENDS,
+    )
+    async def lock_screen_tool() -> dict:
+        await act("lock_screen", "Locking the PC.", lambda: asyncio.to_thread(lock_screen))
+        return {"friday_say": "Locked."}
+
+    @server.tool(
+        name="take_screenshot",
+        description="Save a screenshot of the whole screen in Pictures, Friday.",
+        annotations=ACT,
+    )
+    async def take_screenshot_tool() -> dict:
+        folder = Path.home() / "Pictures" / "Friday"
+        path = await act(
+            "take_screenshot",
+            "Taking a screenshot.",
+            lambda: asyncio.to_thread(take_screenshot, folder),
+        )
+        return {
+            "path": str(path),
+            "friday_say": "Screenshot saved in your Pictures, Friday folder.",
+        }
+
+    @server.tool(
+        name="weather",
+        description="Today's weather for a city, spoken.",
+        annotations=LOOK,
+    )
+    async def weather_tool(city: Annotated[str, Field(min_length=2, max_length=80)]) -> dict:
+        said = await act("weather", f"Weather in {city}.", lambda: asyncio.to_thread(weather, city))
+        return {"friday_say": said}
+
+    @server.tool(
+        name="directions",
+        description="Show Google Maps directions to a place in Friday's Chrome.",
+        annotations=ACT,
+    )
+    async def directions(
+        destination: Annotated[str, Field(min_length=2, max_length=200)],
+        origin: Annotated[str, Field(max_length=200)] = "",
+    ) -> dict:
+        url = maps_directions_url(destination, origin)
+        await act("directions", f"Directions to {destination}.", in_browser(browser.open), url)
+        return {"friday_say": f"Directions to {destination} are on screen."}
+
+    @server.tool(
+        name="draft_email",
+        description=(
+            "Open a Gmail draft with these details in Friday's Chrome, not sent. Read it back "
+            "to the owner; send it with send_email after their OK."
+        ),
+        annotations=ACT,
+    )
+    async def draft_email(
+        to: Annotated[str, Field(max_length=300)],
+        subject: Annotated[str, Field(max_length=300)],
+        body: Annotated[str, Field(max_length=5000)],
+    ) -> dict:
+        url = gmail_compose_url(to, subject, body)
+        await act("draft_email", "Writing the email draft.", in_browser(browser.open), url)
+        return {"friday_say": "The draft is ready in Gmail. Shall I send it?"}
 
     @server.tool(
         name="schedule_meeting",

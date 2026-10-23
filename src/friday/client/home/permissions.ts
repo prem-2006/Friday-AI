@@ -31,7 +31,13 @@ export const ABILITIES: Ability[] = [
       {
         dot: 'Friday',
         connection: 'quick',
-        names: ['open_website', 'play_youtube', 'web_search'],
+        names: [
+          'open_website',
+          'play_youtube',
+          'web_search',
+          'weather',
+          'directions',
+        ],
       },
     ],
   },
@@ -51,6 +57,10 @@ export const ABILITIES: Ability[] = [
           'press_keys_in_app',
           'snap_window',
           'media_control',
+          'run_mode',
+          'focus_session',
+          'take_screenshot',
+          'lock_screen',
         ],
       },
     ],
@@ -89,7 +99,13 @@ export const ABILITIES: Ability[] = [
     title: 'Send email',
     detail: 'Send drafts from your Gmail.',
     alwaysAsks: true,
-    tools: [{ dot: 'Friday', connection: 'quick', names: ['send_email'] }],
+    tools: [
+      {
+        dot: 'Friday',
+        connection: 'quick',
+        names: ['draft_email', 'send_email'],
+      },
+    ],
   },
   {
     id: 'whatsapp',

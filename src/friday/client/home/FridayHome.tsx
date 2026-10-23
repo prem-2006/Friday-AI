@@ -5,7 +5,6 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   CalendarDays,
   HardDrive,
-  Keyboard,
   LayoutGrid,
   Loader2,
   Mail,
@@ -24,6 +23,7 @@ import {
   toolsOf,
   type AbilityState,
 } from './permissions';
+import { FridayConsole } from './Console';
 import './home.css';
 
 export const HOME_HASH = '#/home';
@@ -481,13 +481,7 @@ export function FridayHome({
         </nav>
       </header>
       <main className="home-main">
-        <div className="home-hint">
-          <Keyboard size={18} />
-          <span>
-            Hold <kbd>Caps Lock</kbd> anywhere and speak; let go when you are
-            done. A quick tap is still ordinary Caps Lock.
-          </span>
-        </div>
+        <FridayConsole />
         <div className="home-grid">
           <ProfileCard
             saved={profile}

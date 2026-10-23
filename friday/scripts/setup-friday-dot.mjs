@@ -55,7 +55,7 @@ const RETIRED = ['phone', 'calendar', 'telegram'];
 // Run without an approval card: one-step actions that send nothing and buy
 // nothing; except these, which always ask the owner first.
 const NO_APPROVAL = ['quick'];
-const ALWAYS_ASK = ['send_email', 'schedule_meeting'];
+const ALWAYS_ASK = ['send_email', 'schedule_meeting', 'lock_screen'];
 
 async function api(path, method = 'GET', body) {
   const response = await fetch(`${APP_URL}/api${path}`, {

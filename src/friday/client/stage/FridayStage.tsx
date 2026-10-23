@@ -405,7 +405,7 @@ function StageSession({
     return () => clearTimeout(timer);
   }, [error]);
   const [events, setEvents] = useState<ActivityEvent[]>([]);
-  const controlRef = useRef<(action: string) => void>(() => {});
+  const controlRef = useRef<(action: string, detail: string) => void>(() => {});
 
   const handsFree = useRef<HandsFree | null>(null);
   // Live copies of state that async voice handlers read after a re-render.
@@ -466,7 +466,8 @@ function StageSession({
       .catch(() => setVoiceReady(false));
     const unfollow = followActivity((event) => {
       // Caps Lock and clap signals from friday/services, not helper activity.
-      if (event.actor === 'control') return controlRef.current(event.action);
+      if (event.actor === 'control')
+        return controlRef.current(event.action, event.detail);
       setEvents((list) => [...list.slice(-40), event]);
     }, setHelpersOnline);
     return () => {
@@ -946,10 +947,17 @@ function StageSession({
     if (!holding.current) return;
     mic.hold();
   };
+  const speakRef = useRef((text: string) => speak(text, true));
+  speakRef.current = (text: string) => speak(text, true);
   const pushRef = useRef(pushToTalk);
   pushRef.current = pushToTalk;
-  controlRef.current = (action) => {
-    if (action === 'ptt_down') void pushRef.current(true);
+  controlRef.current = (action, detail) => {
+    if (action === 'announce' && detail) {
+      // A timer, reminder or deadline came due: Friday says it.
+      caption('friday', detail);
+      setSubtitle(detail);
+      void speakRef.current(detail);
+    } else if (action === 'ptt_down') void pushRef.current(true);
     else if (action === 'ptt_up') void pushRef.current(false);
     else if (action === 'notch_toggle' && variant === 'notch')
       (

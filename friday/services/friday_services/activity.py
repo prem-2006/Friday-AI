@@ -43,10 +43,10 @@ class ActivityFeed:
             queue.put_nowait(event)
         return event
 
-    def signal(self, action: str) -> None:
+    def signal(self, action: str, detail: str = "") -> None:
         """Tell the voice screen to do something (e.g. ptt_down, wake). Not kept
         in the history, so a page that connects later never replays it."""
-        event = Activity(next(self._ids), "control", action, "", state="done")
+        event = Activity(next(self._ids), "control", action, detail, state="done")
         if action == "notch_toggle":
             # Only the notch acts on it, wherever it is in the list.
             for queue in self._voices:

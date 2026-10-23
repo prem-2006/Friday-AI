@@ -74,6 +74,14 @@ export function fridayActivityRoutes({
   app.post('/friday/browser/open', async (c) =>
     relay('/browser/open', 'POST', undefined, await c.req.text()),
   );
+  // The main page's reminders panel (timers, reminders, deadlines).
+  app.get('/friday/reminders', () => relay('/reminders'));
+  app.post('/friday/reminders', async (c) =>
+    relay('/reminders', 'POST', undefined, await c.req.text()),
+  );
+  app.post('/friday/reminders/:id/done', (c) =>
+    relay(`/reminders/${encodeURIComponent(c.req.param('id'))}/done`, 'POST'),
+  );
   app.post('/friday/voice/offer', async (c) =>
     relay('/voice/offer', 'POST', undefined, await c.req.text()),
   );

@@ -41,9 +41,19 @@ it('keeps recent turns, always starting at something the owner said', () => {
   expect((full[2].content as string).length).toBeLessThan(4100);
 });
 
+// The connection tool's answer: the server saved this action for the owner's OK.
+const saved = (id: string, approvalId: string) =>
+  ({
+    id,
+    role: 'tool',
+    toolCallId: `send-${id}`,
+    content: JSON.stringify({ status: 'approval_required', approvalId }),
+  }) as Message;
+
 it('finds an approval still waiting for the owner', () => {
   const waiting = [
     user('u1', 'WhatsApp Priya I am late'),
+    saved('t1', 'ap_1'),
     askOk('a1', 'ap_1', 'Send "I am late" to Priya'),
   ];
   const pending = pendingApprovalOf(waiting);
@@ -56,6 +66,24 @@ it('finds an approval still waiting for the owner', () => {
   expect(pendingApprovalOf(answered)).toBeUndefined();
   expect(
     pendingApprovalOf([...waiting, user('u2', 'never mind')]),
+  ).toBeUndefined();
+});
+
+it('uses the approval the server saved, not an id the model made up', () => {
+  // Models sometimes ask for the OK in the same step as the action, before
+  // its approvalId exists, and invent one; only the saved one can run.
+  const madeUp = [
+    user('u1', 'WhatsApp Priya I am late'),
+    saved('t1', 'ap_real'),
+    askOk('a1', 'ap_invented', 'Send "I am late" to Priya'),
+  ];
+  expect(pendingApprovalOf(madeUp)?.approvalId).toBe('ap_real');
+  // Nothing saved: there is nothing the owner could approve.
+  expect(
+    pendingApprovalOf([
+      user('u1', 'WhatsApp Priya I am late'),
+      askOk('a1', 'ap_1', 'Send "I am late" to Priya'),
+    ]),
   ).toBeUndefined();
 });
 

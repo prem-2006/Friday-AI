@@ -71,10 +71,11 @@ it('is off unless all three backup settings are present', () => {
   expect(fridayFallbackFetch(PRIMARY, {})).toBeUndefined();
 });
 
-it('skips the main model for a minute after it was rate limited', async () => {
+it('rests a model that ran out of quota (429) for ten minutes', async () => {
   let clock = 0;
   const { calls, fake } = recorder([429, 200, 200, 200, 200]);
   const wrapped = fridayFallbackFetch(PRIMARY, ENV, fake, () => clock)!;
+  const host = () => new URL(calls.at(-1)!.url).host;
   await wrapped(`${PRIMARY}chat/completions`, request); // main 429, backup
   clock = 30_000;
   await wrapped(`${PRIMARY}chat/completions`, request); // backup only
@@ -83,7 +84,25 @@ it('skips the main model for a minute after it was rate limited', async () => {
     'backup.test',
     'backup.test',
   ]);
+  // Its daily allowance is gone: a minute later it is still resting.
+  clock = 61_000;
+  await wrapped(`${PRIMARY}chat/completions`, request);
+  expect(host()).toBe('backup.test');
+  clock = 10 * 60_000 + 1;
+  await wrapped(`${PRIMARY}chat/completions`, request); // main again
+  expect(host()).toBe('main.test');
+});
+
+it('rests a model that was only busy (503) for a minute', async () => {
+  let clock = 0;
+  const { calls, fake } = recorder([503, 200, 200, 200]);
+  const wrapped = fridayFallbackFetch(PRIMARY, ENV, fake, () => clock)!;
+  const host = () => new URL(calls.at(-1)!.url).host;
+  await wrapped(`${PRIMARY}chat/completions`, request); // main 503, backup
+  clock = 30_000;
+  await wrapped(`${PRIMARY}chat/completions`, request);
+  expect(host()).toBe('backup.test');
   clock = 61_000;
   await wrapped(`${PRIMARY}chat/completions`, request); // main again
-  expect(new URL(calls.at(-1)!.url).host).toBe('main.test');
+  expect(host()).toBe('main.test');
 });

@@ -54,12 +54,27 @@ from friday_services.organizer import (
     spoken_time,
 )
 from friday_services.owner_calls import OwnerCaller, owner_phone
+from friday_services.phone_in import (
+    PhoneDesk,
+    caller_digits,
+    caller_name,
+    latest_request,
+    same_caller,
+)
 from friday_services.screen import capture_screen, describe_screen, snap_window
-from friday_services.tunnel import QuickTunnel, TunnelGuard
+from friday_services.tunnel import NgrokTunnel, QuickTunnel, TunnelGuard
 from friday_services.whatsapp import DesktopWhatsAppUI, WhatsApp, WhatsAppUI
 from friday_services.worker import Worker, com_thread
 
 CallRunner = Callable[..., Awaitable[None]]
+# What Sarvam's agent is told when the caller is not the owner.
+CLIENT_REPLY = (
+    "This caller is not {owner}, so treat them as a client. Do not do any task for them "
+    "and share nothing about {owner}: no schedule, plans, contacts, location, numbers or "
+    "anything personal. Say you are Friday, {owner}'s AI assistant; answer only general "
+    "questions politely, and offer to pass on a message. Their words have been saved "
+    "for {owner}."
+)
 
 
 def create_app(
@@ -79,6 +94,7 @@ def create_app(
     tunnel: bool = False,
     speak: Callable[[str], None] | None = None,
     whatsapp_ui: WhatsAppUI | None = None,
+    phone_desk: PhoneDesk | None = None,
     owner_media: OwnerMedia | None = None,
 ) -> FastAPI:
     settings = settings or Settings.from_env()
@@ -109,6 +125,7 @@ def create_app(
         settings, store, dialer, gnani=InyaDialer(settings), sarvam=SarvamDialer(settings)
     )
     ringing_back: set[asyncio.Task] = set()
+    desk = phone_desk or PhoneDesk(settings)
     reminders = Reminders(settings.data_dir / "reminders.json")
     notes = Notes(settings.data_dir / "notes.txt")
     whatsapp = WhatsApp(whatsapp_ui or DesktopWhatsAppUI(), settings.owner_name)
@@ -211,6 +228,21 @@ def create_app(
                 stack.callback(start_wake(settings, feed, asyncio.get_running_loop()))
             clock = asyncio.create_task(reminder_clock(), name="friday-reminders")
             stack.callback(clock.cancel)
+            if tunnel and settings.get("NGROK_AUTHTOKEN") and settings.get("NGROK_DOMAIN"):
+                # A fixed address: Sarvam's agent reaches /phone/ask through it,
+                # and Twilio uses it too instead of a quick tunnel.
+                fixed = NgrokTunnel(
+                    settings.port, settings.get("NGROK_AUTHTOKEN"), settings.get("NGROK_DOMAIN")
+                )
+                try:
+                    url = await fixed.start()
+                    stack.push_async_callback(fixed.stop)
+                    if not settings.get("PUBLIC_URL"):
+                        settings.values["PUBLIC_URL"] = url
+                        if settings.get("TWILIO_ACCOUNT_SID"):
+                            print(f"Phone calls: {point_number_at(settings, url)}")
+                except Exception as error:
+                    print(f"Phone: the ngrok tunnel did not start: {error}")
             if (
                 tunnel
                 and not settings.get("PUBLIC_URL")
@@ -442,6 +474,55 @@ def create_app(
             },
             "calendar": {"ready": True, "missing": [], "browser_url": settings.calendar_url},
         }
+
+    @app.post("/phone/ask")
+    async def phone_ask(request: Request) -> dict[str, str]:
+        """Sarvam's agent asks Friday to do what the owner said on a call to
+        Friday's number (its API tool ask_friday)."""
+        token = settings.get("FRIDAY_PHONE_TOKEN")
+        supplied = request.headers.get("authorization", "")
+        if not token or not hmac.compare_digest(supplied, f"Bearer {token}"):
+            raise HTTPException(status_code=401, detail="Missing or wrong bearer token.")
+        try:
+            body = await request.json()
+        except ValueError:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        mine = caller_digits(owner_phone(settings) or "")
+        caller = str(body.get("caller") or "")
+        said = str(body.get("request") or "").strip() or latest_request(body.get("transcript"))
+        call_id = str(body.get("call_id") or "")
+        # Why Friday placed this call, when it did (Sarvam's reason variable).
+        context = str(body.get("reason") or "").strip()
+        if context in ("none", "@reason") or "{{" in context:
+            context = ""
+        if not same_caller(caller, mine):
+            # Anyone else gets Reception: no tools and nothing private about
+            # the owner. Every word they say is saved for the owner.
+            try:
+                contacts = json.loads(
+                    (REPO_ROOT / "data" / "friday-contacts.json").read_text("utf-8")
+                )
+            except (OSError, ValueError):
+                contacts = []
+            who = caller_name(caller, contacts if isinstance(contacts, list) else [])
+            if said:
+                await asyncio.to_thread(notes.add, f"Phone message from {who}: {said}")
+                feed.emit("friday", "call_in", f"{who} on the phone: {said}", state="done")
+            try:
+                reply = await desk.ask(call_id, said, owner=False, context=context)
+            except Exception:
+                reply = ""
+            if not reply or reply.startswith("Sorry, that did not work"):
+                return {"reply": CLIENT_REPLY.format(owner=settings.owner_name)}
+            return {"reply": reply}
+        feed.emit(
+            "friday", "call_in", f"On the phone: {said or '(nothing heard)'}", state="running"
+        )
+        reply = await desk.ask(call_id, said, owner=True, context=context)
+        feed.emit("friday", "call_in", f"Told you on the phone: {reply}", state="done")
+        return {"reply": reply}
 
     @app.post("/twilio/voice/{call_id}")
     async def twilio_voice(call_id: str, request: Request) -> Response:

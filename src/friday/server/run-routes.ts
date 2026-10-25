@@ -1,6 +1,9 @@
-// Friday: the voice stage's own turn endpoint. It runs the Friday Dot
-// directly (see direct-run.ts) with the history the stage sends.
-import { Hono } from 'hono';
+// Friday: the voice stage's own turn endpoint, and the one for phone calls.
+// Each runs a Dot directly (see direct-run.ts) with the history it is sent.
+// On a call the owner gets the Friday Dot itself, so a call can do whatever
+// the desktop can; anyone else gets the Reception Dot, which has no tools and
+// knows nothing private about the owner.
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { Message } from '@ag-ui/core';
 import { FRIDAY_DOT_NAME } from './delegate.js';
@@ -13,6 +16,9 @@ import {
 } from './direct-run.js';
 
 export const VOICE_THREAD_TITLE = 'Friday voice';
+export const PHONE_THREAD_TITLE = 'Friday phone';
+export const RECEPTION_DOT_NAME = 'Reception';
+export const RECEPTION_THREAD_TITLE = 'Phone callers';
 const MAX_MESSAGES = 40;
 
 const message = z
@@ -50,25 +56,24 @@ const answeredOnly = <T extends HistoryItem>(items: T[]) => {
 };
 
 type Run = typeof runDotDirectly;
+type Turn = { dotName: string; threadTitle: string; owner: boolean };
 
 export function fridayRunRoutes(
   platform: DirectPlatform,
   run: Run = runDotDirectly,
 ) {
   const app = new Hono();
-  app.post('/friday/voice/run', async (c) => {
-    const input = z
-      .object({ messages: z.array(message).min(1).max(MAX_MESSAGES) })
-      .strict()
-      .safeParse(await c.req.json().catch(() => null));
-    if (!input.success)
-      return c.json({ error: 'Send the conversation messages.' }, 400);
+  const turn = async (
+    c: Context,
+    messages: z.infer<typeof message>[],
+    { dotName, threadTitle, owner }: Turn,
+  ) => {
     const friday = platform.workspace
       .dots()
-      .find((dot) => dot.name === FRIDAY_DOT_NAME);
+      .find((dot) => dot.name === dotName);
     if (!friday)
       return c.json(
-        { error: 'Friday is not set up yet. Run the setup script.' },
+        { error: `${dotName} is not set up yet. Run the setup script.` },
         404,
       );
     if (platform.store.settings().paused)
@@ -76,7 +81,7 @@ export function fridayRunRoutes(
         { error: 'Friday is paused. Tap Resume to continue.' },
         409,
       );
-    const thread = localThread(platform, friday.id, VOICE_THREAD_TITLE);
+    const thread = localThread(platform, friday.id, threadTitle);
     const started = performance.now();
     try {
       const ran = await run(
@@ -84,9 +89,10 @@ export function fridayRunRoutes(
         friday.id,
         thread.id,
         answeredOnly(
-          conversational(input.data.messages) as unknown as HistoryItem[],
+          conversational(messages) as unknown as HistoryItem[],
         ) as unknown as Message[],
-        { approvals: true, signal: c.req.raw.signal },
+        // Only the owner can approve an action; Reception has no tools.
+        { approvals: owner, signal: c.req.raw.signal },
       );
       // The screen keeps only the conversation itself, not a model's notes.
       const newMessages = conversational(ran);
@@ -107,6 +113,7 @@ export function fridayRunRoutes(
         said = reported;
       }
       voiceLog('answered', {
+        dot: dotName,
         ms: Math.round(performance.now() - started),
         tools: newMessages.flatMap((item) =>
           item.role === 'assistant'
@@ -131,6 +138,44 @@ export function fridayRunRoutes(
         502,
       );
     }
+  };
+  const history = z.array(message).min(1).max(MAX_MESSAGES);
+  app.post('/friday/voice/run', async (c) => {
+    const input = z
+      .object({ messages: history })
+      .strict()
+      .safeParse(await c.req.json().catch(() => null));
+    if (!input.success)
+      return c.json({ error: 'Send the conversation messages.' }, 400);
+    return turn(c, input.data.messages, {
+      dotName: FRIDAY_DOT_NAME,
+      threadTitle: VOICE_THREAD_TITLE,
+      owner: true,
+    });
+  });
+  // friday/services decides who is calling (the owner's number, or anyone).
+  app.post('/friday/phone/run', async (c) => {
+    const input = z
+      .object({ messages: history, caller: z.enum(['owner', 'client']) })
+      .strict()
+      .safeParse(await c.req.json().catch(() => null));
+    if (!input.success)
+      return c.json(
+        { error: 'Send the call messages and who is calling.' },
+        400,
+      );
+    const owner = input.data.caller === 'owner';
+    return turn(
+      c,
+      input.data.messages,
+      owner
+        ? { dotName: FRIDAY_DOT_NAME, threadTitle: PHONE_THREAD_TITLE, owner }
+        : {
+            dotName: RECEPTION_DOT_NAME,
+            threadTitle: RECEPTION_THREAD_TITLE,
+            owner,
+          },
+    );
   });
   return app;
 }

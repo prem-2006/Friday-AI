@@ -8,6 +8,9 @@
 //   Navigator  drives a Chrome window on your screen (browser tools)
 //   Operator   opens and works desktop apps (desktop tools)
 //   Coder      solves practice problems on LeetCode-style sites (browser tools)
+//   Reception  answers phone calls from anyone but the owner: no tools, no
+//              memory, and only its own empty Space, so it can share nothing
+//              private (the owner's own calls go to Friday itself)
 //
 // Helpers work in their own conversations without approval cards, so their
 // tools run without "Ask first"; WhatsApp stays with Friday, behind your OK.
@@ -49,6 +52,12 @@ const DOTS = [
   },
   // Coding practice (LeetCode and similar) in Friday's Chrome window.
   { name: 'Coder', persona: '../dots/coder.md', connections: ['browser'] },
+  {
+    name: 'Reception',
+    persona: '../dots/reception.md',
+    connections: [],
+    space: 'Phone callers',
+  },
 ];
 // Parked skills that older setups connected to Friday.
 const RETIRED = ['calendar', 'telegram'];
@@ -87,7 +96,8 @@ async function api(path, method = 'GET', body) {
 async function persona(file) {
   const text = (await readFile(new URL(file, import.meta.url), 'utf8'))
     .trim()
-    .replaceAll('{{CALENDAR_URL}}', CALENDAR_URL);
+    .replaceAll('{{CALENDAR_URL}}', CALENDAR_URL)
+    .replaceAll('{{OWNER_NAME}}', process.env.FRIDAY_OWNER_NAME || 'the owner');
   if (text.length > 2000)
     throw new Error(
       `${file} is ${text.length} characters; OpenDots allows 2000.`,
@@ -143,17 +153,28 @@ for (const spec of DOTS) {
     memoryAllowed: spec.name === 'Friday',
   };
   const existing = workspace.dots.find((dot) => dot.name === spec.name);
+  // A Dot with its own Space sees only that Space's pages, never the owner's.
+  let own;
+  if (spec.space) {
+    own =
+      workspace.spaces.find((space) => space.name === spec.space) ??
+      (await api('/spaces', 'POST', {
+        name: spec.space,
+        description: `Only for ${spec.name}; keeps the owner's pages out of its reach.`,
+      }));
+    workspace.spaces.push(own);
+  }
   const dot = existing
     ? await api(`/dots/${existing.id}`, 'PUT', {
         ...settings,
-        appsAllowed: existing.appsAllowed,
-        composioToolkits: existing.composioToolkits,
-        spaceIds: existing.spaceIds,
-        spaceId: existing.spaceId,
+        appsAllowed: own ? false : existing.appsAllowed,
+        composioToolkits: own ? [] : existing.composioToolkits,
+        spaceIds: own ? [own.id] : existing.spaceIds,
+        spaceId: own ? own.id : existing.spaceId,
       })
     : await api('/dots', 'POST', {
         ...settings,
-        spaceId: workspace.spaces[0].id,
+        spaceId: own ? own.id : workspace.spaces[0].id,
       });
   console.log(`${existing ? 'Updated' : 'Created'} ${dot.name} (${dot.id}).`);
 

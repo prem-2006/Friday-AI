@@ -98,6 +98,38 @@ cd friday/desktop; npm install; npm run install-shortcuts
 
 This adds "Friday" to the Start menu and the desktop. The shell shows Friday from this folder's dev server, so changes to the folder appear at once, and it restarts itself when its own files change: there is nothing to reinstall. If the app or the services are not running, it starts them (logs in `data/desktop-*.log`). Only one voice window answers Caps Lock at a time, the newest: close the browser's voice screen and the notch takes over.
 
+## Call Friday
+
+Call the Sarvam number Friday calls you from, and Friday picks up and does what you say: "set a timer for 20 minutes", "what's my battery", "email Ravi that I'm late". Sarvam carries the call (the number, hearing and the voice), but Friday does the thinking: Sarvam's agent is set up as a relay that sends everything the caller says to its `ask_friday` tool and says Friday's answer word for word. The tool reaches `POST /phone/ask` on the services through a fixed ngrok address.
+
+Who answers depends on who is calling. Sarvam sends the caller as a code (SHA-256 of the number), which Friday matches against your number and your contacts:
+
+- **You** (`FRIDAY_OWNER_PHONE` or Your details) get the **Friday** Dot itself, in its own "Friday phone" conversation: everything Friday can do on the desktop, it can do on a call. Something that needs your OK is read back, and a "yes" or "haan" on the same call approves it. A request that takes longer than about 20 s keeps running; ask "is it done?" to hear the result.
+- **Anyone else** gets the **Reception** Dot: no tools, no memory, only its own empty "Phone callers" Space, and none of your details or contacts. It says it is Friday, your AI assistant, answers general questions, shares nothing about you and takes a message. Every word they say is saved to your notes under their contact name.
+- On a call **Friday placed**, the reason (`reason`) goes along, so Friday or Reception stays on why it called.
+
+Once:
+
+1. **ngrok:** sign up free at dashboard.ngrok.com, copy your authtoken, and claim your free static domain (Domains). Put them in `.env` as `NGROK_AUTHTOKEN` and `NGROK_DOMAIN`, then restart the services. They print `Phone: Friday answers at https://<your domain>`.
+2. **Reception:** run the setup script again (`node --env-file-if-exists=.env friday/scripts/setup-friday-dot.mjs`); it creates the Reception Dot and its Space.
+3. **The agent's tool:** in indus.sarvam.ai, open Friday's agent → Tools → add an API tool:
+   - Name `ask_friday`; description "Friday's answer to what the caller just said".
+   - `POST https://<your domain>/phone/ask`; Auth: bearer token = `FRIDAY_PHONE_TOKEN` from `.env`.
+   - Body (type `@` to insert the variables): `{"transcript": "@Call Transcript", "caller": "@User Identifier", "call_id": "@Interaction ID", "reason": "@reason"}`.
+   - Max wait 30 s; response template: say `@reply` exactly; if it fails: "Sorry, I couldn't reach Friday. Please try again."
+4. **The agent's greeting and instructions:** the greeting (the agent's first message) must be only the variable `opening_line` (type `@` and pick it), not fixed text: calls Friday places fill it with "Hi, I'm Friday…" and why it called. Give `opening_line` the default value "Hi, I'm Friday. How can I help you?", which is what someone calling the number hears, and give `reason` an empty default. Replace the instructions with the relay instructions below. Commit a new version.
+5. **Inbound:** Deploy → Inbounds → Create Inbound with that agent version, your Sarvam connection and number (`SARVAM_AGENT_NUMBER`), every day, calls allowed 00:00–23:59. If Sarvam does not allow the same number for inbound, rent a second number for it.
+
+The relay instructions for the Sarvam agent:
+
+```text
+You are only the voice of Friday. Friday thinks; you never answer by yourself.
+After your first message, every time the caller says anything, call tool:ask_friday right away, then say its reply exactly, word for word, in the caller's language. Do not add, shorten or change anything, and do not greet again.
+If the reply is long to come, do not fill the silence.
+If the tool fails, say: Sorry, I couldn't reach Friday. Please try again.
+When the caller says bye, or the reply says goodbye, say a short goodbye and end the call.
+```
+
 ## How the voice stage works
 
 - **Fast turns:** the voice stage runs Friday directly on the app server and keeps its own short conversation (the circular-arrow button starts a new one). The hosted conversation service is skipped there because it added 4–6 s per turn; the classic dashboard still uses it. Helper Dots also run directly.

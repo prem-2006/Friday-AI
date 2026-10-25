@@ -81,8 +81,42 @@ class QuickTunnel:
             self._process.terminate()
 
 
+NGROK_MARK = "x-friday-tunnel"
+
+
+class NgrokTunnel:
+    """A fixed public address (NGROK_DOMAIN, free with an ngrok account), so
+    Sarvam's agent can reach /phone/ask at the same URL after every restart.
+    Every request through it carries NGROK_MARK, which TunnelGuard checks."""
+
+    def __init__(self, port: int, authtoken: str, domain: str):
+        self._port = port
+        self._authtoken = authtoken
+        self._domain = domain.removeprefix("https://").strip("/")
+        self._session = None
+
+    async def start(self) -> str:
+        import ngrok
+
+        self._session = await ngrok.SessionBuilder().authtoken(self._authtoken).connect()
+        listener = await (
+            self._session.http_endpoint()
+            .domain(self._domain)
+            .request_header(NGROK_MARK, "1")
+            .listen_and_forward(f"http://127.0.0.1:{self._port}")
+        )
+        url = listener.url()
+        print(f"Phone: Friday answers at {url}")
+        return url
+
+    async def stop(self) -> None:
+        if self._session:
+            await self._session.close()
+
+
 class TunnelGuard:
-    """ASGI middleware: through the tunnel, only Twilio's call routes answer."""
+    """ASGI middleware: through a tunnel, only the call routes answer (Twilio's
+    /twilio/ and Sarvam's /phone/)."""
 
     def __init__(self, app):
         self.app = app
@@ -90,8 +124,13 @@ class TunnelGuard:
     async def __call__(self, scope, receive, send):
         if scope["type"] in ("http", "websocket"):
             headers = {name.lower() for name, _ in scope.get("headers") or []}
-            from_internet = b"cf-connecting-ip" in headers or b"cf-ray" in headers
-            if from_internet and not scope["path"].startswith("/twilio/"):
+            from_internet = (
+                b"cf-connecting-ip" in headers
+                or b"cf-ray" in headers
+                or NGROK_MARK.encode() in headers
+                or b"x-forwarded-for" in headers
+            )
+            if from_internet and not scope["path"].startswith(("/twilio/", "/phone/")):
                 if scope["type"] == "http":
                     await send({"type": "http.response.start", "status": 404, "headers": []})
                     await send({"type": "http.response.body", "body": b"Not found."})

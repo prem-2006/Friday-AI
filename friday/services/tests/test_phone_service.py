@@ -41,7 +41,7 @@ def test_phone_tools_and_approval_hints(server):
     client = phone(server)
     assert client.initialize()["serverInfo"]["name"] == "friday-phone"
     tools = client.tools()
-    assert set(tools) == {"start_call", "get_call_result"}
+    assert set(tools) == {"start_call", "get_call_result", "schedule_call"}
     # OpenDots runs read-only tools directly and asks the owner before the rest.
     assert tools["start_call"]["annotations"]["readOnlyHint"] is False
     assert tools["get_call_result"]["annotations"]["readOnlyHint"] is True

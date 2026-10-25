@@ -31,8 +31,22 @@ SARVAM_SETTINGS = (
 )
 
 
+# What the agent says when someone calls Friday's number: the default value of
+# its opening_line variable in the Sarvam agent (calls Friday places set it).
+INBOUND_GREETING = "Hi, I'm Friday. How can I help you?"
+
+
 class SarvamError(RuntimeError):
     pass
+
+
+def opening(greeting: str, owner: str) -> str:
+    """A call Friday places opens by saying it is Friday, then why it called."""
+    greeting = " ".join(greeting.split())
+    if "friday" in greeting.casefold():
+        return greeting
+    intro = f"Hi, I'm Friday, {owner}'s AI assistant."
+    return f"{intro} {greeting}".strip()
 
 
 class SarvamDialer:
@@ -54,6 +68,7 @@ class SarvamDialer:
         digits = re.sub(r"\D", "", phone)
         if len(digits) < 11:
             raise SarvamError(f"{phone} is not a full international number.")
+        greeting = opening(greeting, self._settings.owner_name)
         body: dict[str, Any] = {
             "app_config": {
                 "app_id": get("SARVAM_APP_ID"),

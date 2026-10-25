@@ -36,9 +36,7 @@ async def call_someone(
 ) -> None:
     """Has the Sarvam agent phone someone other than the owner, for the owner."""
     owner = settings.owner_name
-    greeting = (
-        opening_line.strip() or f"Hello, this is Friday, an AI assistant calling for {owner}."
-    )
+    greeting = opening_line.strip() or f"Hi, I'm Friday, {owner}'s AI assistant."
     note = f"You are calling someone for {owner}, not {owner} themself. Goal: {goal}" + (
         f" What you may share or accept: {context}" if context else ""
     )

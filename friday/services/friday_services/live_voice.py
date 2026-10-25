@@ -51,6 +51,8 @@ from pipecat.frames.frames import (
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
+from friday_services.usage import usage
+
 TAIL_SECONDS = 1.0  # silence after Caps Lock is let go, so Gnani ends the turn
 TTS_MODEL = "timbre-v2.5"
 
@@ -139,15 +141,24 @@ class HeardRelay(FrameProcessor):
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
         if isinstance(frame, TranscriptionFrame) and frame.text.strip():
+            usage.record("Speech to text", "Gnani Prisma", "live voice (Caps Lock)", ok=True)
             self._send(live_event("heard", text=frame.text.strip()))
         elif isinstance(frame, VADUserStartedSpeakingFrame) and self._gate.hands_free:
             self._send(live_event("speech_start"))
         elif isinstance(frame, ErrorFrame):
             message = str(frame.error)
-            if "tts" in message.casefold() or "speech" in message.casefold():
+            speaking = "tts" in message.casefold() or "speech" in message.casefold()
+            if speaking:
                 # Friday could not speak: the screen must not wait for it.
                 self._send(live_event("speaking", on=False))
             if not is_routine(message):
+                usage.record(
+                    "Voice" if speaking else "Speech to text",
+                    "Gnani Timbre" if speaking else "Gnani Prisma",
+                    "live voice (Caps Lock)",
+                    ok=False,
+                    error=message,
+                )
                 self._send(live_event("error", message=message[:300]))
         await self.push_frame(frame, direction)
 
@@ -162,6 +173,7 @@ class SpeakingRelay(FrameProcessor):
     async def process_frame(self, frame: Frame, direction: FrameDirection):
         await super().process_frame(frame, direction)
         if isinstance(frame, BotStartedSpeakingFrame):
+            usage.record("Voice", "Gnani Timbre", "live voice (Caps Lock)", ok=True)
             self._send(live_event("speaking", on=True))
         elif isinstance(frame, BotStoppedSpeakingFrame):
             self._send(live_event("speaking", on=False))

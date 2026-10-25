@@ -12,6 +12,7 @@ import httpx
 
 from friday_services.calls.store import CallRecord
 from friday_services.config import Settings
+from friday_services.usage import counted
 
 TWILIO_API = "https://api.twilio.com/2010-04-01"
 
@@ -88,6 +89,7 @@ class TwilioDialer:
         self._settings = settings
         self._client = client
 
+    @counted("Phone calls", "Twilio", "calls Friday places")
     async def place(self, record: CallRecord) -> str:
         """Start an outbound call and return Twilio's call SID."""
         sid = self._settings.get("TWILIO_ACCOUNT_SID")

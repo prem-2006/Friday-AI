@@ -11,6 +11,7 @@
 // A model and key that ran out rest for a while, so later requests skip the
 // refusal round trip and go straight to one that still answers.
 import { voiceLog } from './voice-log.js';
+import { failureText, keyTail, modelProvider, usage } from './usage.js';
 
 type Fetch = typeof fetch;
 
@@ -34,6 +35,78 @@ export function fallbackFromEnv(env: Record<string, string | undefined>) {
 
 const limited = (response: Response) =>
   response.status === 429 || response.status === 503;
+
+/** One model request, counted for the Admin page. */
+async function counted(
+  baseFetch: Fetch,
+  input: Parameters<Fetch>[0],
+  init: RequestInit | undefined,
+  url: string,
+  model: string,
+  key: string,
+) {
+  const started = Date.now();
+  const item = [model, keyTail(key)].filter(Boolean).join(' · ');
+  try {
+    const response = await baseFetch(input, init);
+    usage.record({
+      group: 'Language models',
+      api: modelProvider(url),
+      item,
+      ok: response.ok,
+      status: response.status,
+      ms: Date.now() - started,
+      error: response.ok ? undefined : await failureText(response),
+    });
+    return response;
+  } catch (error) {
+    usage.record({
+      group: 'Language models',
+      api: modelProvider(url),
+      item,
+      ok: false,
+      ms: Date.now() - started,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+}
+
+const requestUrl = (input: Parameters<Fetch>[0]) =>
+  typeof input === 'string'
+    ? input
+    : input instanceof URL
+      ? input.href
+      : input.url;
+
+const requestBody = (init?: RequestInit) => {
+  if (typeof init?.body !== 'string') return undefined;
+  try {
+    return JSON.parse(init.body) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+};
+
+const bearer = (init?: RequestInit) =>
+  new Headers(init?.headers).get('authorization')?.replace(/^Bearer\s+/i, '') ??
+  '';
+
+/** Counts model requests when there is no rotation or backup to manage. */
+export function countedModelFetch(baseFetch: Fetch = fetch): Fetch {
+  return (input, init) => {
+    const body = requestBody(init);
+    if (!body?.model) return baseFetch(input, init);
+    return counted(
+      baseFetch,
+      input,
+      init,
+      requestUrl(input),
+      String(body.model),
+      bearer(init),
+    );
+  };
+}
 
 export function fridayFallbackFetch(
   primaryBaseUrl: string | undefined,
@@ -83,7 +156,8 @@ export function fridayFallbackFetch(
         // (gemini-flash-lite-latest refuses reasoning_effort "none").
         const plain = { ...body };
         delete plain.reasoning_effort;
-        const response = await baseFetch(
+        const response = await counted(
+          baseFetch,
           input,
           own
             ? init
@@ -94,6 +168,9 @@ export function fridayFallbackFetch(
                   model === ownModel ? { ...body, model } : { ...plain, model },
                 ),
               },
+          url,
+          model,
+          key,
         );
         // Another model or key that refuses the request, or does not offer
         // that model (404: new projects lack the older ones), is skipped.
@@ -109,9 +186,14 @@ export function fridayFallbackFetch(
                 .catch(() => '')
             ).slice(0, 300),
           });
-        resting.set(
-          id,
-          now() + (response.status === 429 ? OUT_OF_QUOTA_MS : COOL_DOWN_MS),
+        const until =
+          now() + (response.status === 429 ? OUT_OF_QUOTA_MS : COOL_DOWN_MS);
+        resting.set(id, until);
+        usage.rest(
+          'Language models',
+          modelProvider(url),
+          [model, keyTail(key)].filter(Boolean).join(' · '),
+          until,
         );
         void refused?.body?.cancel().catch(() => {});
         refused = response;
@@ -128,10 +210,14 @@ export function fridayFallbackFetch(
         model: backup.model,
       });
     void refused?.body?.cancel().catch(() => {});
-    return baseFetch(backup.baseUrl + url.slice(primary.length), {
-      ...init,
-      headers,
-      body: JSON.stringify(body),
-    });
+    const backupUrl = backup.baseUrl + url.slice(primary.length);
+    return counted(
+      baseFetch,
+      backupUrl,
+      { ...init, headers, body: JSON.stringify(body) },
+      backupUrl,
+      backup.model,
+      backup.apiKey,
+    );
   };
 }

@@ -63,6 +63,7 @@ from friday_services.phone_in import (
 )
 from friday_services.screen import capture_screen, describe_screen, snap_window
 from friday_services.tunnel import NgrokTunnel, QuickTunnel, TunnelGuard
+from friday_services.usage import timed, usage
 from friday_services.whatsapp import DesktopWhatsAppUI, WhatsApp, WhatsAppUI
 from friday_services.worker import Worker, com_thread
 
@@ -126,6 +127,7 @@ def create_app(
     )
     ringing_back: set[asyncio.Task] = set()
     desk = phone_desk or PhoneDesk(settings)
+    usage.configure(settings.data_dir / "usage.json", settings.timezone)
     reminders = Reminders(settings.data_dir / "reminders.json")
     notes = Notes(settings.data_dir / "notes.txt")
     whatsapp = WhatsApp(whatsapp_ui or DesktopWhatsAppUI(), settings.owner_name)
@@ -236,6 +238,7 @@ def create_app(
                 )
                 try:
                     url = await fixed.start()
+                    settings.values["FRIDAY_NGROK_URL"] = url
                     stack.push_async_callback(fixed.stop)
                     if not settings.get("PUBLIC_URL"):
                         settings.values["PUBLIC_URL"] = url
@@ -475,6 +478,27 @@ def create_app(
             "calendar": {"ready": True, "missing": [], "browser_url": settings.calendar_url},
         }
 
+    @app.get("/usage", dependencies=[Depends(owner)])
+    async def usage_now() -> dict[str, Any]:
+        """Today's counts for every outside API, and what is connected now,
+        for the Admin page."""
+        return {
+            **usage.snapshot(),
+            "live": {
+                **feed.windows(),
+                "ngrok_url": settings.get("FRIDAY_NGROK_URL") or None,
+                "ngrok_configured": bool(
+                    settings.get("NGROK_AUTHTOKEN") and settings.get("NGROK_DOMAIN")
+                ),
+                "phone_token": bool(settings.get("FRIDAY_PHONE_TOKEN")),
+                "sarvam_ready": SarvamDialer(settings).ready,
+                "inya_ready": bool(settings.get("INYA_API_KEY")),
+                "twilio_on": bool(settings.get("TWILIO_ACCOUNT_SID")),
+                "owner_calls_via": owner_caller.via,
+                "owner_phone": bool(owner_phone(settings)),
+            },
+        }
+
     @app.post("/phone/ask")
     async def phone_ask(request: Request) -> dict[str, str]:
         """Sarvam's agent asks Friday to do what the owner said on a call to
@@ -511,7 +535,8 @@ def create_app(
                 await asyncio.to_thread(notes.add, f"Phone message from {who}: {said}")
                 feed.emit("friday", "call_in", f"{who} on the phone: {said}", state="done")
             try:
-                reply = await desk.ask(call_id, said, owner=False, context=context)
+                with timed("Phone calls", "Sarvam", "calls to Friday · others (Reception)"):
+                    reply = await desk.ask(call_id, said, owner=False, context=context)
             except Exception:
                 reply = ""
             if not reply or reply.startswith("Sorry, that did not work"):
@@ -520,7 +545,8 @@ def create_app(
         feed.emit(
             "friday", "call_in", f"On the phone: {said or '(nothing heard)'}", state="running"
         )
-        reply = await desk.ask(call_id, said, owner=True, context=context)
+        with timed("Phone calls", "Sarvam", "calls to Friday · you (Friday)"):
+            reply = await desk.ask(call_id, said, owner=True, context=context)
         feed.emit("friday", "call_in", f"Told you on the phone: {reply}", state="done")
         return {"reply": reply}
 

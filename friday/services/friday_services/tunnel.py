@@ -21,6 +21,8 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
+from friday_services.usage import counted
+
 log = logging.getLogger("friday.tunnel")
 TUNNEL_URL = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 
@@ -95,6 +97,7 @@ class NgrokTunnel:
         self._domain = domain.removeprefix("https://").strip("/")
         self._session = None
 
+    @counted("Connections", "ngrok", "tunnel start")
     async def start(self) -> str:
         import ngrok
 

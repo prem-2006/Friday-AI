@@ -3,6 +3,7 @@
 // voice screen or the desktop notch, by holding Caps Lock.
 import { useCallback, useEffect, useState } from 'react';
 import {
+  Activity,
   CalendarDays,
   HardDrive,
   LayoutGrid,
@@ -683,6 +684,15 @@ export function FridayHome({
           <button type="button" onClick={onAdvanced}>
             <LayoutGrid size={16} />
             Dots
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              location.hash = '#/admin';
+            }}
+          >
+            <Activity size={16} />
+            Admin
           </button>
         </nav>
       </header>

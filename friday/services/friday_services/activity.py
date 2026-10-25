@@ -41,6 +41,10 @@ class ActivityFeed:
         self._ids = itertools.count(1)
         self.stopped = False
 
+    def windows(self) -> dict[str, int]:
+        """How many voice windows and notches are connected (for Caps Lock)."""
+        return {"voice_windows": len(self._voices), "notches": len(self._notches)}
+
     def emit(self, actor: str, action: str, detail: str, **fields) -> Activity:
         event = Activity(next(self._ids), actor, action, detail, **fields)
         self._events.append(event)

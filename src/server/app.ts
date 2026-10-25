@@ -13,6 +13,7 @@ import { workspaceRoutes } from './workspace-routes.js';
 import { fridayVoiceRoutes } from '../friday/server/voice-routes.js';
 import { fridayActivityRoutes } from '../friday/server/activity-routes.js';
 import { fridayRunRoutes } from '../friday/server/run-routes.js';
+import { fridayAdminRoutes } from '../friday/server/admin-routes.js';
 import { fridayProfileRoutes } from '../friday/server/profile.js';
 import { fridayContactsRoutes } from '../friday/server/contacts.js';
 const interval = z.number().int().min(60).max(31_536_000).nullable();
@@ -101,6 +102,16 @@ export function createApp({
   app.route(
     '/api',
     fridayActivityRoutes({
+      servicesUrl:
+        process.env.FRIDAY_SERVICES_URL ??
+        `http://127.0.0.1:${process.env.FRIDAY_SERVICES_PORT || 8765}`,
+      token: process.env.FRIDAY_SERVICES_TOKEN,
+    }),
+  );
+  // FRIDAY: the Admin page: how every outside API is doing, live.
+  app.route(
+    '/api',
+    fridayAdminRoutes({
       servicesUrl:
         process.env.FRIDAY_SERVICES_URL ??
         `http://127.0.0.1:${process.env.FRIDAY_SERVICES_PORT || 8765}`,

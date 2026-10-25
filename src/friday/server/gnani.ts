@@ -1,6 +1,8 @@
 // Friday: Gnani Prisma (speech-to-text) and Timbre (text-to-speech) over REST.
 // API: https://docs.gnani.ai/api/STT/speech-to-text.md and
 // https://docs.gnani.ai/api/TTS/tts-inference.md
+import { usage } from './usage.js';
+
 export const GNANI_STT_URL = 'https://api.vachana.ai/stt/v3';
 export const GNANI_TTS_URL = 'https://api.vachana.ai/api/v1/tts/inference';
 export const TIMBRE_MODEL = 'timbre-v2.5';
@@ -31,6 +33,32 @@ async function failure(response: Response, service: string) {
   );
 }
 
+// Each call to Gnani is counted for the Admin page.
+function count(
+  group: 'Speech to text' | 'Voice',
+  api: string,
+  item: string,
+  started: number,
+  outcome: Response | unknown,
+) {
+  const response = outcome instanceof Response ? outcome : undefined;
+  usage.record({
+    group,
+    api,
+    item,
+    ok: !!response?.ok,
+    status: response?.status,
+    ms: Date.now() - started,
+    error: response
+      ? response.ok
+        ? undefined
+        : `HTTP ${response.status}`
+      : outcome instanceof Error
+        ? outcome.message
+        : 'No answer',
+  });
+}
+
 export async function transcribe({
   apiKey,
   audio,
@@ -53,12 +81,17 @@ export async function transcribe({
   form.set('language_code', language);
   // Writes numbers, times, amounts and phone numbers as digits.
   form.set('format', 'transcribe');
+  const started = Date.now();
   const response = await fetch(GNANI_STT_URL, {
     method: 'POST',
     headers: { 'X-API-Key-ID': apiKey },
     body: form,
     signal,
+  }).catch((error: unknown) => {
+    count('Speech to text', 'Gnani Prisma', 'recorded clips', started, error);
+    throw error;
   });
+  count('Speech to text', 'Gnani Prisma', 'recorded clips', started, response);
   if (!response.ok) throw await failure(response, 'speech-to-text');
   const body = (await response.json()) as {
     success?: boolean;
@@ -84,6 +117,7 @@ export async function synthesize({
   fetch?: typeof globalThis.fetch;
   signal?: AbortSignal;
 }): Promise<ArrayBuffer> {
+  const started = Date.now();
   const response = await fetch(GNANI_TTS_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-API-Key-ID': apiKey },
@@ -102,7 +136,11 @@ export async function synthesize({
       },
     }),
     signal,
+  }).catch((error: unknown) => {
+    count('Voice', 'Gnani Timbre', 'spoken replies', started, error);
+    throw error;
   });
+  count('Voice', 'Gnani Timbre', 'spoken replies', started, response);
   if (!response.ok) throw await failure(response, 'text-to-speech');
   return response.arrayBuffer();
 }

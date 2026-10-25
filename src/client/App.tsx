@@ -10,6 +10,7 @@ import {
 } from '../friday/client/stage/FridayStage';
 import { StageLink } from '../friday/client/StageLink';
 import { FridayHome, HOME_HASH } from '../friday/client/home/FridayHome';
+import { ADMIN_HASH, AdminPage } from '../friday/client/admin/AdminPage';
 import { NOTCH_DEMO_HASH, NotchDemo } from '../friday/client/stage/Notch';
 
 // FRIDAY: the desktop notch page (friday/desktop).
@@ -86,7 +87,9 @@ export function App() {
         ? 'stage'
         : location.hash === NOTCH_HASH
           ? 'notch'
-          : null;
+          : location.hash === ADMIN_HASH
+            ? 'admin'
+            : null;
   const [fridayScreen, setFridayScreen] = useState(fridayScreenOf);
   useEffect(() => {
     const follow = () => setFridayScreen(fridayScreenOf());
@@ -991,7 +994,13 @@ export function App() {
   );
   // FRIDAY: full-screen voice stage, or the classic view with a way back.
   const screen =
-    fridayScreen === 'home' ? (
+    fridayScreen === 'admin' ? (
+      <AdminPage
+        onBack={() => {
+          location.hash = HOME_HASH;
+        }}
+      />
+    ) : fridayScreen === 'home' ? (
       <FridayHome
         workspace={workspace}
         onVoice={() => {

@@ -32,7 +32,10 @@ import { answerObserver, type SetupTelemetry } from './setup-telemetry.js';
 import { fridayLocalTime } from '../friday/server/time.js';
 import { ownerDetailsPrompt } from '../friday/server/profile.js';
 import { fridayLoopStrategy } from '../friday/server/quick-finish.js';
-import { fridayFallbackFetch } from '../friday/server/model-fallback.js';
+import {
+  countedModelFetch,
+  fridayFallbackFetch,
+} from '../friday/server/model-fallback.js';
 import { withToolCallIndexes } from '../friday/server/tool-call-index.js';
 import { contactsPrompt } from '../friday/server/contacts.js';
 import {
@@ -360,7 +363,7 @@ export class DotAgent extends AbstractAgent {
           // FRIDAY: a rate-limited request goes to the backup model at once.
           // FRIDAY: Gemini's tool calls come without an index; add it.
           fetch: withToolCallIndexes(
-            fridayFallbackFetch(this.config.baseUrl) ?? fetch,
+            fridayFallbackFetch(this.config.baseUrl) ?? countedModelFetch(),
           ),
         });
         const start = async () => {

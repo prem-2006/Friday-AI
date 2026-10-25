@@ -18,6 +18,7 @@ from typing import Any
 import httpx
 
 from friday_services.config import Settings
+from friday_services.usage import counted
 
 SARVAM_API = "https://apps.sarvam.ai/api/outbounds/v1"
 SARVAM_SETTINGS = (
@@ -60,6 +61,7 @@ class SarvamDialer:
     def ready(self) -> bool:
         return not self._settings.missing(SARVAM_SETTINGS)
 
+    @counted("Phone calls", "Sarvam", "calls Friday places")
     async def call(
         self, *, phone: str, greeting: str, prompt: str, reference: str, note: str, updates: str
     ) -> str:
@@ -113,6 +115,7 @@ class SarvamDialer:
 SARVAM_ANALYTICS = "https://apps.sarvam.ai/api/analytics/v1"
 
 
+@counted("Phone calls", "Sarvam", "call history (Calls page)")
 async def recent_conversations(
     settings: Settings,
     names: dict[str, str],

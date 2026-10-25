@@ -21,6 +21,8 @@ from urllib.parse import urlencode
 
 import httpx
 
+from friday_services.usage import counted
+
 DEADLINE_STAGES = [24 * 60, 3 * 60, 60, 15]  # minutes before the due time
 
 
@@ -328,6 +330,7 @@ WEATHER_WORDS = {
 }
 
 
+@counted("Tools", "Open-Meteo", "weather")
 def weather(city: str, transport: httpx.BaseTransport | None = None) -> str:
     """Today's weather for a city, as one spoken sentence (Open-Meteo, no key)."""
     with httpx.Client(transport=transport, timeout=10) as client:

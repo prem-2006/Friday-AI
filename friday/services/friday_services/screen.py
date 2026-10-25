@@ -14,6 +14,8 @@ from typing import Any, Literal
 
 import httpx
 
+from friday_services.usage import counted
+
 Position = Literal[
     "left",
     "right",
@@ -127,6 +129,7 @@ def capture_screen(max_width: int = 1280) -> str:
     return base64.b64encode(buffer.getvalue()).decode()
 
 
+@counted("Tools", "Screen description", "look at screen (vision model)")
 def describe_screen(
     image_b64: str,
     question: str,

@@ -25,6 +25,7 @@ from loguru import logger
 from openai import AsyncOpenAI
 
 from friday_services.config import Settings
+from friday_services.usage import counted
 
 INYA_API = "https://api.inya.ai/platform"
 AGENT_NAME = "Friday"
@@ -164,6 +165,7 @@ class InyaDialer:
         # Only the first line: the agent tells any updates once the owner answers.
         return f"Hi {owner}, it's Friday. {plain_reason(note.splitlines()[0])}"
 
+    @counted("Phone calls", "Gnani Inya", "calls Friday places")
     async def call(self, *, phone: str, greeting: str, prompt: str, reference: str) -> str:
         """Set this call's greeting and prompt on the agent, then ring the
         owner. Returns Gnani's request id."""

@@ -25,6 +25,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote_plus, urlencode
 
+from friday_services.usage import counted
+
 # Gives every visible interactive element a number and describes it.
 SNAPSHOT_JS = """
 () => {
@@ -209,6 +211,7 @@ FIRST_VIDEO = re.compile(
 )
 
 
+@counted("Tools", "YouTube", "song lookup", ok_if=lambda found: found is not None)
 def first_video(query: str) -> tuple[str, str] | None:
     """Finds a video with one plain request, without loading YouTube in the window."""
     import httpx

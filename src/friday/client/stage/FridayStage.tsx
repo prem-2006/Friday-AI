@@ -835,7 +835,16 @@ function StageSession({
       pending: !!pendingApproval,
       running: runningRef.current,
     });
-    if (intent === 'stop') return stopEverything();
+    // "Stop" stops Friday only while it is talking or working; otherwise it is
+    // a request ("stop" the song that is playing).
+    if (
+      intent === 'stop' &&
+      (startedOverFriday ||
+        runningRef.current ||
+        speakingMain.current ||
+        fridayTalking())
+    )
+      return stopEverything();
     // Speech that began while Friday was talking: ignore it if it is Friday's
     // own voice coming back through the mic, otherwise the owner is talking
     // over Friday, which interrupts it.

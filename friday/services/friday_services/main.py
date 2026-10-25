@@ -44,6 +44,7 @@ from friday_services.mcp_calendar import build_calendar_server
 from friday_services.mcp_desktop import build_desktop_server, build_whatsapp_server
 from friday_services.mcp_phone import Dialer, build_phone_server, call_someone
 from friday_services.mcp_quick import build_quick_server
+from friday_services.media import OwnerMedia
 from friday_services.organizer import (
     Notes,
     OrganizerError,
@@ -78,6 +79,7 @@ def create_app(
     tunnel: bool = False,
     speak: Callable[[str], None] | None = None,
     whatsapp_ui: WhatsAppUI | None = None,
+    owner_media: OwnerMedia | None = None,
 ) -> FastAPI:
     settings = settings or Settings.from_env()
     if len(settings.services_token) < 24:
@@ -88,6 +90,9 @@ def create_app(
     store = CallStore(settings.data_dir)
     calendar = CalendarStore(settings.data_dir / "calendar.json")
     feed = ActivityFeed()
+    if owner_media is None and browser is None:
+        # The owner's own browser and players (not with a pretend browser in tests).
+        owner_media = OwnerMedia(settings.data_dir / "browser-profile")
     browser = browser or OnScreenBrowser(
         settings.data_dir / "browser-profile",
         cdp_port=settings.browser_cdp_port,
@@ -128,6 +133,7 @@ def create_app(
             call_owner=owner_caller.call,
             data_dir=settings.data_dir,
             timezone=settings.timezone,
+            owner_media=owner_media,
         ),
         "/calendar": build_calendar_server(calendar, settings.calendar_url),
         "/phone": build_phone_server(

@@ -15,6 +15,7 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
+from urllib.parse import quote_plus
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -22,9 +23,10 @@ from mcp_types import ToolAnnotations
 from pydantic import Field
 
 from friday_services.activity import ActivityFeed
-from friday_services.browser import BrowserError, OnScreenBrowser
+from friday_services.browser import BrowserError, OnScreenBrowser, first_video
 from friday_services.desktop import DesktopApps, DesktopError
 from friday_services.files import FilesError, find_files, open_file
+from friday_services.media import MediaError, OwnerMedia
 from friday_services.meetings import MeetingError, calendar_event_url
 from friday_services.organizer import (
     Notes,
@@ -42,21 +44,39 @@ from friday_services.organizer import (
     weather,
 )
 from friday_services.screen import POSITIONS, Position, ScreenError
+from friday_services.volume import Volume, VolumeError, volume_sentence
 from friday_services.worker import Worker
 
 ACT = ToolAnnotations(read_only_hint=False, destructive_hint=False)
 SENDS = ToolAnnotations(read_only_hint=False, destructive_hint=True)
 LOOK = ToolAnnotations(read_only_hint=True)
-FAILURES = (BrowserError, DesktopError, ScreenError, FilesError, MeetingError, OrganizerError)
-MediaAction = Literal["pause", "play", "next", "previous", "volume_up", "volume_down", "mute"]
+FAILURES = (
+    BrowserError,
+    DesktopError,
+    ScreenError,
+    FilesError,
+    MediaError,
+    VolumeError,
+    MeetingError,
+    OrganizerError,
+)
+MediaAction = Literal[
+    "pause",
+    "play",
+    "stop",
+    "next",
+    "previous",
+    "rewind",
+    "forward",
+]
 MEDIA_SAID = {
     "pause": "Paused.",
     "play": "Playing.",
+    "stop": "Stopped.",
+    "rewind": "Gone back.",
+    "forward": "Skipped ahead.",
     "next": "Next one.",
     "previous": "Going back.",
-    "volume_up": "Louder.",
-    "volume_down": "Quieter.",
-    "mute": "Sound toggled.",
 }
 IN_BROWSER = {
     "directions",
@@ -90,7 +110,10 @@ def build_quick_server(
     data_dir: Path,
     call_owner: Callable[[str], Awaitable[dict]],
     timezone: str = "Asia/Kolkata",
+    owner_media: OwnerMedia | None = None,
+    volume: Volume | None = None,
 ) -> MCPServer:
+    volume = volume or Volume()
     server = MCPServer(
         name="friday-quick",
         instructions=(
@@ -186,22 +209,72 @@ def build_quick_server(
     @server.tool(
         name="media_control",
         description=(
-            "Control what is playing: pause, play, next, previous, volume_up, volume_down "
-            "or mute. Works on Friday's YouTube tab, otherwise on any player (YouTube app, "
-            "Spotify) through the media keys."
+            "Control what is playing, in any browser or player (YouTube, Spotify): pause, "
+            "play, stop, next, previous, rewind or forward (seconds, default 10). 'Stop', "
+            "'ruko' or 'band karo' about music means stop. For loudness use set_volume."
         ),
         annotations=ACT,
     )
-    async def media_control(action: MediaAction) -> dict:
+    async def media_control(
+        action: MediaAction, seconds: Annotated[int, Field(ge=1, le=600)] = 10
+    ) -> dict:
         async def run():
-            video = await browser_worker.run(browser.youtube_control, action)
+            if owner_media:
+                done = await desktop_worker.run(owner_media.control, action, seconds)
+                if done is not None:
+                    return done
+            if action in ("rewind", "forward"):
+                raise DesktopError("Nothing is playing that I can move.")
+            video = await browser_worker.run(
+                browser.youtube_control, "pause" if action == "stop" else action
+            )
             if video is not None:
                 return video
-            await desktop_worker.run(media_key, action)
+            await desktop_worker.run(media_key, "pause" if action == "stop" else action)
             return {"media_key": action}
 
         done = await act("media_control", f"Media: {action.replace('_', ' ')}.", run)
-        return {**done, "friday_say": MEDIA_SAID[action]}
+        say = MEDIA_SAID[action]
+        if action in ("rewind", "forward"):
+            say = f"{'Back' if action == 'rewind' else 'Ahead'} {seconds} seconds."
+        return {**done, "friday_say": say}
+
+    @server.tool(
+        name="set_volume",
+        description=(
+            "Set the PC's speaker volume. level sets an exact number: 'volume 97', 'set it "
+            "to 40'. change moves it: 'louder' or 'volume badhao' +10, 'much louder' +25, "
+            "'quieter' -10, 'increase by 20' +20, 'decrease by 30' -30. mute true or false "
+            "mutes or unmutes. With nothing given, says the current volume."
+        ),
+        annotations=ACT,
+    )
+    async def set_volume(
+        level: Annotated[int | None, Field(ge=0, le=100)] = None,
+        change: Annotated[int | None, Field(ge=-100, le=100)] = None,
+        mute: bool | None = None,
+    ) -> dict:
+        if level is not None:
+            detail = f"Volume to {level}."
+        elif change is not None:
+            detail = f"Volume {change:+d}."
+        elif mute is not None:
+            detail = "Muting." if mute else "Unmuting."
+        else:
+            detail = "Checking the volume."
+        state = await act(
+            "set_volume", detail, lambda: desktop_worker.run(volume.set, level, change, mute)
+        )
+        return {**state, "friday_say": volume_sentence(state)}
+
+    async def owner_browser(youtube: bool = False):
+        """The browser the owner used last (for a song: the one already showing
+        YouTube), unless that is Friday's own Chrome."""
+        if not owner_media:
+            return None
+        pick = owner_media.for_youtube if youtube else owner_media.last_browser
+        window = await desktop_worker.run(pick)
+        return window if window and not window.friday else None
 
     @server.tool(
         name="find_files",
@@ -575,10 +648,22 @@ def build_quick_server(
 
     @server.tool(
         name="open_website",
-        description="Open a website in the on-screen browser, e.g. gmail.com or irctc.co.in.",
+        description=(
+            "Open a website in a new tab of the browser the owner used last, e.g. gmail.com "
+            "or irctc.co.in."
+        ),
         annotations=ACT,
     )
     async def open_website(url: Annotated[str, Field(min_length=3, max_length=500)]) -> dict:
+        window = await owner_browser()
+        if window:
+            full = url if "://" in url else f"https://{url}"
+            await act(
+                "open_in_browser",
+                f"Opening {url} in {window.name}.",
+                lambda: desktop_worker.run(owner_media.open_url, full, window, False),
+            )
+            return {"url": full, "browser": window.name, "friday_say": f"Opened {url}."}
         page = await act("open_website", f"Opening {url}.", in_browser(browser.open), url)
         return {
             "url": page["url"],
@@ -588,10 +673,33 @@ def build_quick_server(
 
     @server.tool(
         name="play_youtube",
-        description="Play a song, video or topic on YouTube in the on-screen browser.",
+        description=(
+            "Play a song, video or topic on YouTube in the browser the owner used last: in "
+            "the same tab when it already shows YouTube."
+        ),
         annotations=ACT,
     )
     async def play_youtube(query: Annotated[str, Field(min_length=1, max_length=200)]) -> dict:
+        window = await owner_browser(youtube=True)
+        if window:
+            found = await asyncio.to_thread(first_video, query)
+            url = (
+                f"https://www.youtube.com/watch?v={found[0]}"
+                if found
+                else f"https://www.youtube.com/results?search_query={quote_plus(query)}"
+            )
+            title = found[1] if found else query
+            await act(
+                "play_in_browser",
+                f'Playing "{query}" in {window.name}.',
+                lambda: desktop_worker.run(owner_media.open_url, url, window, window.on_youtube),
+            )
+            return {
+                "title": title,
+                "url": url,
+                "browser": window.name,
+                "friday_say": f"Playing {_short(title)}.",
+            }
         video = await act(
             "play_youtube",
             f'Playing "{query}" on YouTube.',
@@ -603,7 +711,7 @@ def build_quick_server(
     @server.tool(
         name="web_search",
         description=(
-            "Search YouTube or Google in the on-screen browser and name the top results. "
+            "Search YouTube or Google in the browser the owner used last. "
             "Use youtube for videos, channels, songs, tutorials or anything said to be on "
             "YouTube; google for everything else."
         ),
@@ -614,6 +722,29 @@ def build_quick_server(
         query: Annotated[str, Field(min_length=1, max_length=300)],
     ) -> dict:
         name = "YouTube" if site == "youtube" else "Google"
+        window = await owner_browser()
+        if window:
+            url = (
+                f"https://www.youtube.com/results?search_query={quote_plus(query)}"
+                if site == "youtube"
+                else f"https://www.google.com/search?q={quote_plus(query)}"
+            )
+            # A search page already open in that tab is reused, else a new tab.
+            same_tab = (
+                window.on_youtube
+                if site == "youtube"
+                else "google search" in (window.title.casefold())
+            )
+            await act(
+                "search_in_browser",
+                f'Searching {name} for "{query}" in {window.name}.',
+                lambda: desktop_worker.run(owner_media.open_url, url, window, same_tab),
+            )
+            return {
+                "url": url,
+                "browser": window.name,
+                "friday_say": f"Here are the {name} results for {_short(query, 60)}.",
+            }
         found = await act(
             "browser_search",
             f'Searching {name} for "{query}".',

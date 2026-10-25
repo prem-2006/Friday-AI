@@ -260,6 +260,11 @@ def _check_url(url: str) -> str:
     return url
 
 
+NEW_TAB = "chrome://newtab/"
+# A tab with nothing in it, which a song or search may use instead of a new tab.
+EMPTY_TABS = ("about:blank", "chrome://newtab/", "chrome://new-tab-page/", "")
+
+
 class OnScreenBrowser:
     """Use only from one thread (see worker.Worker)."""
 
@@ -303,7 +308,9 @@ class OnScreenBrowser:
                     "--start-maximized",
                     # "Play X on YouTube" should start playing, with sound.
                     "--autoplay-policy=no-user-gesture-required",
-                    "about:blank",
+                    # Chrome's own New Tab page (the signed-in Google page),
+                    # not an empty about:blank.
+                    NEW_TAB,
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -355,8 +362,9 @@ class OnScreenBrowser:
         return page
 
     def warm(self) -> None:
-        """Start Chrome now, so the first request does not wait for it."""
-        self._page()
+        """Start Chrome now, so the first request does not wait for it; it
+        stays behind whatever the owner is doing."""
+        self._page(front=False)
 
     def cdp_url(self) -> str:
         """Opens the window if needed and returns where the agent can attach."""
@@ -447,7 +455,7 @@ class OnScreenBrowser:
             if not page.is_closed() and "youtube.com" in page.url:
                 page.bring_to_front()
                 return page
-        if current.url in ("about:blank", "chrome://newtab/", ""):
+        if current.url in EMPTY_TABS:
             page = current  # an empty tab: use it rather than open another
         else:
             page = self._context.new_page()

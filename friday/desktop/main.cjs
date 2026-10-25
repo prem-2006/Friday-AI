@@ -101,6 +101,10 @@ function openMain(hash = '#/home') {
   void shell.openExternal(`${WEB}/${hash}`);
 }
 
+// The notch window, or null once it is closed: a message from its page can
+// still arrive while the window is going away, and a closed window throws.
+const liveNotch = () => (notch && !notch.isDestroyed() ? notch : null);
+
 function createNotch() {
   notch = new BrowserWindow({
     width: NOTCH.width,
@@ -120,6 +124,9 @@ function createNotch() {
       backgroundThrottling: false,
     },
   });
+  notch.on('closed', () => {
+    notch = null;
+  });
   notch.setAlwaysOnTop(true, 'screen-saver');
   // The notch never touches the mouse: clicks, hovering and the pointer all
   // belong to whatever is underneath. Only an approval takes clicks, while it
@@ -133,7 +140,7 @@ function createNotch() {
   // Shown once at start; after that, hiding with Ctrl + Caps Lock sticks.
   let shown = false;
   const show = () => {
-    if (notch && !shown) {
+    if (liveNotch() && !shown) {
       shown = true;
       notch.showInactive();
     }
@@ -142,7 +149,7 @@ function createNotch() {
   notch.webContents.on('did-finish-load', show);
   void notch.loadURL(`${WEB}/#/notch`);
   const reload = () =>
-    setTimeout(() => notch && void notch.loadURL(`${WEB}/#/notch`), 2000);
+    setTimeout(() => void liveNotch()?.loadURL(`${WEB}/#/notch`), 2000);
   // If the dev server restarts, or the page crashes or hangs, load it again.
   notch.webContents.on('did-fail-load', reload);
   notch.webContents.on('render-process-gone', reload);
@@ -173,7 +180,7 @@ function createTray() {
         label: 'Hide or show the notch (Ctrl + Caps Lock)',
         click: toggleNotch,
       },
-      { label: 'Reload', click: () => notch?.reload() },
+      { label: 'Reload', click: () => liveNotch()?.reload() },
       { type: 'separator' },
       { label: 'Quit Friday', click: () => app.quit() },
     ]);
@@ -200,15 +207,16 @@ function startWithWindowsByDefault() {
 }
 
 // The notch must always be connected for Caps Lock to work: if its page is
-// stuck offline or did not render (the app restarted under it, say), reload it.
+// stuck offline, did not render, or lost the stream that brings Caps Lock
+// (the app restarted under it, say), reload it.
 function watchNotch() {
   let strikes = 0;
   setInterval(async () => {
-    if (!notch) return;
+    if (!liveNotch()) return;
     let healthy = false;
     try {
       healthy = await notch.webContents.executeJavaScript(
-        "!!document.querySelector('.friday-notch:not(.offline)')",
+        "!!document.querySelector('.friday-notch:not(.offline):not(.unlinked)')",
       );
     } catch {
       healthy = false;
@@ -216,7 +224,7 @@ function watchNotch() {
     strikes = healthy ? 0 : strikes + 1;
     if (strikes >= 2) {
       strikes = 0;
-      void notch.loadURL(`${WEB}/#/notch`);
+      void liveNotch()?.loadURL(`${WEB}/#/notch`);
     }
   }, 20_000);
 }
@@ -235,12 +243,12 @@ function watchSelf() {
 }
 
 ipcMain.on('friday:interactive', (_event, on) =>
-  on ? notch?.setIgnoreMouseEvents(false) : notch?.setIgnoreMouseEvents(true),
+  liveNotch()?.setIgnoreMouseEvents(!on),
 );
 // Ctrl + Caps Lock or the tray: hide the notch, or bring it back. Voice
 // keeps working while it is hidden.
 function toggleNotch() {
-  if (!notch) return;
+  if (!liveNotch()) return;
   if (notch.isVisible()) notch.hide();
   else notch.showInactive();
 }
@@ -272,7 +280,7 @@ app.whenReady().then(async () => {
   watchSelf();
   watchNotch();
   setInterval(() => void keepFridayRunning(), 30_000);
-  screen.on('display-metrics-changed', () => notch && place(notch));
+  screen.on('display-metrics-changed', () => liveNotch() && place(notch));
 });
 
 app.on('window-all-closed', () => {

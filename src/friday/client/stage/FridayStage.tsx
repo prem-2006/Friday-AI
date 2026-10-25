@@ -1168,6 +1168,7 @@ function StageSession({
     return (
       <Notch
         state={notchState}
+        linked={helpersOnline}
         level={level}
         spectrum={spectrum}
         note={

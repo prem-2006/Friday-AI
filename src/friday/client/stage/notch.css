@@ -48,10 +48,55 @@
   background: #8b7bff;
   box-shadow: 0 0 6px #8b7bff;
 }
-.friday-notch.hearing .notch-pill,
-.friday-notch.speaking .notch-pill {
-  width: 168px;
+/* The owner talking: an icy edge and glow that follow the mic (--mic). */
+.friday-notch.hearing .notch-pill {
+  --mic: 0;
+  width: 176px;
   height: 32px;
+  border-color: rgba(143, 227, 255, calc(0.35 + 0.5 * var(--mic))) !important;
+  box-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.45),
+    0 0 calc(4px + 14px * var(--mic))
+      rgba(127, 216, 255, calc(0.2 + 0.4 * var(--mic)));
+}
+/* Friday talking: a wider pill with flowing waves and a violet glow that
+   brightens with its voice (--voice, 0 to 1, set by the waves). */
+.friday-notch.speaking .notch-pill {
+  --voice: 0;
+  width: 196px;
+  height: 34px;
+  border-color: rgba(
+    169,
+    155,
+    255,
+    calc(0.35 + 0.45 * var(--voice))
+  ) !important;
+  background:
+    radial-gradient(
+      ellipse at 50% 120%,
+      rgba(109, 94, 246, calc(0.18 + 0.3 * var(--voice))),
+      transparent 70%
+    ),
+    #050507 !important;
+  box-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.45),
+    0 0 calc(6px + 18px * var(--voice))
+      rgba(139, 123, 255, calc(0.3 + 0.45 * var(--voice)));
+  animation: notch-speak-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes notch-speak-in {
+  from {
+    transform: scale(0.92);
+  }
+}
+.notch-waves {
+  width: calc(100% - 16px);
+  height: 26px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .friday-notch.speaking .notch-pill {
+    animation: none;
+  }
 }
 .friday-notch.thinking .notch-pill,
 .friday-notch.asking .notch-pill {
@@ -63,8 +108,8 @@
   height: 14px;
 }
 .notch-bars {
-  width: calc(100% - 22px);
-  height: 18px;
+  width: calc(100% - 20px);
+  height: 22px;
 }
 .notch-dots {
   display: inline-flex;
@@ -130,5 +175,11 @@
   border-color: transparent !important;
   background: #6d5ef6 !important;
   color: #fff !important;
+}
+/* #/notch-demo: the notch over a stand-in wallpaper. */
+.notch-demo {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(160deg, #1b2a44, #3a4d6b 60%, #7b8aa3);
 }
 /* theme: end */

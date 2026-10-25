@@ -10,6 +10,7 @@ import {
 } from '../friday/client/stage/FridayStage';
 import { StageLink } from '../friday/client/StageLink';
 import { FridayHome, HOME_HASH } from '../friday/client/home/FridayHome';
+import { NOTCH_DEMO_HASH, NotchDemo } from '../friday/client/stage/Notch';
 
 // FRIDAY: the desktop notch page (friday/desktop).
 const NOTCH_HASH = '#/notch';
@@ -276,6 +277,8 @@ export function App() {
   };
   // FRIDAY: the desktop notch is a tiny window; while the app is starting it
   // shows its offline pill (which retries), never the full-page screens below.
+  // FRIDAY: every notch state with a made-up voice, for its design.
+  if (location.hash.startsWith(NOTCH_DEMO_HASH)) return <NotchDemo />;
   if (fridayScreen === 'notch' && (needsAuth || !state || !workspace || !dot))
     return <FridayStage variant="notch" configured={false} onExit={() => {}} />;
   if (needsAuth)

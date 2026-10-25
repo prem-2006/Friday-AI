@@ -158,4 +158,4 @@ cd friday/browser-agent; python -m uv run pytest
 
 ## Credit and license
 
-Friday is built on [OpenDots](https://github.com/CopilotKit/OpenDots), an open-source template by CopilotKit released under the MIT license; its license is kept in [LICENSE](../LICENSE). The browser uses [Playwright](https://playwright.dev), desktop apps use [pywinauto](https://github.com/pywinauto/pywinauto), and speech uses Gnani's Prisma and Timbre. Friday's additions are released under the same MIT license.
+Friday is built on [OpenDots](https://github.com/CopilotKit/OpenDots), an open-source template by CopilotKit released under the MIT license; its license is kept in [LICENSE](../LICENSE). The browser uses [Playwright](https://playwright.dev), desktop apps use [pywinauto](https://github.com/pywinauto/pywinauto), and speech uses Gnani's Prisma and Timbre. Friday's additions are released under the same MIT license. Every project Friday is built on, took ideas from or uses, and where each one lives, is listed in [CREDITS.md](CREDITS.md).

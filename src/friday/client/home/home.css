@@ -1,6 +1,6 @@
 /* Friday: the main page, in the light console look of the ARRC "J" kit:
    a pale blue grid, cyan accents and monospace labels. */
-/* theme: fixed .friday-home */
+/* FRIDAY: no longer fixed; the dark Aqua Nebula look is derived like the rest. */
 .friday-home {
   --bg: #f4f7fb;
   --panel: rgba(255, 255, 255, 0.88);

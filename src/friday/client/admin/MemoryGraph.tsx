@@ -42,15 +42,15 @@ const KINDS: { kind: Kind; label: string; color: string }[] = [
   { kind: 'memory', label: 'Memories', color: '#f5b84b' },
   { kind: 'conversation', label: 'Conversations', color: '#8f9bb3' },
   { kind: 'note', label: 'Other notes', color: '#c7ccd6' },
-  { kind: 'person', label: 'People', color: '#5fd4a8' },
-  { kind: 'topic', label: 'Topics', color: '#a99bff' },
-  { kind: 'day', label: 'Days', color: '#5aa9ff' },
+  { kind: 'person', label: 'People', color: '#4ca7a1' },
+  { kind: 'topic', label: 'Topics', color: '#e6d6ea' },
+  { kind: 'day', label: 'Days', color: '#58c9f3' },
 ];
 const COLOR = Object.fromEntries(KINDS.map((k) => [k.kind, k.color])) as Record<
   Kind,
   string
 >;
-const ACCENT = '#a99bff';
+const ACCENT = '#58c9f3';
 
 export function MemoryGraph() {
   const [graph, setGraph] = useState<Graph | null>(null);
@@ -438,7 +438,7 @@ function GraphCanvas({
         const on = focus && (source === focus.id || target === focus.id);
         const alpha = on ? 0.85 : focus ? 0.04 : 0.14;
         ctx.strokeStyle = on
-          ? `rgba(169, 155, 255, ${alpha})`
+          ? `rgba(88, 201, 243, ${alpha})`
           : `rgba(255, 255, 255, ${alpha * fog((a.depth + b.depth) / 2)})`;
         ctx.beginPath();
         ctx.moveTo(a.sx, a.sy);

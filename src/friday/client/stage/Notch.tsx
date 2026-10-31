@@ -51,11 +51,11 @@ function Bars({
       pill?.style.setProperty('--mic', mic.toFixed(3));
       ctx.clearRect(0, 0, w, h);
       const fill = ctx.createLinearGradient(0, 0, 0, h);
-      fill.addColorStop(0, '#8fe3ff');
-      fill.addColorStop(0.5, '#ffffff');
-      fill.addColorStop(1, '#8fe3ff');
+      fill.addColorStop(0, '#58c9f3');
+      fill.addColorStop(0.5, '#bde5ff');
+      fill.addColorStop(1, '#58c9f3');
       ctx.fillStyle = fill;
-      ctx.shadowColor = '#7fd8ff';
+      ctx.shadowColor = '#58c9f3';
       ctx.shadowBlur = 4 + 6 * mic;
       const gap = w / BARS;
       for (let i = 0; i < BARS; i++) {
@@ -124,13 +124,13 @@ function Waves({ level }: { level: () => number }) {
       ctx.clearRect(0, 0, w, h);
       ctx.globalCompositeOperation = 'lighter';
       const gradient = ctx.createLinearGradient(0, 0, w, 0);
-      gradient.addColorStop(0, 'rgba(94, 200, 255, 0)');
-      gradient.addColorStop(0.2, '#5ec8ff');
-      gradient.addColorStop(0.5, '#a99bff');
-      gradient.addColorStop(0.8, '#e08bff');
-      gradient.addColorStop(1, 'rgba(224, 139, 255, 0)');
+      gradient.addColorStop(0, 'rgba(88, 201, 243, 0)');
+      gradient.addColorStop(0.2, '#58c9f3');
+      gradient.addColorStop(0.5, '#2fa0c6');
+      gradient.addColorStop(0.8, '#e6d6ea');
+      gradient.addColorStop(1, 'rgba(230, 214, 234, 0)');
       ctx.strokeStyle = gradient;
-      ctx.shadowColor = '#8b7bff';
+      ctx.shadowColor = '#2fa0c6';
       ctx.shadowBlur = 6;
       // Never flat: a little swell even between words.
       const swell = 0.3 + 0.7 * loud;

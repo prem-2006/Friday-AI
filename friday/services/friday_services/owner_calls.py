@@ -1,11 +1,10 @@
 """Friday phones its owner: for deadlines, and when asked ("call me at 5").
 
-With a voice agent set up the call goes through it: Sarvam (calls/sarvam.py,
-SARVAM_*) first, else Gnani's Inya (calls/inya.py, INYA_API_KEY). Either is an
-Indian call with no trial notice, where Friday says the reminder in its own
-words and keeps talking. Otherwise it uses the same
-Twilio + Gnani pipeline as Friday's calls to businesses (calls/bot.py), with
-the owner prompt. Calls are limited so a mistake can never ring the owner
+With Exotel set up (EXOTEL_*), Friday's own pipeline (calls/bot.py) makes
+the call from its Indian number, with the owner prompt and ask_friday, so
+the owner can get things done on the call. Otherwise a voice agent places
+it: Sarvam (calls/sarvam.py, SARVAM_*) first, else Gnani's Inya
+(calls/inya.py, INYA_API_KEY). Without either, the Twilio + Gnani pipeline. Calls are limited so a mistake can never ring the owner
 again and again.
 """
 
@@ -20,7 +19,7 @@ from typing import Any
 from friday_services.calls.inya import InyaDialer
 from friday_services.calls.prompts import gnani_owner_prompt
 from friday_services.calls.store import CallStore
-from friday_services.config import CALL_SETTINGS, REPO_ROOT, Settings
+from friday_services.config import REPO_ROOT, Settings
 
 MIN_GAP_SECONDS = 10 * 60  # at most one call every 10 minutes
 MAX_PER_DAY = 8
@@ -62,7 +61,10 @@ class OwnerCaller:
 
     @property
     def agent(self) -> Any:
-        """The voice agent that places calls to the owner, if one is set up."""
+        """The voice agent that places calls to the owner, if one is set up
+        and Friday's own Exotel pipeline is not."""
+        if self._settings.call_provider == "exotel" and self._settings.own_calls_ready:
+            return None
         for agent in (self._sarvam, self._gnani):
             if agent and agent.ready:
                 return agent
@@ -72,11 +74,11 @@ class OwnerCaller:
     def via(self) -> str:
         agent = self.agent
         if agent is None:
-            return "twilio"
+            return self._settings.call_provider
         return "sarvam" if agent is self._sarvam else "gnani"
 
     def missing(self) -> list[str]:
-        missing = [] if self.agent else self._settings.missing(CALL_SETTINGS)
+        missing = [] if self.agent else self._settings.missing(self._settings.call_settings)
         if not owner_phone(self._settings):
             missing.append("your phone number (Your details, or FRIDAY_OWNER_PHONE)")
         return missing
@@ -100,11 +102,11 @@ class OwnerCaller:
             phone=owner_phone(self._settings) or "",
             goal=reason,
             language=self._settings.get("FRIDAY_CALL_LANGUAGE", "en-IN"),
-            context="",
+            context=updates,
             kind="owner",
         )
         try:
-            record.twilio_sid = await self._dialer.place(record)
+            record.call_sid = await self._dialer.place(record)
         except Exception as error:
             self._store.finish(record.id, "failed", error=str(error))
             return {"called": False, "why": f"The call could not be placed: {error}"}

@@ -206,6 +206,12 @@ class DesktopApps:
         names = sorted({app["name"] for app in self._apps})
         return [name for name in names if query.casefold() in name.casefold()][:60]
 
+    def names(self) -> list[str]:
+        """Every Start-menu app's name (for instant commands)."""
+        if self._apps is None:
+            self._apps = self._list_apps()
+        return sorted({app["name"] for app in self._apps})
+
     def _find_app(self, name: str) -> dict[str, str]:
         if self._apps is None:
             self._apps = self._list_apps()

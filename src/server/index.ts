@@ -9,6 +9,8 @@ import { createApp } from './app.js';
 import { resolveAppOrigins } from './app-origin.js';
 import { WorkspaceStore } from './workspace.js';
 import { Platform } from './platform.js';
+import { ObsidianMemory } from '../friday/server/obsidian-memory.js';
+import { readContacts } from '../friday/server/contacts.js';
 import {
   agentRunTimeoutMsFromEnv,
   intelligenceApiKeyFromEnv,
@@ -61,7 +63,24 @@ const config: PlatformConfig = {
   runtimeUrl: `http://${host === '::1' ? '[::1]' : '127.0.0.1'}:${port}/api/copilotkit`,
   ownerToken,
 };
-const platform = new Platform(store, workspace, config);
+const obsidianMemory = new ObsidianMemory(
+  () => store.settings().obsidianVaultPath ?? 'data/friday-obsidian',
+  // FRIDAY: notes link to the contacts they mention (the memory graph).
+  () => readContacts().map((contact) => contact.name),
+);
+void obsidianMemory
+  .prepareVault()
+  .then(() =>
+    Promise.all(
+      store.memories().map((memory) => obsidianMemory.saveMemory(memory)),
+    ),
+  )
+  .catch(() => {
+    console.error(
+      'Could not sync saved memories to Obsidian. Check the vault path in Settings.',
+    );
+  });
+const platform = new Platform(store, workspace, config, obsidianMemory);
 const researchConfig = {
   mode: 'live' as const,
   apiKey: config.apiKey,

@@ -210,12 +210,13 @@ export function Notch({
     <div className={`friday-notch ${state}${linked ? '' : ' unlinked'}`}>
       {note && (
         <div
-          className="notch-note"
+          className={`notch-note${asking ? ' asking' : ''}`}
           role={state === 'asking' ? 'dialog' : 'status'}
         >
+          {asking && <strong>Friday needs your OK</strong>}
           <span>{note}</span>
-          {state === 'asking' && onDecide && (
-            <>
+          {asking && (
+            <div className="notch-actions">
               {/* Acts on the press: in this window that never takes focus,
                   a press arrives but a full click may not. */}
               <button
@@ -237,7 +238,7 @@ export function Notch({
               >
                 Approve
               </button>
-            </>
+            </div>
           )}
         </div>
       )}
@@ -257,7 +258,6 @@ export function Notch({
             <i />
           </span>
         )}
-        {state === 'idle' && <span className="notch-ready" aria-hidden />}
         {state === 'offline' && <span className="notch-warn" aria-hidden />}
       </button>
     </div>
@@ -300,6 +300,19 @@ export function NotchDemo() {
       ),
     );
   }, []);
+  // #/notch-demo?asking: the approval card for a WhatsApp message.
+  if (location.hash.split('?')[1] === 'asking')
+    return (
+      <div className="notch-demo">
+        <Notch
+          state="asking"
+          level={level}
+          spectrum={spectrum}
+          note="Send “Running 10 minutes late, see you soon” to Priya on WhatsApp?"
+          onDecide={() => {}}
+        />
+      </div>
+    );
   return (
     <div className="notch-demo">
       <Notch

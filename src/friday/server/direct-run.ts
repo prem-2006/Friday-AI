@@ -12,7 +12,12 @@ import { connectionActionTool } from '../../shared/connection-types.js';
 
 export type DirectPlatform = Pick<
   Platform,
-  'store' | 'workspace' | 'config' | 'setupTelemetry' | 'delegate'
+  | 'store'
+  | 'workspace'
+  | 'config'
+  | 'setupTelemetry'
+  | 'delegate'
+  | 'obsidianMemory'
 >;
 
 export async function runDotDirectly(
@@ -23,7 +28,13 @@ export async function runDotDirectly(
   {
     approvals = false,
     signal,
-  }: { approvals?: boolean; signal?: AbortSignal } = {},
+    onText,
+  }: {
+    approvals?: boolean;
+    signal?: AbortSignal;
+    /** Each piece of reply text as the model writes it (to speak it live). */
+    onText?: (delta: string) => void;
+  } = {},
 ): Promise<Message[]> {
   const agent = new DotAgent(
     platform.store,
@@ -33,6 +44,7 @@ export async function runDotDirectly(
     false,
     platform.setupTelemetry,
     platform.delegate,
+    platform.obsidianMemory,
   );
   agent.threadId = threadId;
   agent.setMessages(messages);
@@ -40,6 +52,9 @@ export async function runDotDirectly(
   const subscription = agent.subscribe({
     onRunErrorEvent: ({ event }) => {
       runError = new Error(event.message);
+    },
+    onTextMessageContentEvent: ({ event }) => {
+      if (event.delta) onText?.(event.delta);
     },
   });
   const stop = () => agent.abortRun();

@@ -21,6 +21,7 @@ import { followActivity, ownerHeaders, setStopped } from './activity';
 import {
   loadHistory,
   pendingApprovalOf,
+  readySentences,
   runApprovedAction,
   runFriday,
   saveHistory,
@@ -173,7 +174,6 @@ function StageDemo({ onExit }: { onExit: () => void }) {
   );
 }
 const LANGUAGE_KEY = 'friday-voice-language';
-const NARRATION_GAP_MS = 3500;
 
 type Phase =
   'off' | 'listening' | 'hearing' | 'transcribing' | 'thinking' | 'speaking';
@@ -443,7 +443,8 @@ function StageSession({
   const audioContext = useRef<AudioContext | null>(null);
   const ttsAnalyser = useRef<AnalyserNode | null>(null);
   const speakingMain = useRef(false);
-  const lastNarration = useRef(0);
+  // Counts the owner talking over Friday, so a reply's queued sentences stop.
+  const talkedOver = useRef(0);
   const stopping = useRef(false);
   const spokenApproval = useRef('');
   const languageRef = useRef(language);
@@ -671,9 +672,35 @@ function StageSession({
     setError('');
     const controller = new AbortController();
     turn.current = controller;
+    // The reply is spoken sentence by sentence while it is still being
+    // written, one after another, never waiting for the whole text.
+    let written = '';
+    let pending = '';
+    let spokenText = '';
+    let voiceQueue: Promise<void> = Promise.resolve();
+    const heardAt = talkedOver.current;
+    const say = (sentence: string) => {
+      spokenText += `${sentence} `;
+      voiceQueue = voiceQueue.then(async () => {
+        if (
+          controller.signal.aborted ||
+          stopping.current ||
+          talkedOver.current !== heardAt
+        )
+          return;
+        replying.current = true;
+        await speak(sentence, true, performance.now());
+      });
+    };
     try {
       const asked = performance.now();
-      const result = await runFriday(history, controller.signal);
+      const result = await runFriday(history, controller.signal, (delta) => {
+        written += delta;
+        setSubtitle(written);
+        const [ready, rest] = readySentences(pending + delta);
+        pending = rest;
+        ready.forEach(say);
+      });
       timing.current.reply = performance.now() - asked;
       threadId.current = result.threadId;
       const next = [...history, ...result.newMessages];
@@ -685,8 +712,12 @@ function StageSession({
         'Sorry, I missed that. Please say it again.';
       caption('friday', reply);
       setSubtitle(reply);
-      replying.current = true;
-      await speak(reply, true, performance.now());
+      if (pending.trim()) say(pending.trim());
+      // A reply that was not written as text (a quick action's sentence, an
+      // instant command) is said now.
+      const norm = (text: string) => text.replace(/\s+/gu, ' ').trim();
+      if (!norm(spokenText).includes(norm(reply))) say(reply);
+      await voiceQueue;
     } catch (e) {
       if (!controller.signal.aborted)
         setError(friendlyError(e, 'That did not work. Try again.'));
@@ -1011,8 +1042,11 @@ function StageSession({
       else setPhase((phase) => (phase === 'hearing' ? 'off' : phase));
       return;
     }
-    if (holding.current || !loaded || voiceReady === false || paused) return;
+    // A failed config probe only disables the clip fallback; a live session
+    // can still be ready to take this key hold.
+    if (holding.current || !loaded || paused) return;
     holding.current = true;
+    talkedOver.current += 1; // sentences still waiting are not said
     stopSpeaking();
     setError('');
     setSubtitle('');
@@ -1026,6 +1060,19 @@ function StageSession({
         return;
       }
       voice.pushToTalk(true);
+      return;
+    }
+    if (!holding.current) {
+      setPhase((phase) => (phase === 'hearing' ? 'off' : phase));
+      return;
+    }
+    // Show why the hold cannot proceed instead of silently ignoring it.
+    if (voiceReady === false) {
+      holding.current = false;
+      setPhase((phase) => (phase === 'hearing' ? 'off' : phase));
+      setError(
+        'Friday voice is unavailable. Check the app and voice services, then try again.',
+      );
       return;
     }
     const mic = await openMic(false);
@@ -1043,6 +1090,19 @@ function StageSession({
       caption('friday', detail);
       setSubtitle(detail);
       void speakRef.current(detail);
+    } else if (action === 'wake' && detail) {
+      // "Hey Friday" or a double clap: hello about what is on screen, then
+      // friday/services starts listening once it has been said.
+      caption('friday', detail);
+      setSubtitle(detail);
+      void speakRef
+        .current(detail)
+        .finally(
+          () =>
+            void fetch('/api/friday/wake/ready', { method: 'POST' }).catch(
+              () => undefined,
+            ),
+        );
     } else if (action === 'ptt_down') void pushRef.current(true);
     else if (action === 'ptt_up') void pushRef.current(false);
     else if (action === 'notch_toggle' && variant === 'notch')
@@ -1069,7 +1129,7 @@ function StageSession({
   // Connect the live voice at once when the mic is already allowed, so the
   // first Caps Lock press is heard from its first word.
   useEffect(() => {
-    if (!loaded || voiceReady === false) return;
+    if (!loaded) return;
     void navigator.permissions
       ?.query({ name: 'microphone' as PermissionName })
       .then((state) => {
@@ -1087,23 +1147,28 @@ function StageSession({
     void ensureLive();
   }, [language]);
 
-  // Narrate helper activity while a task runs.
+  // When friday/services come back (a restart), connect the live voice anew.
+  // An old connection can keep looking "connected" for minutes, and until it
+  // is replaced, "Hey Friday" and claps hear nothing.
+  const wasOnline = useRef(false);
+  useEffect(() => {
+    const cameBack = helpersOnline && !wasOnline.current;
+    wasOnline.current = helpersOnline;
+    if (!cameBack || !loaded || !live.current) return;
+    live.current.stop();
+    live.current = null;
+    void ensureLive();
+  }, [helpersOnline]);
+
+  // Show helper activity while a task runs. It is not spoken: Friday talks
+  // only to answer the owner, never in the middle of the work.
   const narrated = useRef(0);
   useEffect(() => {
     const latest = events.at(-1);
     if (!latest || latest.id <= narrated.current) return;
     narrated.current = latest.id;
     const line = narrate(latest);
-    if (!line) return;
-    setSubtitle(line);
-    const now = Date.now();
-    if (
-      latest.state !== 'failed' &&
-      now - lastNarration.current < NARRATION_GAP_MS
-    )
-      return;
-    lastNarration.current = now;
-    void speak(line, false);
+    if (line) setSubtitle(line);
   }, [events]);
 
   const recent = events.filter(
@@ -1156,7 +1221,7 @@ function StageSession({
             ? 'Let go of Caps Lock when you are done.'
             : 'Friday hears you only while the key is held.'));
   const status =
-    voiceReady === false
+    voiceReady === false && !live.current?.connected
       ? { tone: 'warn' as const, label: 'Voice needs GNANI_API_KEY' }
       : !helpersOnline
         ? { tone: 'warn' as const, label: 'Helpers offline' }
@@ -1232,7 +1297,7 @@ function StageSession({
         type="button"
         className={`stage-orb-hit ${listening ? 'on' : ''}`}
         aria-label="How to talk to Friday"
-        disabled={!loaded || voiceReady === false}
+        disabled={!loaded}
         onClick={() => setSubtitle('Hold Caps Lock while you speak.')}
       />
       {recent.length > 0 && (

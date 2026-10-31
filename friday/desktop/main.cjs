@@ -28,7 +28,9 @@ const REPO = path.resolve(__dirname, '..', '..');
 const WEB = process.env.FRIDAY_WEB_URL || 'http://localhost:5173';
 const API = process.env.FRIDAY_APP_URL || 'http://127.0.0.1:4310';
 const SERVICES = process.env.FRIDAY_SERVICES_URL || 'http://127.0.0.1:8765';
-const NOTCH = { width: 460, height: 120, gap: 6 };
+// Tall enough for a message card above the pill; the window itself is
+// see-through and ignores the mouse, so the extra height covers nothing.
+const NOTCH = { width: 480, height: 280, gap: 6 };
 
 if (!app.requestSingleInstanceLock()) app.exit(0);
 
@@ -59,6 +61,8 @@ function start(name, command, args, cwd) {
   const log = fs.openSync(path.join(REPO, 'data', `desktop-${name}.log`), 'a');
   const child = spawn(command, args, {
     cwd,
+    // Python writes its log lines at once instead of holding them back.
+    env: { ...process.env, PYTHONUNBUFFERED: '1' },
     stdio: ['ignore', log, log],
     windowsHide: true,
     shell: process.platform === 'win32',
@@ -72,12 +76,17 @@ async function keepFridayRunning() {
   fs.mkdirSync(path.join(REPO, 'data'), { recursive: true });
   if (!(await reachable(`${API}/api/workspace`)) || !(await reachable(WEB)))
     start('app', 'npm', ['run', 'dev'], REPO);
+  const services = path.join(REPO, 'friday', 'services');
+  // The environment `uv sync` made, when there is one: no uv needed to start.
+  const venvPython = path.join(services, '.venv', 'Scripts', 'python.exe');
   if (!(await reachable(`${SERVICES}/health`)))
     start(
       'services',
-      'python',
-      ['-m', 'uv', 'run', 'python', '-m', 'friday_services'],
-      path.join(REPO, 'friday', 'services'),
+      fs.existsSync(venvPython) ? `"${venvPython}"` : 'python',
+      fs.existsSync(venvPython)
+        ? ['-m', 'friday_services']
+        : ['-m', 'uv', 'run', 'python', '-m', 'friday_services'],
+      services,
     );
 }
 
@@ -87,10 +96,12 @@ async function ensureFriday() {
     await new Promise((resolve) => setTimeout(resolve, 1000));
 }
 
+// Exactly bottom centre: centred on the whole screen (not the work area, which
+// a side taskbar shifts), resting just above the taskbar.
 function place(window) {
-  const { workArea } = screen.getPrimaryDisplay();
+  const { bounds, workArea } = screen.getPrimaryDisplay();
   window.setBounds({
-    x: Math.round(workArea.x + (workArea.width - NOTCH.width) / 2),
+    x: Math.round(bounds.x + (bounds.width - NOTCH.width) / 2),
     y: Math.round(workArea.y + workArea.height - NOTCH.height - NOTCH.gap),
     width: NOTCH.width,
     height: NOTCH.height,
@@ -193,17 +204,25 @@ function loginItem() {
   return { name: 'Friday', path: process.execPath, args: [__dirname] };
 }
 
-// On by default, so Friday is always there after a restart; the owner's
-// choice in the tray menu is remembered.
+// Off unless the owner turns it on in the tray menu: Friday starts only when
+// the owner starts it. Only that choice is remembered (a new file name, since
+// older versions wrote "on" by themselves).
 const choiceFile = () =>
-  path.join(app.getPath('userData'), 'start-with-windows.json');
+  path.join(app.getPath('userData'), 'start-with-windows-choice.json');
 function setStartWithWindows(on) {
   app.setLoginItemSettings({ ...loginItem(), openAtLogin: on });
   fs.mkdirSync(path.dirname(choiceFile()), { recursive: true });
   fs.writeFileSync(choiceFile(), JSON.stringify({ on }));
 }
-function startWithWindowsByDefault() {
-  if (!fs.existsSync(choiceFile())) setStartWithWindows(true);
+function startWithWindowsOnlyIfChosen() {
+  let chosen = false;
+  try {
+    chosen = JSON.parse(fs.readFileSync(choiceFile(), 'utf8')).on === true;
+  } catch {
+    // No choice made: off.
+  }
+  if (app.getLoginItemSettings(loginItem()).openAtLogin !== chosen)
+    app.setLoginItemSettings({ ...loginItem(), openAtLogin: chosen });
 }
 
 // The notch must always be connected for Caps Lock to work: if its page is
@@ -273,7 +292,7 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionCheckHandler(
     (_contents, permission, origin) => permission === 'media' && local(origin),
   );
-  startWithWindowsByDefault();
+  startWithWindowsOnlyIfChosen();
   createTray();
   await ensureFriday();
   createNotch();

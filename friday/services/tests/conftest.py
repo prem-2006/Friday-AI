@@ -247,8 +247,8 @@ def server(settings: Settings, tmp_path: Path):
         looked.append(question)
         return "A code editor with a Python file open."
 
-    def snap(window, position):
-        snapped.append((window, position))
+    def snap(window, position, screen="current"):
+        snapped.append((window, position) if screen == "current" else (window, position, screen))
         return {"window": "Untitled - Notepad", "position": position}
 
     media_keys: list[str] = []

@@ -11,6 +11,8 @@ src/friday/server/quick-finish.ts).
 from __future__ import annotations
 
 import asyncio
+import random
+import re
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -43,8 +45,9 @@ from friday_services.organizer import (
     take_screenshot,
     weather,
 )
-from friday_services.screen import POSITIONS, Position, ScreenError
+from friday_services.screen import POSITIONS, Position, Screen, ScreenError
 from friday_services.volume import Volume, VolumeError, volume_sentence
+from friday_services.watch import Until, Watches
 from friday_services.worker import Worker
 
 ACT = ToolAnnotations(read_only_hint=False, destructive_hint=False)
@@ -89,6 +92,23 @@ IN_BROWSER = {
 }
 
 
+# What Friday says when a video starts: short, and not the same every time.
+PLAYING = ["Playing {}.", "Here's {}.", "{}, coming up.", "Okay, {}.", "Chal raha hai: {}."]
+_TITLE_CUTS = re.compile(r"\s+[|•·–—-]\s+|\s*[(\[]|\s+(?:ft\.?|feat\.?|official)\b", re.I)
+
+
+def video_name(title: str, words: int = 4) -> str:
+    """The short part of a video title: "Kesariya - Full Song | Brahmastra (4K)" -> "Kesariya"."""
+    first = _TITLE_CUTS.split(title.replace(" - YouTube", "").strip(), maxsplit=1)[0].strip()
+    parts = (first or title).split()
+    return " ".join(parts[:words]) + ("…" if len(parts) > words else "")
+
+
+def playing_sentence(title: str, choose=random.choice) -> str:
+    name = video_name(title) if title.strip() else ""
+    return choose(PLAYING).format(name) if name else "Playing it."
+
+
 def _short(title: str, limit: int = 70) -> str:
     title = " ".join(title.split())
     return title if len(title) <= limit else title[: limit - 1].rstrip() + "…"
@@ -101,7 +121,7 @@ def build_quick_server(
     desktop_worker: Worker,
     feed: ActivityFeed,
     look: Callable[[str], str],
-    snap: Callable[[str, str], dict[str, Any]],
+    snap: Callable[[str, str, str], dict[str, Any]],
     media_key: Callable[[str], None],
     file_roots: Callable[[], list[Path]],
     open_path: Callable[[str], None],
@@ -112,6 +132,7 @@ def build_quick_server(
     timezone: str = "Asia/Kolkata",
     owner_media: OwnerMedia | None = None,
     volume: Volume | None = None,
+    watches: Watches | None = None,
 ) -> MCPServer:
     volume = volume or Volume()
     server = MCPServer(
@@ -535,12 +556,23 @@ def build_quick_server(
 
     @server.tool(
         name="system_status",
-        description="Say the time, the date and the battery level.",
+        description=(
+            "Answer exactly what the owner asked about the PC, and nothing else. ask: "
+            "battery for 'is it charging?', 'battery kitni hai?' (says charging or not and "
+            "the percent); time for 'what time is it?'; date for 'what's the date?'; all "
+            "only when they ask for everything. hinglish: true when the owner spoke Hindi "
+            "or Hinglish."
+        ),
         annotations=LOOK,
     )
-    async def system_status() -> dict:
+    async def system_status(
+        # No default: the model must say what was asked, so "what time is it?"
+        # never gets the date and battery as well.
+        ask: Literal["battery", "time", "date", "all"],
+        hinglish: bool = False,
+    ) -> dict:
         power = await asyncio.to_thread(battery)
-        return {**power, "friday_say": status_sentence(power)}
+        return {**power, "friday_say": status_sentence(power, ask=ask, hinglish=hinglish)}
 
     @server.tool(
         name="lock_screen",
@@ -553,19 +585,21 @@ def build_quick_server(
 
     @server.tool(
         name="take_screenshot",
-        description="Save a screenshot of the whole screen in Pictures, Friday.",
+        description=(
+            "Take a screenshot of the whole screen and save it where Windows saves its "
+            "own (Pictures, Screenshots), on the owner's PC."
+        ),
         annotations=ACT,
     )
     async def take_screenshot_tool() -> dict:
-        folder = Path.home() / "Pictures" / "Friday"
         path = await act(
             "take_screenshot",
             "Taking a screenshot.",
-            lambda: asyncio.to_thread(take_screenshot, folder),
+            lambda: asyncio.to_thread(take_screenshot),
         )
         return {
             "path": str(path),
-            "friday_say": "Screenshot saved in your Pictures, Friday folder.",
+            "friday_say": "Done, it's in your Screenshots folder.",
         }
 
     @server.tool(
@@ -664,6 +698,13 @@ def build_quick_server(
                 lambda: desktop_worker.run(owner_media.open_url, full, window, False),
             )
             return {"url": full, "browser": window.name, "friday_say": f"Opened {url}."}
+        if owner_media is not None:
+            # No browser of the owner's is open: their default browser, not Friday's own.
+            full = url if "://" in url else f"https://{url}"
+            await act(
+                "open_in_browser", f"Opening {url}.", lambda: asyncio.to_thread(open_path, full)
+            )
+            return {"url": full, "friday_say": f"Opened {url}."}
         page = await act("open_website", f"Opening {url}.", in_browser(browser.open), url)
         return {
             "url": page["url"],
@@ -698,15 +739,28 @@ def build_quick_server(
                 "title": title,
                 "url": url,
                 "browser": window.name,
-                "friday_say": f"Playing {_short(title)}.",
+                "friday_say": playing_sentence(title),
             }
+        if owner_media is not None:
+            # No browser of the owner's is open: play it in their default browser.
+            found = await asyncio.to_thread(first_video, query)
+            url = (
+                f"https://www.youtube.com/watch?v={found[0]}"
+                if found
+                else f"https://www.youtube.com/results?search_query={quote_plus(query)}"
+            )
+            await act(
+                "play_in_browser", f'Playing "{query}".', lambda: asyncio.to_thread(open_path, url)
+            )
+            title = found[1] if found else query
+            return {"title": title, "url": url, "friday_say": playing_sentence(title)}
         video = await act(
             "play_youtube",
             f'Playing "{query}" on YouTube.',
             in_browser(browser.play_youtube),
             query,
         )
-        return {**video, "friday_say": f"Playing {_short(video['title'])} on YouTube."}
+        return {**video, "friday_say": playing_sentence(video["title"])}
 
     @server.tool(
         name="web_search",
@@ -745,6 +799,18 @@ def build_quick_server(
                 "browser": window.name,
                 "friday_say": f"Here are the {name} results for {_short(query, 60)}.",
             }
+        if owner_media is not None:
+            url = (
+                f"https://www.youtube.com/results?search_query={quote_plus(query)}"
+                if site == "youtube"
+                else f"https://www.google.com/search?q={quote_plus(query)}"
+            )
+            await act(
+                "search_in_browser",
+                f'Searching {name} for "{query}".',
+                lambda: asyncio.to_thread(open_path, url),
+            )
+            return {"url": url, "friday_say": f"Here are the {name} results."}
         found = await act(
             "browser_search",
             f'Searching {name} for "{query}".',
@@ -797,25 +863,86 @@ def build_quick_server(
     @server.tool(
         name="snap_window",
         description=(
-            "Move an open window to a half or quarter of its screen, or maximize or "
-            f"minimize it. Positions: {', '.join(POSITIONS)}."
+            "Move an open window: a half or quarter of a screen, the center, maximize or "
+            f"minimize. Positions: {', '.join(POSITIONS)}. screen: laptop (the built-in "
+            "panel), monitor (the external display) or current. The window is found by its "
+            "app ('chrome', 'notepad'), process or part of its title."
         ),
         annotations=ACT,
     )
     async def snap_window(
         window: Annotated[
-            str, Field(min_length=1, max_length=120, description="Part of its title")
+            str, Field(min_length=1, max_length=120, description="App name or part of its title")
         ],
         position: Position,
+        screen: Screen = "current",
     ) -> dict:
         placed = await act(
             "snap_window",
             f"Moving {window} to the {position}.",
-            lambda: asyncio.to_thread(snap, window, position),
+            lambda: asyncio.to_thread(snap, window, position, screen),
         )
-        where = {"maximize": "maximized", "minimize": "minimized"}.get(
+        where = {"maximize": "maximized", "minimize": "minimized", "center": "centered"}.get(
             position, f"on the {position.replace('-', ' ')}"
         )
-        return {**placed, "friday_say": f"{_short(placed['window'], 40)} is {where}."}
+        on = f" on the {screen}" if screen != "current" else ""
+        name = placed.get("app") or placed.get("window") or window
+        return {**placed, "friday_say": f"{_short(name, 40)} is {where}{on}."}
+
+    if watches is not None:
+
+        @server.tool(
+            name="watch_window",
+            description=(
+                "Watch an app's window in the background, with no model calls, and tell the "
+                "owner when something happens: 'tell me when the download is done', 'let me "
+                "know when the build says succeeded', 'tell me when Zoom closes'. until shows: "
+                "wait for phrase to appear; until gone: wait for phrase (or, with no phrase, the "
+                "window) to go away. say is the sentence to speak then (optional). Checks every "
+                "5 seconds for up to 3 hours; the window must stay open."
+            ),
+            annotations=ACT,
+        )
+        async def watch_window(
+            app: Annotated[str, Field(min_length=1, max_length=80)],
+            until: Until,
+            phrase: Annotated[str, Field(max_length=120)] = "",
+            title_words: Annotated[
+                str, Field(max_length=120, description="Words in the window's title, to pick one")
+            ] = "",
+            say: Annotated[str, Field(max_length=200)] = "",
+        ) -> dict:
+            async def run():
+                try:
+                    return await asyncio.to_thread(
+                        watches.add, app, until, phrase, title_words, say
+                    )
+                except (LookupError, ValueError) as error:
+                    raise OrganizerError(str(error)) from error
+
+            watch = await act("watch_window", f"Watching {app}.", run)
+            return {
+                "watching": watch.describe(),
+                "friday_say": f"Okay, I'll tell you when {_watch_said(watch)}.",
+            }
+
+        @server.tool(
+            name="stop_watching",
+            description="Stop every background watch set with watch_window.",
+            annotations=ACT,
+        )
+        async def stop_watching() -> dict:
+            n = watches.stop_all()
+            return {
+                "stopped": n,
+                "friday_say": "Stopped watching." if n else "I was not watching anything.",
+            }
 
     return server
+
+
+def _watch_said(watch) -> str:
+    if watch.phrase:
+        verb = "shows" if watch.until == "shows" else "no longer shows"
+        return f'{watch.app} {verb} "{watch.phrase}"'
+    return f"{watch.app} closes" if watch.until == "gone" else f"{watch.app} opens"

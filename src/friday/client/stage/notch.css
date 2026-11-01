@@ -50,6 +50,10 @@
     width 0.22s cubic-bezier(0.2, 0.8, 0.2, 1),
     height 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+/* Quiet ("kuch mat bolo"): the same metal, dimmed; Friday still hears. */
+.friday-notch.quiet .notch-pill {
+  opacity: 0.55;
+}
 /* Busy: the metal turns to black glass, so the bars and dots stand out. */
 .friday-notch.hearing .notch-pill,
 .friday-notch.thinking .notch-pill,

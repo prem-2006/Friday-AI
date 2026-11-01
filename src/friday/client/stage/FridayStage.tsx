@@ -28,6 +28,11 @@ import {
   toolAnswer,
 } from './conversation';
 import { HandsFree } from './handsFree';
+import {
+  isQuietCommand,
+  isSleepCommand,
+  resumeRequest,
+} from './conversationMode';
 import { friendlyError } from './errors';
 import { intentOf, isEcho } from './intent';
 import { fixMishearings } from './corrections';
@@ -180,6 +185,16 @@ type Phase =
 // Waiting for more of a sentence from Gnani's stream: after a pause while
 // hands-free, and after Caps Lock is let go (its 1 s silence tail + network).
 const HEARD_PAUSE_MS = 700;
+
+/** Always-on conversation on the notch: on unless turned off
+ * (localStorage friday-always-on = "off"). */
+function alwaysListening() {
+  try {
+    return localStorage.getItem('friday-always-on') !== 'off';
+  } catch {
+    return true;
+  }
+}
 const RELEASE_WAIT_MS = 1800;
 
 interface Caption {
@@ -419,6 +434,12 @@ function StageSession({
   const controlRef = useRef<(action: string, detail: string) => void>(() => {});
 
   const handsFree = useRef<HandsFree | null>(null);
+  // Always-on conversation, on the notch only (each voice window has its own
+  // mic, and two always-on windows would both answer). Quiet: still hearing,
+  // answering nothing until called back (conversationMode.ts).
+  const alwaysOn = variant === 'notch' && alwaysListening();
+  const [quiet, setQuiet] = useState(false);
+  const quietRef = useRef(false);
   // Live copies of state that async voice handlers read after a re-render.
   const runningRef = useRef(false);
   const replying = useRef(false); // speaking the answer to the last request
@@ -855,7 +876,49 @@ function StageSession({
 
   // What to do with something the owner said (from either voice path).
   const respond = async (heardText: string, startedOverFriday: boolean) => {
-    const text = fixMishearings(heardText, languageRef.current);
+    let text = fixMishearings(heardText, languageRef.current);
+    // A Caps Lock hold is always meant for Friday, quiet or not.
+    const held = heldTurn.current;
+    heldTurn.current = false;
+    // "Stop", "stop now": cancel everything and stop listening until "Friday"
+    // or "Hey Friday". Caps Lock still works throughout.
+    if (text && isSleepCommand(text)) {
+      quietRef.current = true;
+      setQuiet(true);
+      caption('you', text);
+      await stopEverything();
+      setPhase('off');
+      setSubtitle(
+        'Stopped. Say “Hey Friday” or hold Caps Lock when you need me.',
+      );
+      return;
+    }
+    if (text && alwaysOn && !held) {
+      // "Wait", "kuch mat bolo abhi": stop talking, keep listening; the task
+      // that is running carries on.
+      if (isQuietCommand(text)) {
+        quietRef.current = true;
+        setQuiet(true);
+        stopSpeaking();
+        caption('you', text);
+        setSubtitle('Quiet. Say “suno Friday” when you need me.');
+        return;
+      }
+      if (quietRef.current) {
+        const back = resumeRequest(text);
+        if (!back.resume) return; // heard, not answered
+        quietRef.current = false;
+        setQuiet(false);
+        if (!back.rest) {
+          caption('you', text);
+          return void speak('Haan, boliye.', true);
+        }
+        text = back.rest;
+      }
+    } else if (held && quietRef.current) {
+      quietRef.current = false;
+      setQuiet(false);
+    }
     if (!text) {
       if (!startedOverFriday) setPhase(runningRef.current ? 'thinking' : 'off');
       return;
@@ -961,6 +1024,8 @@ function StageSession({
       try {
         await voice.start();
         live.current = voice;
+        // Always-on conversation: everything said reaches Friday.
+        if (alwaysOn) voice.handsFree(true);
         return voice;
       } catch {
         voice.stop();
@@ -1019,6 +1084,8 @@ function StageSession({
   // it is let go. Signals come from the page itself or, in any app, from the
   // services' keyboard hook.
   const holding = useRef(false);
+  // The turn now being heard began with a Caps Lock hold (or "Hey Friday").
+  const heldTurn = useRef(false);
   const pushToTalk = async (down: boolean) => {
     trace('ptt', {
       down,
@@ -1028,6 +1095,7 @@ function StageSession({
       voiceReady: String(voiceReady),
       paused,
     });
+    if (down) heldTurn.current = true;
     if (!down) {
       if (!holding.current) return;
       holding.current = false;
@@ -1091,6 +1159,8 @@ function StageSession({
       setSubtitle(detail);
       void speakRef.current(detail);
     } else if (action === 'wake' && detail) {
+      quietRef.current = false;
+      setQuiet(false);
       // "Hey Friday" or a double clap: hello about what is on screen, then
       // friday/services starts listening once it has been said.
       caption('friday', detail);
@@ -1238,7 +1308,9 @@ function StageSession({
             ? 'speaking'
             : running || phase === 'thinking' || phase === 'transcribing'
               ? 'thinking'
-              : 'idle';
+              : quiet
+                ? 'quiet'
+                : 'idle';
     return (
       <Notch
         state={notchState}

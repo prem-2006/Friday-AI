@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import './notch.css';
 
 export type NotchState =
-  'idle' | 'hearing' | 'thinking' | 'speaking' | 'asking' | 'offline';
+  'idle' | 'quiet' | 'hearing' | 'thinking' | 'speaking' | 'asking' | 'offline';
 
 interface Desktop {
   setInteractive: (on: boolean) => void;

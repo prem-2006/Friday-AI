@@ -31,8 +31,34 @@ const SERVICES = process.env.FRIDAY_SERVICES_URL || 'http://127.0.0.1:8765';
 // Tall enough for a message card above the pill; the window itself is
 // see-through and ignores the mouse, so the extra height covers nothing.
 const NOTCH = { width: 480, height: 280, gap: 6 };
+// The live task toast: bottom left, above the taskbar, about 3 cm wide.
+const TOAST = { width: 340, height: 96, gap: 8 };
 
-if (!app.requestSingleInstanceLock()) app.exit(0);
+// Why the notch started or stopped, for when it is not there.
+function notchLog(line) {
+  try {
+    fs.appendFileSync(
+      path.join(REPO, 'data', 'desktop-notch.log'),
+      `${new Date().toISOString()} [${process.pid}] ${line}\n`,
+    );
+  } catch {
+    // no data folder yet
+  }
+}
+notchLog('notch starting');
+process.on('exit', (code) => notchLog(`notch exited (${code})`));
+process.on('uncaughtException', (error) =>
+  notchLog(`notch error: ${error?.stack || error}`),
+);
+
+if (!app.requestSingleInstanceLock()) {
+  notchLog('another notch is already running; leaving it');
+  app.exit(0);
+}
+// Started again while running: show the notch if it was hidden.
+app.on('second-instance', () => {
+  if (liveNotch() && !notch.isVisible()) notch.showInactive();
+});
 
 // Friday speaks without anyone clicking first.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -64,6 +90,9 @@ function start(name, command, args, cwd) {
     // Python writes its log lines at once instead of holding them back.
     env: { ...process.env, PYTHONUNBUFFERED: '1' },
     stdio: ['ignore', log, log],
+    // Its own hidden console: closing the Start Friday window must not take
+    // the app and the services down with it.
+    detached: true,
     windowsHide: true,
     shell: process.platform === 'win32',
   });
@@ -106,6 +135,54 @@ function place(window) {
     width: NOTCH.width,
     height: NOTCH.height,
   });
+}
+
+let toast = null;
+const liveToast = () => (toast && !toast.isDestroyed() ? toast : null);
+
+// The current task's step, for a few seconds, then nothing (#/toast). It
+// never takes the mouse or the keyboard.
+function createToast() {
+  const { workArea } = screen.getPrimaryDisplay();
+  toast = new BrowserWindow({
+    x: workArea.x + TOAST.gap,
+    y: workArea.y + workArea.height - TOAST.height - TOAST.gap,
+    width: TOAST.width,
+    height: TOAST.height,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    focusable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    alwaysOnTop: true,
+    show: false,
+    backgroundColor: '#00000000',
+    webPreferences: { backgroundThrottling: false },
+  });
+  toast.on('closed', () => {
+    toast = null;
+  });
+  toast.setAlwaysOnTop(true, 'screen-saver');
+  toast.setIgnoreMouseEvents(true);
+  toast.once('ready-to-show', () => liveToast()?.showInactive());
+  // As with the notch: after every load (a reload too) it is on screen. Its
+  // page's errors and feed connection go to the notch log, for when it shows
+  // nothing.
+  toast.webContents.on('did-finish-load', () => {
+    notchLog(`toast page loaded at ${JSON.stringify(liveToast()?.getBounds())}`);
+    liveToast()?.showInactive();
+  });
+  toast.webContents.on('console-message', (event) => {
+    if (event.level === 'error' || event.message.startsWith('[toast]'))
+      notchLog(`toast page: ${event.message.slice(0, 300)}`);
+  });
+  void toast.loadURL(`${WEB}/#/toast`);
+  const reload = () =>
+    setTimeout(() => void liveToast()?.loadURL(`${WEB}/#/toast`), 3000);
+  toast.webContents.on('did-fail-load', reload);
+  toast.webContents.on('render-process-gone', reload);
 }
 
 function openMain(hash = '#/home') {
@@ -296,10 +373,20 @@ app.whenReady().then(async () => {
   createTray();
   await ensureFriday();
   createNotch();
+  createToast();
   watchSelf();
   watchNotch();
   setInterval(() => void keepFridayRunning(), 30_000);
-  screen.on('display-metrics-changed', () => liveNotch() && place(notch));
+  screen.on('display-metrics-changed', () => {
+    if (liveNotch()) place(notch);
+    const { workArea } = screen.getPrimaryDisplay();
+    liveToast()?.setBounds({
+      x: workArea.x + TOAST.gap,
+      y: workArea.y + workArea.height - TOAST.height - TOAST.gap,
+      width: TOAST.width,
+      height: TOAST.height,
+    });
+  });
 });
 
 app.on('window-all-closed', () => {

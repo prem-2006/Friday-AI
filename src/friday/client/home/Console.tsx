@@ -47,6 +47,7 @@ export const ABILITY_OF: Record<string, string> = {
   browser_type: 'web',
   browser_read: 'web',
   play_youtube: 'music',
+  play_shown_video: 'music',
   media_control: 'music',
   run_mode: 'apps',
   open_app: 'apps',

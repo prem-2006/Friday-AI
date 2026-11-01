@@ -175,7 +175,7 @@ cd friday/browser-agent; python -m uv run pytest
 - **Echo:** echo cancellation and a raised threshold while Friday speaks keep it from hearing itself, but headphones work best.
 - **Phone calls over Twilio** (the earlier calling service) are parked; the code remains under `friday/services/friday_services/calls`.
 - **The browser agent** (browser-use, `friday/browser-agent`) runs in its own Python environment because it pins exact library versions; it attaches to Navigator's Chrome window through Chrome's debugging port on 127.0.0.1 (`FRIDAY_BROWSER_CDP_PORT`). Every step is one model call, so a free Gemini key runs out quickly; its log is `friday/services/data/browser-agent.log`.
-- **Playing on YouTube** takes 4–7 s, mostly YouTube's own page load; the services open Chrome at start (`FRIDAY_BROWSER_PREWARM`) so the first request skips Chrome's startup.
+- **Playing on YouTube** takes 4–7 s, mostly YouTube's own page load; the first web task also starts Friday's own Chrome. `FRIDAY_BROWSER_PREWARM=true` opens it when the services start instead.
 - **Conversations live in CopilotKit's cloud** (its local version is macOS-only). Telegram was dropped.
 
 ## Credit and license

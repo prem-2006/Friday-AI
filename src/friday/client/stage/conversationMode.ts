@@ -109,10 +109,42 @@ const SLEEP = [
   'बस करो',
 ];
 
+// Said around a stop without changing it: "ok stop", "stop yaar", "Friday,
+// please stop now".
+const SLEEP_FILLER = new Set([
+  'ok',
+  'okay',
+  'please',
+  'friday',
+  'hey',
+  'yaar',
+  'ji',
+  'now',
+  'abhi',
+  'just',
+  'bhai',
+]);
+const SLEEP_ALSO = ['go to sleep', 'sleep', 'so jao', 'stop it now'];
+
 /** "Stop", "stop now": cancel the task, go silent and hear nothing but
  * "Friday" / "Hey Friday" (or a Caps Lock hold) until called back. */
 export function isSleepCommand(text: string): boolean {
-  return SLEEP.includes(normalise(text));
+  const said = normalise(text);
+  if (SLEEP.includes(said)) return true;
+  const words = said.split(' ');
+  if (words.length > 5) return false;
+  const core = words.filter((word) => !SLEEP_FILLER.has(word)).join(' ');
+  return !!core && (SLEEP.includes(core) || SLEEP_ALSO.includes(core));
+}
+
+/** After being called, Friday takes follow-ups without "Friday" for this long
+ * after the owner last spoke to it, then sleeps again: speech in the room
+ * (a video, someone else) is not answered unless it starts with "Friday". */
+export const AWAKE_MS = 60_000;
+
+/** Whether "Friday" was said in it at all ("stop Friday"). */
+export function mentionsFriday(text: string): boolean {
+  return /(^| )friday( |$)/.test(normalise(text));
 }
 
 /** While quiet: was Friday called back, and is there a request with it?

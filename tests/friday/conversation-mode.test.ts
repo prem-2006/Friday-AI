@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import {
   isQuietCommand,
   isSleepCommand,
+  mentionsFriday,
   resumeRequest,
 } from '../../src/friday/client/stage/conversationMode.js';
 
@@ -66,4 +67,24 @@ it('stops and sleeps on a bare "stop", not on "stop the song"', () => {
   ])
     expect(isSleepCommand(said), said).toBe(false);
   expect(resumeRequest('Hey Friday').resume).toBe(true);
+});
+
+it('sleeps on a stop said with filler words, never on a longer request', () => {
+  for (const said of [
+    'ok stop',
+    'Okay, stop now.',
+    'stop yaar',
+    'Friday, please stop',
+    'hey friday stop',
+    'go to sleep',
+    'so jao',
+  ])
+    expect(isSleepCommand(said), said).toBe(true);
+  for (const said of ['stop the song', 'ok stop the music', 'please stop the timer'])
+    expect(isSleepCommand(said), said).toBe(false);
+});
+
+it('knows when Friday is named in a sentence', () => {
+  expect(mentionsFriday('stop Friday')).toBe(true);
+  expect(mentionsFriday('stop the fridge')).toBe(false);
 });

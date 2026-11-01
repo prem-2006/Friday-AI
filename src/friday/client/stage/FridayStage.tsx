@@ -31,7 +31,9 @@ import { HandsFree } from './handsFree';
 import {
   isQuietCommand,
   isSleepCommand,
+  mentionsFriday,
   resumeRequest,
+  AWAKE_MS,
 } from './conversationMode';
 import { friendlyError } from './errors';
 import { intentOf, isEcho } from './intent';
@@ -438,8 +440,31 @@ function StageSession({
   // mic, and two always-on windows would both answer). Quiet: still hearing,
   // answering nothing until called back (conversationMode.ts).
   const alwaysOn = variant === 'notch' && alwaysListening();
-  const [quiet, setQuiet] = useState(false);
-  const quietRef = useRef(false);
+  // Always-on starts asleep: "Friday", "Hey Friday", a double clap or Caps
+  // Lock wakes it.
+  const [quiet, setQuiet] = useState(alwaysOn);
+  const quietRef = useRef(alwaysOn);
+  // When the owner last spoke to Friday (follow-ups need no "Friday" until
+  // AWAKE_MS after it).
+  const awakeAt = useRef(0);
+  // The notch shows Friday asleep again once that time is up.
+  useEffect(() => {
+    if (!alwaysOn) return;
+    const timer = setInterval(() => {
+      if (
+        !quietRef.current &&
+        Date.now() - awakeAt.current > AWAKE_MS &&
+        !runningRef.current &&
+        !replying.current &&
+        !audio.current &&
+        !live.current?.speaking
+      ) {
+        quietRef.current = true;
+        setQuiet(true);
+      }
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [alwaysOn]);
   // Live copies of state that async voice handlers read after a re-render.
   const runningRef = useRef(false);
   const replying = useRef(false); // speaking the answer to the last request
@@ -880,6 +905,38 @@ function StageSession({
     // A Caps Lock hold is always meant for Friday, quiet or not.
     const held = heldTurn.current;
     heldTurn.current = false;
+    if (text && alwaysOn && !held) {
+      // Called a while ago and not spoken to since: asleep again, unless
+      // Friday is still talking or working on something.
+      if (
+        !quietRef.current &&
+        Date.now() - awakeAt.current > AWAKE_MS &&
+        !runningRef.current &&
+        !replying.current &&
+        !fridayTalking()
+      ) {
+        quietRef.current = true;
+        setQuiet(true);
+      }
+      // Asleep: only "Friday" / "Hey Friday" counts, so the room's talk is
+      // not answered (and a stray "stop" cancels nothing).
+      if (quietRef.current) {
+        const sleepCall = isSleepCommand(text) && mentionsFriday(text);
+        const back = resumeRequest(text);
+        if (!back.resume && !sleepCall) return; // heard, not answered
+        if (!sleepCall) {
+          quietRef.current = false;
+          setQuiet(false);
+          awakeAt.current = Date.now();
+          if (!back.rest) {
+            caption('you', text);
+            return void speak('Haan, boliye.', true);
+          }
+          text = back.rest;
+        }
+      }
+    }
+    if (text) awakeAt.current = Date.now();
     // "Stop", "stop now": cancel everything and stop listening until "Friday"
     // or "Hey Friday". Caps Lock still works throughout.
     if (text && isSleepCommand(text)) {
@@ -903,17 +960,6 @@ function StageSession({
         caption('you', text);
         setSubtitle('Quiet. Say “suno Friday” when you need me.');
         return;
-      }
-      if (quietRef.current) {
-        const back = resumeRequest(text);
-        if (!back.resume) return; // heard, not answered
-        quietRef.current = false;
-        setQuiet(false);
-        if (!back.rest) {
-          caption('you', text);
-          return void speak('Haan, boliye.', true);
-        }
-        text = back.rest;
       }
     } else if (held && quietRef.current) {
       quietRef.current = false;
@@ -1161,6 +1207,7 @@ function StageSession({
     } else if (action === 'wake' && detail) {
       quietRef.current = false;
       setQuiet(false);
+      awakeAt.current = Date.now();
       // "Hey Friday" or a double clap: hello about what is on screen, then
       // friday/services starts listening once it has been said.
       caption('friday', detail);

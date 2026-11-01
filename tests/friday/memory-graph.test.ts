@@ -102,3 +102,31 @@ describe('ObsidianMemory notes and the graph', () => {
     expect(await vault.readNote('Friday/x.txt')).toBeUndefined();
   });
 });
+
+describe('Mail’s conversation map', () => {
+  let folder = '';
+  afterEach(async () => {
+    if (folder) await rm(folder, { recursive: true, force: true });
+  });
+
+  it('is kept as one up-to-date note, plus a copy for the day', async () => {
+    folder = await mkdtemp(join(tmpdir(), 'friday-mail-'));
+    const vault = new ObsidianMemory(
+      () => folder,
+      () => ['Ravi'],
+    );
+    await vault.saveMailMap(
+      'what is pending in my email',
+      'Waiting on you:\n- Ravi - Project plan - wants your yes - since Monday',
+    );
+    const latest = await readFile(
+      join(folder, 'Friday', 'Mail', 'Conversation map.md'),
+      'utf8',
+    );
+    expect(latest).toContain('Asked: what is pending in my email');
+    expect(latest).toContain('Waiting on you:');
+    expect(latest).toContain('[[Ravi]]');
+    const notes = await vault.search('pending Ravi project');
+    expect(notes[0].path).toMatch(/^Friday\/Mail\//);
+  });
+});

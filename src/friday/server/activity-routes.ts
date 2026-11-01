@@ -73,6 +73,12 @@ export function fridayActivityRoutes({
   app.post('/friday/account/google/connect', async (c) =>
     relay('/account/google/connect', 'POST', undefined, await c.req.text()),
   );
+  // The owner's own Chrome: its signed-in Google accounts, and opening a
+  // page there (Gmail, an app's sign-in) instead of in Friday's own Chrome.
+  app.get('/friday/account/chrome', () => relay('/account/chrome'));
+  app.post('/friday/browser/open-mine', async (c) =>
+    relay('/browser/open-mine', 'POST', undefined, await c.req.text()),
+  );
   app.post('/friday/browser/open', async (c) =>
     relay('/browser/open', 'POST', undefined, await c.req.text()),
   );

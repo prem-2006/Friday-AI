@@ -120,6 +120,13 @@ HINGLISH = (
     r"bolo|baje|samay|waqt|aaj|tareekh|tarikh|laptop ka)\b"
 )
 HINDI_OPEN = r"kholo|khol do|kholiye|kholna|open karo|open kar do|chalu karo|start karo"
+HINDI_CLOSE = r"band karo|band kar do|bandh karo|bandh kar do|close karo|close kar do|hata do"
+# "in Chrome": the owner wants the browser, not the site's app.
+IN_BROWSER = (
+    r"(?:(.+?) (?:in|on) (?:the )?(?:google )?(?:chrome|browser)"
+    r"|(?:google )?(?:chrome|browser) (?:mein|me|main|pe|par) (.+)"
+    r"|(.+?) (?:google )?(?:chrome|browser) (?:mein|me|main|pe|par))"
+)
 HINDI_PLAY = r"bajao|baja do|play karo|play kar do|laga do|lagao|chalao|chala do"
 HINDI_SEARCH = r"search karo|search kar do|dhundo|dhoondo|google karo"
 # "the second video": its place in the results on screen.
@@ -134,6 +141,20 @@ FILE_EXT = re.compile(
 )
 
 RunTool = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
+
+
+def site_url(name: str) -> str | None:
+    """A spoken site name -> its address: "youtube" -> "youtube.com"."""
+    from friday_services.mcp_quick import SITE_NAMES
+
+    name = name.strip().removeprefix("the ")
+    if re.fullmatch(r"[\w-]+(\.[\w-]+)+", name.replace(" dot ", ".")):
+        return name.replace(" dot ", ".")
+    want = _key(name)
+    for host, shown in SITE_NAMES.items():
+        if _key(shown) == want:
+            return host
+    return None
 
 
 def plain(text: str) -> str:
@@ -284,6 +305,8 @@ class Instant:
             lambda n: _key(n) == _key(w),
             lambda n: _key(n.split()[-1]) == _key(w),
             lambda n: _key(re.sub(r"\s*\(.*\)$", "", n)) == _key(w),
+            lambda n: n.lower().startswith(w + " ")
+            and not re.search(r"chrome|edge|firefox|brave|opera", n.lower()),
         ):
             hit = next((n for n in names if test(n)), None)
             if hit:
@@ -404,6 +427,7 @@ class Instant:
             self._search,
             self._shown,
             self._play,
+            self._close,
             self._open,
             self._moves,
         ):
@@ -540,10 +564,11 @@ class Instant:
         """ "Play the first video", "second one", "play the video on the screen",
         "pehla video chalao": a video from the YouTube results on screen."""
         place = "|".join(ORDINALS)
+        t = re.sub(r"^(?:youtube|yt) (?:pe|par|mein|me|main|on) |^on (?:youtube|yt),? ", "", t)
         m = re.fullmatch(
             rf"(?:(?:play|open|click(?: on)?|start) )?(?:the )?({place}) (?:video|result|one|song|link)"
             r"(?: (?:on|in) (?:the |my )?(?:screen|page|list|results|youtube))?"
-            rf"(?: (?:{HINDI_PLAY}|karo|kholo))?",
+            rf"(?: (?:{HINDI_PLAY}|play|karo|kholo))?",
             t,
         )
         if m:
@@ -578,9 +603,27 @@ class Instant:
         ):
             return None  # "play" alone or "play something" needs the model
         query = re.sub(r"^(koi |ek )?(gaana|song) ", "", query)
+        # "lofi youtube pe chalao", "youtube pe lofi chalao": YouTube is where, not what.
+        query = re.sub(r"^(?:youtube|yt) (?:pe|par|mein|me|main|se) ", "", query)
+        query = re.sub(r" (?:youtube|yt) (?:pe|par|mein|me|main|se)$| (?:on|in) (?:youtube|yt)$", "", query)
+        if not query.strip():
+            return None
         done: list = []
         result = await self._call("play_youtube", {"query": query}, done)
         return {"say": result.get("friday_say") or f"Playing {query}.", "calls": done}
+
+    async def _close(self, t: str, _text: str):
+        m = re.fullmatch(r"(?:close|quit|exit|shut down|shut) (.+?)(?: completely| fully)?", t)
+        if not m:
+            m = re.fullmatch(rf"(.+?) (?:ko )?(?:poora |pura )?(?:{HINDI_CLOSE})", t)
+        if not m or MORE.search(m[1]) or DEICTIC.search(m[1]):
+            return None
+        app = self.app_named(m[1])
+        if not app:
+            return None
+        done: list = []
+        result = await self._call("close_app", {"name": app}, done)
+        return {"say": result.get("friday_say") or f"{app} is closed.", "calls": done}
 
     async def _open(self, t: str, text: str):
         m = re.fullmatch(
@@ -598,6 +641,14 @@ class Instant:
         if MORE.search(target) or DEICTIC.search(target):
             return None
         done: list = []
+        asked = re.fullmatch(IN_BROWSER, target)
+        if asked:
+            name = next(part for part in asked.groups() if part)
+            url = site_url(name)
+            if not url:
+                return None
+            result = await self._call("open_website", {"url": url, "in_browser": True}, done)
+            return {"say": result.get("friday_say") or f"Opened {name}.", "calls": done}
         site = target.replace(" dot ", ".")
         site = next((w.rstrip(".,!") for w in text.split() if plain(w) == target), site)
         if re.fullmatch(r"(?:https?://)?[\w-]+(\.[\w-]+)+(/\S*)?", site) and not FILE_EXT.search(

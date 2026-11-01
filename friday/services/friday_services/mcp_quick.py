@@ -24,6 +24,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 from pydantic import Field
 
+from friday_services import winctl
 from friday_services.activity import ActivityFeed
 from friday_services.browser import BrowserError, OnScreenBrowser, first_video, nth_video
 from friday_services.desktop import DesktopApps, DesktopError
@@ -122,6 +123,15 @@ SITE_NAMES = {
     "netflix.com": "Netflix",
     "spotify.com": "Spotify",
 }
+
+
+def youtube_query(title: str) -> str:
+    """A YouTube window's title -> the search its results page shows:
+    "(2) lofi - YouTube - Google Chrome" -> "lofi"; "" for the home page."""
+    shown = re.sub(r"^YouTube - ", "", title)  # the YouTube app: "YouTube - <page>"
+    shown = re.sub(r"^\(\d+\)\s*", "", shown)
+    shown = re.split(r"\s+-\s+YouTube\b", shown, maxsplit=1, flags=re.I)[0].strip()
+    return "" if shown.casefold() == "youtube" else shown
 
 
 def site_name(url: str) -> str:
@@ -225,7 +235,28 @@ def build_quick_server(
             f"Opening {name}…",
             lambda: desktop_worker.run(desktop.open, name),
         )
+        if opened.get("already_open"):
+            return {**opened, "friday_say": f"{opened['opened']} was already open; it is in front now."}
         return {**opened, "friday_say": f"{opened['opened']} is open."}
+
+    @server.tool(
+        name="close_app",
+        description=(
+            "Close a Windows app completely, as its X button does: every window of it, "
+            "e.g. 'close Chrome', 'Spotify band karo'. The app may still ask to save work."
+        ),
+        annotations=ACT,
+    )
+    async def close_app(name: Annotated[str, Field(min_length=1, max_length=80)]) -> dict:
+        closed = await act(
+            "close_app", f"Closing {name}…", lambda: desktop_worker.run(desktop.close, name)
+        )
+        say = (
+            f"{closed['closed']} is closed."
+            if closed["windows"]
+            else f"{closed['closed']} is not open."
+        )
+        return {**closed, "friday_say": say}
 
     @server.tool(
         name="write_in_app",
@@ -348,6 +379,10 @@ def build_quick_server(
             return await asyncio.to_thread(chrome)
         except Exception:
             return None
+
+    async def in_youtube_app() -> bool:
+        """Whether the owner has YouTube installed as an app (then YouTube plays there)."""
+        return bool(await desktop_worker.run(desktop.installed_site, "YouTube"))
 
     async def owner_browser(youtube: bool = False):
         """The browser the owner used last (for a song: the one already showing
@@ -745,11 +780,21 @@ def build_quick_server(
         name="open_website",
         description=(
             "Open a website in a new tab of the browser the owner used last, e.g. gmail.com "
-            "or irctc.co.in."
+            "or irctc.co.in. When the site is installed as a desktop app (ChatGPT, YouTube, "
+            "WhatsApp) that app opens instead, unless in_browser is true: only when the owner "
+            "asks for the browser ('in Chrome')."
         ),
         annotations=ACT,
     )
-    async def open_website(url: Annotated[str, Field(min_length=3, max_length=500)]) -> dict:
+    async def open_website(
+        url: Annotated[str, Field(min_length=3, max_length=500)],
+        in_browser: bool = False,
+    ) -> dict:
+        if not in_browser and owner_media is not None and not re.search(r"\.[a-z]+/\S", url):
+            # A site's front page, and the owner has its app: the app, not a tab.
+            app = await desktop_worker.run(desktop.app_for_site, site_name(url))
+            if app:
+                return await open_app(app)
         profile = await signed_in_chrome()
         if profile:
             full = url if "://" in url else f"https://{url}"
@@ -778,7 +823,9 @@ def build_quick_server(
             )
             return {"url": full, "friday_say": f"Opening {site_name(url)}."}
         page = await act(
-            "open_website", f"Opening {site_name(url)}.", in_browser(browser.open), url
+            "open_website",
+            f"Opening {site_name(url)}.",
+            lambda: browser_worker.run(browser.open, url),  # (in_browser is the argument here)
         )
         return {
             "url": page["url"],
@@ -795,6 +842,24 @@ def build_quick_server(
         annotations=ACT,
     )
     async def play_youtube(query: Annotated[str, Field(min_length=1, max_length=200)]) -> dict:
+        if owner_media is not None and await in_youtube_app():
+            # The owner's YouTube app: its own search, then a click on the video.
+            found = await asyncio.to_thread(first_video, query)
+            searched["youtube"] = query
+            done = await act(
+                "play_in_app",
+                f'Playing "{query}" in the YouTube app.',
+                lambda: desktop_worker.run(
+                    desktop.search_and_click, "YouTube", query, found[1] if found else ""
+                ),
+            )
+            title = found[1] if found else query
+            say = (
+                playing_sentence(title)
+                if done["clicked"]
+                else f'Here are the YouTube results for "{query}"; say which one to play.'
+            )
+            return {"title": title, "app": "YouTube", "friday_say": say}
         window = await owner_browser(youtube=True)
         profile = await signed_in_chrome()
         if profile and not (window and window.on_youtube):
@@ -871,11 +936,43 @@ def build_quick_server(
     )
     async def play_shown_video(n: Annotated[int, Field(ge=1, le=10)] = 1) -> dict:
         window = await owner_browser(youtube=True)
+        app_window = (
+            await desktop_worker.run(desktop.site_window, "YouTube") if owner_media else None
+        )
+        if app_window and window and window.on_youtube:
+            # YouTube in the app and in a browser tab: the one used last.
+            order = await asyncio.to_thread(lambda: [w["hwnd"] for w in winctl.windows()])
+            if window.hwnd in order and app_window["hwnd"] in order:
+                if order.index(window.hwnd) < order.index(app_window["hwnd"]):
+                    app_window = None
+        if app_window:
+            # The YouTube app's results ("lofi - YouTube"): click the video itself.
+            query = youtube_query(app_window["title"])
+            if not query and n == 1:
+                # The home page: its first video.
+                title = await act(
+                    "play_in_app",
+                    "Playing the first video in the YouTube app.",
+                    lambda: desktop_worker.run(desktop.click_first_video, app_window["hwnd"]),
+                )
+                if not title:
+                    raise ToolError("I could not see a video in the YouTube app.")
+                return {"title": title, "app": "YouTube", "friday_say": playing_sentence(title)}
+            if not query:
+                raise ToolError("I can only pick from search results. Tell me what to search.")
+            found = await asyncio.to_thread(nth_video, query, n)
+            if not found:
+                raise ToolError(f'I could not find video {n} for "{query}".')
+            done = await act(
+                "play_in_app",
+                f"Playing video {n} in the YouTube app.",
+                lambda: desktop_worker.run(desktop.search_and_click, "YouTube", "", found[1]),
+            )
+            if not done["clicked"]:
+                raise ToolError(f"I could not see video {n} in the YouTube app.")
+            return {"title": found[1], "app": "YouTube", "friday_say": playing_sentence(found[1])}
         if window and window.on_youtube:
-            # "(2) lofi - YouTube - Google Chrome" -> "lofi": a results page names its search.
-            shown = re.sub(r"^\(\d+\)\s*", "", window.title)
-            shown = re.split(r"\s+-\s+YouTube\b", shown, maxsplit=1, flags=re.I)[0].strip()
-            query = "" if shown.casefold() == "youtube" else shown
+            query = youtube_query(window.title)
             if not query:
                 raise ToolError("I can only pick from search results. Tell me what to search.")
             found = await asyncio.to_thread(nth_video, query, n)
@@ -932,6 +1029,13 @@ def build_quick_server(
             site = "youtube" if youtube and youtube.on_youtube else "google"
         if site == "youtube":
             searched["youtube"] = query
+        if site == "youtube" and owner_media is not None and await in_youtube_app():
+            await act(
+                "search_in_app",
+                f'Searching YouTube for "{query}" in the YouTube app.',
+                lambda: desktop_worker.run(desktop.search_and_click, "YouTube", query),
+            )
+            return {"app": "YouTube", "friday_say": "Here are the YouTube results."}
         window = youtube if site == "youtube" else await owner_browser()
         name = "YouTube" if site == "youtube" else "Google"
         profile = await signed_in_chrome()

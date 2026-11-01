@@ -24,6 +24,7 @@ def test_quick_tools_and_which_only_look(server):
     tools = quick(server).tools()
     assert set(tools) == {
         "open_app",
+        "close_app",
         "write_in_app",
         "clear_in_app",
         "press_keys_in_app",

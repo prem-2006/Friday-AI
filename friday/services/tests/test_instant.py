@@ -12,7 +12,15 @@ from friday_services.instant import Instant, gist, plain
 from .conftest import TOKEN
 
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
-APPS = ["Notepad", "Google Chrome", "Paint", "Spotify", "Visual Studio Code"]
+APPS = [
+    "Notepad",
+    "Google Chrome",
+    "Paint",
+    "Spotify",
+    "Visual Studio Code",
+    "ChatGPT Classic",
+    "YouTube",
+]
 
 
 @pytest.fixture
@@ -240,3 +248,37 @@ def test_every_instant_answer_shows_on_the_task_toast(server):
     before = len(events())
     httpx.post(f"{server.url}/instant", json={"text": "open notepad"}, headers=AUTH)
     assert "instant" not in [e["action"] for e in events()[before:]]
+
+
+def test_apps_close_completely_and_open_by_their_short_name(friday):
+    for said in ("close chrome", "Chrome band karo", "chrome ko band kar do", "quit spotify"):
+        call = ask(friday, said)["calls"][0]
+        assert call["tool"] == "close_app", said
+    assert ask(friday, "close chrome")["calls"][0]["args"] == {"name": "Google Chrome"}
+    assert ask(friday, "close the door") is None
+    # "ChatGPT" is the ChatGPT Classic desktop app, not the website.
+    assert ask(friday, "chatgpt kholo")["calls"][0] == {
+        "tool": "open_app",
+        "args": {"name": "ChatGPT Classic"},
+    }
+    assert ask(friday, "open youtube")["calls"][0]["args"] == {"name": "YouTube"}
+    # "google" is never Google Chrome.
+    assert friday.app_named("google") is None
+
+
+def test_in_chrome_means_the_browser_not_the_app(friday):
+    for said in ("open youtube in chrome", "chrome mein youtube kholo", "youtube chrome me kholo"):
+        assert ask(friday, said)["calls"][0] == {
+            "tool": "open_website",
+            "args": {"url": "youtube.com", "in_browser": True},
+        }, said
+
+
+def test_youtube_pe_is_where_to_play_not_what(friday):
+    for said in ("lofi beats youtube pe chalao", "youtube pe lofi beats chalao"):
+        assert ask(friday, said)["calls"][0] == {
+            "tool": "play_youtube",
+            "args": {"query": "lofi beats"},
+        }, said
+    for said, n in (("youtube pe pehla video play karo", 1), ("youtube pe doosra video chalao", 2)):
+        assert ask(friday, said)["calls"][0] == {"tool": "play_shown_video", "args": {"n": n}}, said

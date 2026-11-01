@@ -35,6 +35,7 @@ export const ABILITIES: Ability[] = [
           'open_website',
           'play_youtube',
           'web_search',
+          'play_shown_video',
           'weather',
           'directions',
         ],
@@ -52,6 +53,7 @@ export const ABILITIES: Ability[] = [
         connection: 'quick',
         names: [
           'open_app',
+          'close_app',
           'write_in_app',
           'clear_in_app',
           'press_keys_in_app',

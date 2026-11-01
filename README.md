@@ -41,7 +41,7 @@ flowchart LR
   Friday -- hands off --> Operator["Operator<br/>Windows apps"]
   Friday -- hands off --> Coder["Coder<br/>coding sites"]
   Friday -- after your yes --> WA["WhatsApp Desktop"]
-  Phone((Phone call)) -- Sarvam --> Services["Friday services<br/>(Python)"]
+  Phone((Phone call)) -- Exotel --> Services["Friday services<br/>(Python)"]
   Services --> Friday
   Services -- live activity + screenshots --> Stage
 ```
@@ -54,7 +54,7 @@ Friday is a team of agents:
 | **Navigator** | Drives Chrome on your screen and plans multi-step web tasks.                                      |
 | **Operator**  | Opens and works Windows apps through Windows UI Automation.                                       |
 | **Coder**     | Solves problems on coding practice sites in the browser.                                          |
-| **Reception** | Answers phone calls from anyone who isn't you. It has no tools and shares nothing about you.      |
+| **Reception** | Answers phone calls from anyone who isn't you. It takes a message and shares nothing about you.   |
 
 ### Gnani models
 
@@ -96,7 +96,7 @@ Copy `.env.example` to `.env` and fill in at least:
 | `FRIDAY_SERVICES_TOKEN`                       | Any long random string shared by the app and services    |
 | `FRIDAY_WAKE_WORD`, `FRIDAY_LEARN`            | Optional: turn off "Hey Friday" or learned shortcuts     |
 | `FRIDAY_FALLBACK_*`, `FRIDAY_PRIMARY_*`       | Optional: backup model, and extra keys/models to rotate  |
-| `SARVAM_*`, `NGROK_*`, `FRIDAY_PHONE_TOKEN`   | Optional: phone calls                                    |
+| `EXOTEL_*`, `NGROK_*`                         | Optional: phone calls                                    |
 
 ### Run
 
@@ -139,12 +139,14 @@ This adds Friday to the Start menu and the desktop.
 
 ## Phone calls
 
-With Sarvam and a free ngrok static domain set in `.env`, you can call Friday's number:
+Friday has its own phone line. With an Exotel number and a free ngrok static domain set in `.env`, Friday places and answers real calls itself, hearing with Prisma, thinking with Evon and speaking with Timbre:
 
-- **From your own number** you get the full assistant. Anything that needs approval is read back, and saying "yes" on the call approves it.
-- **From any other number** you get Reception, which takes a message. The conversation is saved to your notes under the caller's contact name.
+- **Friday calls for you:** "Call the clinic and book a check-up at 6 PM." Friday says it is your AI assistant, keeps to the goal, and reports the outcome with a transcript.
+- **Friday calls you** when you ask ("call me at 5") and before deadlines, and you can ask it to do things right there on the call.
+- **From your own number** you get the full assistant: everything Friday can do on the desktop, it can do on a call. Anything that needs approval is read back, and saying "yes" on the call approves it.
+- **From any other number** you get Reception, which takes a message. The message is saved to your notes under the caller's contact name.
 
-The Sarvam agent setup is described step by step in [friday/README.md](friday/README.md#call-friday).
+The setup is step by step in [friday/README.md](friday/README.md#call-friday).
 
 ## Pages
 

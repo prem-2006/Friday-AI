@@ -122,6 +122,13 @@ HINGLISH = (
 HINDI_OPEN = r"kholo|khol do|kholiye|kholna|open karo|open kar do|chalu karo|start karo"
 HINDI_PLAY = r"bajao|baja do|play karo|play kar do|laga do|lagao|chalao|chala do"
 HINDI_SEARCH = r"search karo|search kar do|dhundo|dhoondo|google karo"
+# "the second video": its place in the results on screen.
+ORDINALS = {
+    "first": 1, "1st": 1, "top": 1, "pehla": 1, "pehli": 1, "pehle": 1,
+    "second": 2, "2nd": 2, "doosra": 2, "dusra": 2, "doosri": 2, "dusri": 2,
+    "third": 3, "3rd": 3, "teesra": 3, "teesri": 3,
+    "fourth": 4, "4th": 4, "fifth": 5, "5th": 5,
+}  # fmt: skip
 FILE_EXT = re.compile(
     r"\.(pdf|docx?|xlsx?|pptx?|txt|csv|png|jpe?g|zip|mp[34]|mov|md|py|java|exe)$", re.I
 )
@@ -390,10 +397,12 @@ class Instant:
                     return replayed
 
         for rule in (
+            self._mail,
             self._status,
             self._media,
             self._volume,
             self._search,
+            self._shown,
             self._play,
             self._open,
             self._moves,
@@ -404,6 +413,34 @@ class Instant:
         return None
 
     # ---------- the instant rules ----------
+
+    async def _mail(self, t: str, _text: str):
+        """ "Any new email?", "what are my new mails", "naye mail aaye": the
+        background mail map, no model. Reading or summarising one goes to it."""
+        if len(t.split()) > 9 or MORE.search(t):
+            return None
+        if not re.search(r"\b(e?-?mails?|gmails?|inbox)\b", t):
+            return None
+        if re.search(r"\b(reply|draft|send|bhejo|likho|compose|delete|archive)\b", t):
+            return None  # writing mail: the Mail helper, with the owner's OK
+        done: list = []
+        if re.search(r"\b(summar\w*|read|padh\w*|kya likha|bata\w*|what do|what does)\b", t):
+            # A summary, always in the background (never a Gmail tab).
+            one = re.search(
+                r"\b(latest|last|recent|newest|top|pehla|aakhri)\b", t
+            ) and not re.search(r"\b(e?mails|gmails|emails)\b", t)
+            sender = re.search(r"\bfrom ([a-z][\w .]{1,30}?)$", t)
+            args = {
+                "which": 1 if one else 0,
+                "about": sender[1].strip() if sender else "",
+                "hinglish": bool(re.search(HINGLISH, t)),
+            }
+            result = await self._call("gmail_summary", args, done)
+            return {"say": result.get("friday_say") or "Done.", "calls": done}
+        if not re.search(r"\b(new|naye?|nayi|any|koi|unread|check|aaye?|aayi)\b", t):
+            return None
+        result = await self._call("gmail_new", {}, done)
+        return {"say": result.get("friday_say") or "Done.", "calls": done}
 
     async def _status(self, t: str, _text: str):
         """ "Is the laptop charging?", "battery kitni hai", "time kya hua": only that."""
@@ -469,12 +506,14 @@ class Instant:
 
     async def _search(self, t: str, _text: str):
         m = re.fullmatch(
-            r"(?:search(?: up)?|google|look up)(?: (?:on |in )?(google|youtube|the web|online))?"
-            r"(?: for)? (.+?)(?: (?:on|in) (google|chrome|edge|youtube|the web))?",
+            r"(?:search(?: up)?|google|look up)(?: (?:on |in )?(google|youtube|yt|the web|online))?"
+            r"(?: for)? (.+?)(?: (?:on|in) (google|chrome|edge|youtube|yt|the web))?",
             t,
         )
         if not m:
-            hindi = re.fullmatch(rf"(?:(youtube|google) (?:pe|par) )?(.+?) (?:{HINDI_SEARCH})", t)
+            hindi = re.fullmatch(
+                rf"(?:(youtube|yt|google) (?:pe|par) )?(.+?) (?:{HINDI_SEARCH})", t
+            )
             m = hindi and (hindi[1], hindi[2], None)
             if not m:
                 return None
@@ -486,10 +525,42 @@ class Instant:
             or re.search(r"\b(for|on|in|the|a|an|and|to|of|some)$", query)
         ):
             return None
-        site = "youtube" if "youtube" in (site_word or "", end_site or "") else "google"
+        said = {site_word, end_site} - {None}
+        args = {"query": query}
+        if said & {"youtube", "yt"}:
+            args["site"] = "youtube"
+        elif said or t.startswith("google") or "google karo" in t:
+            args["site"] = "google"
+        # No site named: the tool searches YouTube when the owner is on it, else Google.
         done: list = []
-        result = await self._call("web_search", {"site": site, "query": query}, done)
+        result = await self._call("web_search", args, done)
         return {"say": result.get("friday_say") or f"Searched {query}.", "calls": done}
+
+    async def _shown(self, t: str, _text: str):
+        """ "Play the first video", "second one", "play the video on the screen",
+        "pehla video chalao": a video from the YouTube results on screen."""
+        place = "|".join(ORDINALS)
+        m = re.fullmatch(
+            rf"(?:(?:play|open|click(?: on)?|start) )?(?:the )?({place}) (?:video|result|one|song|link)"
+            r"(?: (?:on|in) (?:the |my )?(?:screen|page|list|results|youtube))?"
+            rf"(?: (?:{HINDI_PLAY}|karo|kholo))?",
+            t,
+        )
+        if m:
+            n = ORDINALS[m[1]]
+        elif re.fullmatch(
+            r"(?:play|open|click(?: on)?|start) (?:the |this |that )?(?:video|one)"
+            r"(?: (?:which|that) (?:is|'s))?(?: (?:visible|shown|showing|open))?"
+            r" (?:on|in) (?:the |my )?(?:screen|page)"
+            r"|(?:play|open|click(?: on)?) (?:this|that) (?:video|one)",
+            t,
+        ):
+            n = 1
+        else:
+            return None
+        done: list = []
+        result = await self._call("play_shown_video", {"n": n}, done)
+        return {"say": result.get("friday_say") or "Playing it.", "calls": done}
 
     async def _play(self, t: str, _text: str):
         m = re.fullmatch(

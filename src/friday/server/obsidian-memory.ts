@@ -233,6 +233,34 @@ export class ObsidianMemory {
     this.cache = undefined;
   }
 
+  /** Mail's latest conversation map (who is waiting on whom), as one note
+   * kept up to date, plus a copy for the day. */
+  async saveMailMap(task: string, report: string) {
+    const root = this.vaultPath();
+    const now = Date.now();
+    const { date, time } = this.localDateTime(now);
+    const folder = join(root, 'Friday', 'Mail');
+    await mkdir(folder, { recursive: true });
+    const note = [
+      '---',
+      `updated: ${new Date(now).toISOString()}`,
+      'tags:',
+      '  - friday/mail',
+      '---',
+      '',
+      `# Gmail conversation map · ${date} ${time}`,
+      '',
+      `Asked: ${task.trim()}`,
+      '',
+      report.trim(),
+      ...this.related(report, ['Email', date]),
+      '',
+    ].join('\n');
+    await writeFile(join(folder, 'Conversation map.md'), note, 'utf8');
+    await writeFile(join(folder, `${date}.md`), note, 'utf8');
+    this.cache = undefined;
+  }
+
   async deleteMemory(id: string) {
     const safeId = id.replace(/[^a-zA-Z0-9_-]/g, '');
     if (!safeId) return;

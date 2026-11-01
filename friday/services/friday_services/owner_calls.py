@@ -83,8 +83,12 @@ class OwnerCaller:
             missing.append("your phone number (Your details, or FRIDAY_OWNER_PHONE)")
         return missing
 
-    async def call(self, reason: str, urgent: bool = False, updates: str = "") -> dict[str, Any]:
-        """Rings the owner now. Returns what happened, never raises for limits."""
+    async def call(
+        self, reason: str, urgent: bool = False, updates: str = "", opening: str = ""
+    ) -> dict[str, Any]:
+        """Rings the owner now. opening: the exact first words ("Hi Prem, you
+        have a reminder: ..."); else the model says the reason nicely.
+        Returns what happened, never raises for limits."""
         missing = self.missing()
         if missing:
             return {"called": False, "why": "Phone calls are not set up: " + ", ".join(missing)}
@@ -97,7 +101,7 @@ class OwnerCaller:
         if self._store.active():
             return {"called": False, "why": "Another call is in progress."}
         if self.agent:
-            return await self._call_with_agent(reason, updates, now)
+            return await self._call_with_agent(reason, updates, now, opening)
         record = self._store.create(
             phone=owner_phone(self._settings) or "",
             goal=reason,
@@ -114,10 +118,12 @@ class OwnerCaller:
         self._calls.append(now)
         return {"called": True, "call_id": record.id}
 
-    async def _call_with_agent(self, reason: str, updates: str, now: float) -> dict[str, Any]:
+    async def _call_with_agent(
+        self, reason: str, updates: str, now: float, opening: str = ""
+    ) -> dict[str, Any]:
         agent = self.agent
         note = reason + (f"\nThe updates:\n{updates}" if updates else "")
-        greeting = await (self._gnani or InyaDialer(self._settings)).greeting(note)
+        greeting = opening or await (self._gnani or InyaDialer(self._settings)).greeting(note)
         prompt = gnani_owner_prompt(
             self._settings.owner_name, greeting, reason, updates, self._settings.timezone
         )

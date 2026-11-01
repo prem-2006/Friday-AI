@@ -148,7 +148,9 @@ class Settings:
 
     @property
     def browser_prewarm(self) -> bool:
-        return self.get("FRIDAY_BROWSER_PREWARM", "true").lower() != "false"
+        # Off: Friday's own Chrome opens only when a web task needs it, not at
+        # every start (FRIDAY_BROWSER_PREWARM=true opens it at start again).
+        return self.get("FRIDAY_BROWSER_PREWARM", "false").lower() == "true"
 
     @property
     def browser_agent_dir(self) -> Path:

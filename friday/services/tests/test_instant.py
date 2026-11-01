@@ -188,3 +188,38 @@ def test_time_date_and_battery_questions_get_only_that(friday):
         ], text
     for text in ("set a timer for 5 minutes", "remind me at 5 pm"):
         assert all(c["tool"] != "system_status" for c in (ask(friday, text) or {}).get("calls", []))
+
+
+def test_email_summaries_always_go_to_the_background_summary(friday):
+    for text, args in (
+        ("summarise my gmail", {"which": 0, "about": "", "hinglish": False}),
+        ("read my latest email", {"which": 1, "about": "", "hinglish": False}),
+        ("summarise the mail from ravi", {"which": 0, "about": "ravi", "hinglish": False}),
+        ("mere mail padh ke batao", {"which": 0, "about": "", "hinglish": True}),
+    ):
+        assert ask(friday, text)["calls"] == [{"tool": "gmail_summary", "args": args}], text
+    assert ask(friday, "any new email")["calls"] == [{"tool": "gmail_new", "args": {}}]
+    assert ask(friday, "reply to the mail from ravi") is None  # the Mail helper drafts it
+
+
+def test_youtube_search_and_videos_on_screen(friday):
+    # No site named: the tool picks YouTube when the owner's browser shows it.
+    assert ask(friday, "search for lofi beats")["calls"][0] == {
+        "tool": "web_search",
+        "args": {"query": "lofi beats"},
+    }
+    assert ask(friday, "google cricket score")["calls"][0]["args"]["site"] == "google"
+    assert ask(friday, "search lofi on yt")["calls"][0]["args"]["site"] == "youtube"
+    for said, n in [
+        ("play first video", 1),
+        ("Play the first video.", 1),
+        ("play the second one", 2),
+        ("third video", 3),
+        ("play the video which is visible on the screen", 1),
+        ("play the video on my screen", 1),
+        ("play this video", 1),
+        ("pehla video chalao", 1),
+    ]:
+        assert ask(friday, said)["calls"] == [{"tool": "play_shown_video", "args": {"n": n}}], said
+    # A song whose name only starts like one still plays as a song.
+    assert ask(friday, "play first class")["calls"][0]["tool"] == "play_youtube"

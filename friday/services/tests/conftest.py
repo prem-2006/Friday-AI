@@ -153,6 +153,10 @@ class FakeBrowser:
         self.log.append(("play", query))
         return {"title": "Lo-fi beats to study to", "url": "https://yt.test/1"}
 
+    def play_shown(self, n):
+        self.log.append(("play_shown", n))
+        return {"title": "Rain sounds", "url": "https://yt.test/2"}
+
     def warm(self):
         pass
 

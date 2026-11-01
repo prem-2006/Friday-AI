@@ -35,6 +35,7 @@ def test_quick_tools_and_which_only_look(server):
         "open_website",
         "play_youtube",
         "web_search",
+        "play_shown_video",
         "look_at_screen",
         "snap_window",
         "watch_window",
@@ -68,12 +69,15 @@ def test_open_play_and_search_say_what_happened(server):
     assert opened["friday_say"] == "Notepad is open."
     assert server.launched == ["notepad"]
     site = client.call("open_website", {"url": "example.test"})["data"]
-    assert site["friday_say"] == "Opened Example."
+    assert site["friday_say"] == "Opening Example."
     played = client.call("play_youtube", {"query": "lofi"})["data"]
     # Short: only the start of the title, and not always the same words.
     assert "Lo-fi beats to study" in played["friday_say"]
     assert "YouTube" not in played["friday_say"]
     found = client.call("web_search", {"site": "youtube", "query": "lofi"})["data"]
+    shown = client.call("play_shown_video", {"n": 2})["data"]
+    assert "Rain sounds" in shown["friday_say"]
+    assert server.browser.log[-1] == ("play_shown", 2)
     assert found["friday_say"] == (
         "Top results on YouTube: Lo-fi beats to study to; Lo-fi channel; Rain sounds."
     )
@@ -278,3 +282,13 @@ def test_status_answers_only_what_was_asked():
     assert status_sentence(charging, now, "time") == "It's 8:23 AM."
     assert status_sentence(charging, now, "date", hinglish=True) == "Aaj Friday, 30 October hai."
     assert "8:23 AM" in status_sentence(charging, now)
+
+
+def test_sites_are_called_by_name_never_by_address():
+    from friday_services.mcp_quick import site_name
+
+    assert site_name("https://mail.google.com/mail/u/0") == "Gmail"
+    assert site_name("https://www.youtube.com/watch?v=abc") == "YouTube"
+    assert site_name("irctc.co.in") == "IRCTC"
+    assert site_name("https://in.linkedin.com/in/prem") == "LinkedIn"
+    assert site_name("bbc.co.uk") == "BBC"

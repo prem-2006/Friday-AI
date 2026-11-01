@@ -25,7 +25,7 @@ from mcp_types import ToolAnnotations
 from pydantic import Field
 
 from friday_services.activity import ActivityFeed
-from friday_services.browser import BrowserError, OnScreenBrowser, first_video
+from friday_services.browser import BrowserError, OnScreenBrowser, first_video, nth_video
 from friday_services.desktop import DesktopApps, DesktopError
 from friday_services.files import FilesError, find_files, open_file
 from friday_services.media import MediaError, OwnerMedia
@@ -97,6 +97,55 @@ PLAYING = ["Playing {}.", "Here's {}.", "{}, coming up.", "Okay, {}.", "Chal rah
 _TITLE_CUTS = re.compile(r"\s+[|•·–—-]\s+|\s*[(\[]|\s+(?:ft\.?|feat\.?|official)\b", re.I)
 
 
+# What Friday calls a site out loud: the name, never the address.
+SITE_NAMES = {
+    "mail.google.com": "Gmail",
+    "gmail.com": "Gmail",
+    "calendar.google.com": "Google Calendar",
+    "drive.google.com": "Google Drive",
+    "docs.google.com": "Google Docs",
+    "sheets.google.com": "Google Sheets",
+    "maps.google.com": "Google Maps",
+    "google.com": "Google",
+    "youtube.com": "YouTube",
+    "music.youtube.com": "YouTube Music",
+    "web.whatsapp.com": "WhatsApp",
+    "instagram.com": "Instagram",
+    "facebook.com": "Facebook",
+    "linkedin.com": "LinkedIn",
+    "github.com": "GitHub",
+    "chatgpt.com": "ChatGPT",
+    "claude.ai": "Claude",
+    "irctc.co.in": "IRCTC",
+    "amazon.in": "Amazon",
+    "flipkart.com": "Flipkart",
+    "netflix.com": "Netflix",
+    "spotify.com": "Spotify",
+}
+
+
+def site_name(url: str) -> str:
+    """ "https://mail.google.com/mail/u/0" -> "Gmail"; "irctc.co.in" -> "IRCTC"."""
+    from urllib.parse import urlparse
+
+    host = urlparse(url if "://" in url else f"https://{url}").hostname or url
+    host = host.lower().removeprefix("www.").removeprefix("m.")
+    if host in SITE_NAMES:
+        return SITE_NAMES[host]
+    parts = host.split(".")
+    for i in range(len(parts) - 1):  # "in.linkedin.com" -> "linkedin.com"
+        if ".".join(parts[i:]) in SITE_NAMES:
+            return SITE_NAMES[".".join(parts[i:])]
+    main = (
+        parts[-3]
+        if len(parts) >= 3 and parts[-2] in ("co", "com", "org", "gov", "ac")
+        else parts[0]
+        if len(parts) < 2
+        else parts[-2]
+    )
+    return main.upper() if len(main) <= 4 else main.capitalize()
+
+
 def video_name(title: str, words: int = 4) -> str:
     """The short part of a video title: "Kesariya - Full Song | Brahmastra (4K)" -> "Kesariya"."""
     first = _TITLE_CUTS.split(title.replace(" - YouTube", "").strip(), maxsplit=1)[0].strip()
@@ -133,6 +182,9 @@ def build_quick_server(
     owner_media: OwnerMedia | None = None,
     volume: Volume | None = None,
     watches: Watches | None = None,
+    chrome: Callable[[], Any] | None = None,
+    mail_map: Any = None,
+    summarise: Callable[[list[dict], bool], Awaitable[str | None]] | None = None,
 ) -> MCPServer:
     volume = volume or Volume()
     server = MCPServer(
@@ -287,6 +339,15 @@ def build_quick_server(
             "set_volume", detail, lambda: desktop_worker.run(volume.set, level, change, mute)
         )
         return {**state, "friday_say": volume_sentence(state)}
+
+    async def signed_in_chrome():
+        """The owner's own Chrome profile (their Gmail), when there is one."""
+        if chrome is None:
+            return None
+        try:
+            return await asyncio.to_thread(chrome)
+        except Exception:
+            return None
 
     async def owner_browser(youtube: bool = False):
         """The browser the owner used last (for a song: the one already showing
@@ -689,27 +750,40 @@ def build_quick_server(
         annotations=ACT,
     )
     async def open_website(url: Annotated[str, Field(min_length=3, max_length=500)]) -> dict:
+        profile = await signed_in_chrome()
+        if profile:
+            full = url if "://" in url else f"https://{url}"
+            await act(
+                "open_in_browser",
+                f"Opening {site_name(url)} in your Chrome.",
+                lambda: asyncio.to_thread(profile.open, full),
+            )
+            return {"url": full, "browser": "Chrome", "friday_say": f"Opening {site_name(url)}."}
         window = await owner_browser()
         if window:
             full = url if "://" in url else f"https://{url}"
             await act(
                 "open_in_browser",
-                f"Opening {url} in {window.name}.",
+                f"Opening {site_name(url)} in {window.name}.",
                 lambda: desktop_worker.run(owner_media.open_url, full, window, False),
             )
-            return {"url": full, "browser": window.name, "friday_say": f"Opened {url}."}
+            return {"url": full, "browser": window.name, "friday_say": f"Opening {site_name(url)}."}
         if owner_media is not None:
             # No browser of the owner's is open: their default browser, not Friday's own.
             full = url if "://" in url else f"https://{url}"
             await act(
-                "open_in_browser", f"Opening {url}.", lambda: asyncio.to_thread(open_path, full)
+                "open_in_browser",
+                f"Opening {site_name(url)}.",
+                lambda: asyncio.to_thread(open_path, full),
             )
-            return {"url": full, "friday_say": f"Opened {url}."}
-        page = await act("open_website", f"Opening {url}.", in_browser(browser.open), url)
+            return {"url": full, "friday_say": f"Opening {site_name(url)}."}
+        page = await act(
+            "open_website", f"Opening {site_name(url)}.", in_browser(browser.open), url
+        )
         return {
             "url": page["url"],
             "title": page["title"],
-            "friday_say": f"Opened {_short(page['title'] or url)}.",
+            "friday_say": f"Opening {site_name(url)}.",
         }
 
     @server.tool(
@@ -722,6 +796,27 @@ def build_quick_server(
     )
     async def play_youtube(query: Annotated[str, Field(min_length=1, max_length=200)]) -> dict:
         window = await owner_browser(youtube=True)
+        profile = await signed_in_chrome()
+        if profile and not (window and window.on_youtube):
+            # A new song where nothing plays yet: a tab in the owner's signed-in Chrome.
+            found = await asyncio.to_thread(first_video, query)
+            url = (
+                f"https://www.youtube.com/watch?v={found[0]}"
+                if found
+                else f"https://www.youtube.com/results?search_query={quote_plus(query)}"
+            )
+            await act(
+                "play_in_browser",
+                f'Playing "{query}" in your Chrome.',
+                lambda: asyncio.to_thread(profile.open, url),
+            )
+            title = found[1] if found else query
+            return {
+                "title": title,
+                "url": url,
+                "browser": "Chrome",
+                "friday_say": playing_sentence(title),
+            }
         if window:
             found = await asyncio.to_thread(first_video, query)
             url = (
@@ -762,21 +857,96 @@ def build_quick_server(
         )
         return {**video, "friday_say": playing_sentence(video["title"])}
 
+    # The last YouTube search Friday ran, to tell its results page from a video's.
+    searched = {"youtube": ""}
+
+    @server.tool(
+        name="play_shown_video",
+        description=(
+            "Play a video from the YouTube results the owner is looking at: 'play the first "
+            "video', 'play the second one', 'play the video on the screen'. n is its place "
+            "in the results, 1 for the first."
+        ),
+        annotations=ACT,
+    )
+    async def play_shown_video(n: Annotated[int, Field(ge=1, le=10)] = 1) -> dict:
+        window = await owner_browser(youtube=True)
+        if window and window.on_youtube:
+            # "(2) lofi - YouTube - Google Chrome" -> "lofi": a results page names its search.
+            shown = re.sub(r"^\(\d+\)\s*", "", window.title)
+            shown = re.split(r"\s+-\s+YouTube\b", shown, maxsplit=1, flags=re.I)[0].strip()
+            query = "" if shown.casefold() == "youtube" else shown
+            if not query:
+                raise ToolError("I can only pick from search results. Tell me what to search.")
+            found = await asyncio.to_thread(nth_video, query, n)
+            if not found:
+                raise ToolError(f'I could not find video {n} for "{query}".')
+            url = f"https://www.youtube.com/watch?v={found[0]}"
+            await act(
+                "play_in_browser",
+                f"Playing video {n} in {window.name}.",
+                lambda: desktop_worker.run(owner_media.open_url, url, window, True),
+            )
+            return {
+                "title": found[1],
+                "url": url,
+                "browser": window.name,
+                "friday_say": playing_sentence(found[1]),
+            }
+        if owner_media is not None and searched["youtube"]:
+            # The results Friday opened, in a window it cannot see right now.
+            found = await asyncio.to_thread(nth_video, searched["youtube"], n)
+            if found:
+                url = f"https://www.youtube.com/watch?v={found[0]}"
+                profile = await signed_in_chrome()
+                await act(
+                    "play_in_browser",
+                    f"Playing video {n}.",
+                    lambda: asyncio.to_thread(profile.open if profile else open_path, url),
+                )
+                return {"title": found[1], "url": url, "friday_say": playing_sentence(found[1])}
+        if owner_media is not None:
+            raise ToolError("YouTube is not open. Tell me what to play.")
+        video = await act(
+            "play_youtube", f"Playing video {n} on YouTube.", in_browser(browser.play_shown), n
+        )
+        return {**video, "friday_say": playing_sentence(video["title"])}
+
     @server.tool(
         name="web_search",
         description=(
             "Search YouTube or Google in the browser the owner used last. "
             "Use youtube for videos, channels, songs, tutorials or anything said to be on "
-            "YouTube; google for everything else."
+            "YouTube; google for everything else. Leave site out when the owner names no "
+            "site: YouTube if their browser is showing it, else Google."
         ),
         annotations=ACT,
     )
     async def web_search(
-        site: Literal["youtube", "google"],
         query: Annotated[str, Field(min_length=1, max_length=300)],
+        site: Literal["youtube", "google"] | None = None,
     ) -> dict:
+        # A window already showing YouTube takes YouTube searches, in its own tab.
+        youtube = await owner_browser(youtube=True)
+        if site is None:
+            site = "youtube" if youtube and youtube.on_youtube else "google"
+        if site == "youtube":
+            searched["youtube"] = query
+        window = youtube if site == "youtube" else await owner_browser()
         name = "YouTube" if site == "youtube" else "Google"
-        window = await owner_browser()
+        profile = await signed_in_chrome()
+        if profile and not (site == "youtube" and window and window.on_youtube):
+            url = (
+                f"https://www.youtube.com/results?search_query={quote_plus(query)}"
+                if site == "youtube"
+                else f"https://www.google.com/search?q={quote_plus(query)}"
+            )
+            await act(
+                "search_in_browser",
+                f'Searching {name} for "{query}" in your Chrome.',
+                lambda: asyncio.to_thread(profile.open, url),
+            )
+            return {"url": url, "browser": "Chrome", "friday_say": f"Here are the {name} results."}
         if window:
             url = (
                 f"https://www.youtube.com/results?search_query={quote_plus(query)}"
@@ -888,6 +1058,115 @@ def build_quick_server(
         on = f" on the {screen}" if screen != "current" else ""
         name = placed.get("app") or placed.get("window") or window
         return {**placed, "friday_say": f"{_short(name, 40)} is {where}{on}."}
+
+    if mail_map is not None:
+        from friday_services.mail_map import MailError, new_mail_sentence
+
+        @server.tool(
+            name="gmail_new",
+            description=(
+                "What is new in the owner's Gmail: 'any new email?', 'what are my new mails', "
+                "'naye mail aaye?'. Checks in the background (nothing opens on screen) and says "
+                "who wrote about what since the owner last asked."
+            ),
+            annotations=LOOK,
+        )
+        async def gmail_new() -> dict:
+            def run():
+                try:
+                    return mail_map.new()
+                except MailError as error:
+                    raise OrganizerError(str(error)) from error
+
+            count, mails, fresh = await act(
+                "gmail_new", "Checking your Gmail.", lambda: browser_worker.run(run)
+            )
+            return {
+                "unread": count,
+                "new": [mail.line() for mail in fresh],
+                "friday_say": new_mail_sentence(count, fresh),
+            }
+
+        @server.tool(
+            name="gmail_summary",
+            description=(
+                "Summarise the owner's Gmail, in the background (nothing opens on screen): "
+                "'summarise my Gmail', 'summary of my emails', 'what do my new mails say', "
+                "'read my latest email' (which 1), 'the mail from Ravi' (about 'ravi'). "
+                "which 0 = the newest unread emails together. Use this for every email "
+                "summary; never open Gmail or hand summaries to a helper. hinglish: true "
+                "when the owner spoke Hindi or Hinglish."
+            ),
+            annotations=LOOK,
+        )
+        async def gmail_summary(
+            which: Annotated[int, Field(ge=0, le=20)] = 0,
+            about: Annotated[str, Field(max_length=80)] = "",
+            hinglish: bool = False,
+        ) -> dict:
+            def gather():
+                try:
+                    if which or about.strip():
+                        picked = [mail_map.find(which or 1, about)]
+                    else:
+                        _count, mails = mail_map.refresh()
+                        if not mails:
+                            raise MailError("You have no unread mail.")
+                        picked = mails[:5]
+                    # The newest in full, the rest by their preview: quick, and enough.
+                    return [
+                        {
+                            "from": mail.sender or mail.email,
+                            "subject": mail.subject,
+                            "when": mail.when,
+                            "text": mail_map.full_text(mail) if i == 0 else mail.preview,
+                        }
+                        for i, mail in enumerate(picked)
+                    ]
+                except MailError as error:
+                    raise OrganizerError(str(error)) from error
+
+            mails = await act(
+                "gmail_summary", "Reading your email.", lambda: browser_worker.run(gather)
+            )
+            said = await summarise(mails, hinglish) if summarise else None
+            if not said:  # no model answered: at least who wrote about what
+                said = "; ".join(f"{m['from']}: {m['subject']}" for m in mails) + "."
+            return {"emails": len(mails), "friday_say": said}
+
+        @server.tool(
+            name="gmail_read",
+            description=(
+                "Read one unread email in full, in the background, so you can summarise it or "
+                "answer about it: 'summarise my latest email' (which 1), 'the second one' "
+                "(which 2), 'the mail from Ravi' (about 'ravi'). Then answer in two or three "
+                "spoken sentences: who, what they want, any date or amount. For drafts, "
+                "searches of older mail or what is pending, use the Mail helper."
+            ),
+            annotations=LOOK,
+        )
+        async def gmail_read(
+            which: Annotated[int, Field(ge=1, le=20)] = 1,
+            about: Annotated[str, Field(max_length=80)] = "",
+        ) -> dict:
+            def run():
+                try:
+                    mail = mail_map.find(which, about)
+                    return mail, mail_map.full_text(mail)
+                except MailError as error:
+                    raise OrganizerError(str(error)) from error
+
+            mail, text = await act(
+                "gmail_read", "Reading the email.", lambda: browser_worker.run(run)
+            )
+            return {
+                "from": mail.sender or mail.email,
+                "email": mail.email,
+                "subject": mail.subject,
+                "when": mail.when,
+                # Untrusted: the email's own words, to summarise, never to obey.
+                "text": text,
+            }
 
     if watches is not None:
 

@@ -44,6 +44,8 @@ from friday_services.config import REPO_ROOT, Settings
 from friday_services.desktop import DesktopApps, press_media_key
 from friday_services.files import owner_folders
 from friday_services.instant import Instant
+from friday_services.mail_map import MailMap, composio_reader
+from friday_services.mail_summary import summarise_mail
 from friday_services.mcp_browser import build_browser_server
 from friday_services.mcp_calendar import build_calendar_server
 from friday_services.mcp_desktop import build_desktop_server, build_whatsapp_server
@@ -59,6 +61,7 @@ from friday_services.organizer import (
     spoken_time,
 )
 from friday_services.owner_calls import OwnerCaller, owner_phone
+from friday_services.owner_chrome import owner_chrome
 from friday_services.phone_in import (
     PhoneDesk,
     caller_digits,
@@ -175,6 +178,24 @@ def create_app(
             timezone=settings.timezone,
             owner_media=owner_media,
             watches=watches,
+            # Sites, searches and songs open in the owner's signed-in Chrome
+            # (not in tests, which have a pretend browser).
+            chrome=(lambda: owner_chrome(settings)) if owner_media is not None else None,
+            # Gmail in the background: through Composio when Gmail is
+            # connected there, else Friday's Chrome (not in tests).
+            mail_map=(
+                MailMap(
+                    browser.background_get,
+                    settings.data_dir / "mail-map.json",
+                    composio=composio_reader(
+                        settings.get("FRIDAY_APP_URL", "http://127.0.0.1:4310"),
+                        settings.get("OWNER_TOKEN", ""),
+                    ),
+                )
+                if owner_media is not None
+                else None
+            ),
+            summarise=lambda mails, hinglish: summarise_mail(settings, mails, hinglish),
         ),
         "/calendar": build_calendar_server(calendar, settings.calendar_url),
         "/phone": build_phone_server(
@@ -232,8 +253,23 @@ def create_app(
     def should_call(due) -> bool:
         if due.kind == "call":
             return True
+        if due.kind == "reminder":
+            # A reminder rings the owner when it comes due (FRIDAY_CALL_REMINDERS=false: only spoken).
+            calls_for_reminders = settings.get("FRIDAY_CALL_REMINDERS", "true").lower() != "false"
+            return calls_for_reminders and due.minutes_left == 0
         calls_for_deadlines = settings.get("FRIDAY_CALL_DEADLINES", "true").lower() != "false"
         return due.kind == "deadline" and calls_for_deadlines and due.minutes_left <= 60
+
+    def call_opening(due) -> str:
+        """The first words when the owner picks up: straight to the point."""
+        first = (settings.owner_name or "").split()
+        hello = f"Hi {first[0]}" if first else "Hi"
+        if due.kind == "reminder":
+            what = due.text.removeprefix("Reminder: ").rstrip(". ")
+            return f"{hello}, you have a reminder: {what}."
+        if due.kind == "deadline":
+            return f"{hello}, about your deadline: {due.text}"
+        return ""
 
     async def place_contact_call(due) -> None:
         """A call to someone else that was scheduled for now."""
@@ -264,7 +300,9 @@ def create_app(
                         continue
                     announce(f"Calling your phone: {due.text}" if due.kind == "call" else due.text)
                     if should_call(due):
-                        placed = await owner_caller.call(due.text, urgent=due.minutes_left == 0)
+                        placed = await owner_caller.call(
+                            due.text, urgent=due.minutes_left == 0, opening=call_opening(due)
+                        )
                         if not placed["called"]:
                             feed.emit("friday", "call_owner", placed["why"], state="failed")
             except Exception:
@@ -401,6 +439,32 @@ def create_app(
             "friday", "google_sign_in", "Showing Google sign-in. Type your password yourself."
         )
         return await in_browser(browser.connect_google, email)
+
+    # The Google accounts signed in to the owner's own Chrome, and the one
+    # Friday uses (main page: Google account).
+    @app.get("/account/chrome", dependencies=[Depends(owner)])
+    async def chrome_account() -> dict:
+        from friday_services.owner_chrome import chrome_accounts
+
+        chosen = await asyncio.to_thread(owner_chrome, settings)
+        return {
+            "accounts": await asyncio.to_thread(chrome_accounts),
+            "using": {"folder": chosen.folder, "email": chosen.email} if chosen else None,
+        }
+
+    # A page in the owner's signed-in Chrome (Gmail, an app's sign-in link).
+    @app.post("/browser/open-mine", dependencies=[Depends(owner)])
+    async def browser_open_mine(request: Request) -> dict:
+        body = await request.json()
+        url = str((body or {}).get("url") or "")
+        if not url.startswith(("https://", "http://")):
+            raise HTTPException(400, "Send a web address starting with https://.")
+        chosen = await asyncio.to_thread(owner_chrome, settings)
+        if chosen:
+            await asyncio.to_thread(chosen.open, url)
+            return {"opened": url, "in": f"Chrome ({chosen.email})"}
+        await asyncio.to_thread(os.startfile, url)
+        return {"opened": url, "in": "your default browser"}
 
     @app.post("/browser/open", dependencies=[Depends(owner)])
     async def browser_open(request: Request) -> dict:
@@ -698,8 +762,14 @@ def create_app(
         """Sarvam's agent asks Friday to do what the owner said on a call to
         Friday's number (its API tool ask_friday)."""
         token = settings.get("FRIDAY_PHONE_TOKEN")
-        supplied = request.headers.get("authorization", "")
-        if not token or not hmac.compare_digest(supplied, f"Bearer {token}"):
+        if not token or not phone_token_ok(request, token):
+            # What came, never the secret: tells a missing header from a wrong token.
+            auth = request.headers.get("authorization", "")
+            print(
+                "Phone: ask_friday refused. Authorization header "
+                + (f"'{auth.split()[0]} …' ({len(auth)} chars)" if auth else "missing")
+                + "; set the tool's bearer token to FRIDAY_PHONE_TOKEN from .env."
+            )
             raise HTTPException(status_code=401, detail="Missing or wrong bearer token.")
         try:
             body = await request.json()
@@ -914,6 +984,18 @@ def create_app(
     for path, (_server, asgi) in mcp_apps.items():
         app.mount(path, BearerAuth(asgi, settings.services_token))
     return app
+
+
+def phone_token_ok(request: Request, token: str) -> bool:
+    """The phone agent's tool proves it is Friday's: the token as a bearer
+    token, a bare Authorization value, an x-api-key header or ?token=."""
+    auth = request.headers.get("authorization", "").strip()
+    offered = [
+        auth.split(None, 1)[1].strip() if auth.lower().startswith(("bearer ", "token ")) else auth,
+        request.headers.get("x-api-key", "").strip(),
+        request.query_params.get("token", "").strip(),
+    ]
+    return any(value and hmac.compare_digest(value, token) for value in offered)
 
 
 def start_wake(

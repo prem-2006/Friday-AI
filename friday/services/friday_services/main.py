@@ -584,12 +584,20 @@ def create_app(
         text = str(body.get("text") or "")[:500]
         if not text.strip() or feed.stopped:
             return {"handled": False}
+        last = (feed.recent(1) or [{"id": 0}])[-1]["id"]
         try:
             done = await instant.handle(text)
         except Exception:
             done = None  # a quick tool refused: the model sorts it out
         if not done:
             return {"handled": False}
+        # The task toast shows every request: one answered by a tool that
+        # showed no step of its own (battery, time, volume) shows what was said.
+        shown = any(e["id"] > last and e["actor"] != "control" for e in feed.recent(20))
+        if done.get("say") and not shown:
+            feed.emit(
+                "friday", "instant", done["say"], state="failed" if done.get("failed") else "done"
+            )
         return {"handled": True, **done}
 
     @app.post("/instant/learn", dependencies=[Depends(owner)])

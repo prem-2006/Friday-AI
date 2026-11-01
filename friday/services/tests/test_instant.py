@@ -223,3 +223,20 @@ def test_youtube_search_and_videos_on_screen(friday):
         assert ask(friday, said)["calls"] == [{"tool": "play_shown_video", "args": {"n": n}}], said
     # A song whose name only starts like one still plays as a song.
     assert ask(friday, "play first class")["calls"][0]["tool"] == "play_youtube"
+
+
+def test_every_instant_answer_shows_on_the_task_toast(server):
+    def events():
+        feed = httpx.get(f"{server.url}/activity", headers=AUTH).json()
+        return feed["events"] if isinstance(feed, dict) else feed
+
+    before = len(events())
+    done = httpx.post(f"{server.url}/instant", json={"text": "what time is it"}, headers=AUTH).json()
+    assert done["handled"]
+    new = events()[before:]
+    assert [(e["action"], e["state"]) for e in new] == [("instant", "done")]
+    assert new[0]["detail"] == done["say"]
+    # A tool that shows its own steps is not shown twice.
+    before = len(events())
+    httpx.post(f"{server.url}/instant", json={"text": "open notepad"}, headers=AUTH)
+    assert "instant" not in [e["action"] for e in events()[before:]]

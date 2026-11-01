@@ -168,3 +168,71 @@ export function resumeRequest(text: string): { resume: boolean; rest: string } {
   for (let i = 0; i < 3; i++) rest = rest.replace(LEAD_IN, '').trim();
   return { resume: true, rest: rest.split(' ').length >= 2 ? rest : '' };
 }
+
+// Said around a cancel without changing what is cancelled: "cancel all the
+// tasks", "sab kaam cancel karo", "Friday, leave it".
+const CANCEL_FILLER = new Set([
+  'all',
+  'the',
+  'a',
+  'my',
+  'your',
+  'this',
+  'that',
+  'it',
+  'task',
+  'tasks',
+  'job',
+  'jobs',
+  'everything',
+  'current',
+  'last',
+  'running',
+  'please',
+  'now',
+  'ok',
+  'okay',
+  'friday',
+  'hey',
+  'sab',
+  'saare',
+  'sare',
+  'saara',
+  'kaam',
+  'yeh',
+  'woh',
+  'wala',
+  'abhi',
+  'karo',
+  'kar',
+  'do',
+  'de',
+  'dijiye',
+  'just',
+  'bhai',
+  'yaar',
+]);
+const CANCEL = [
+  'cancel',
+  'abort',
+  'stop',
+  'chhodo',
+  'chodo',
+  'chhod',
+  'chod',
+  'leave',
+  'forget',
+  'never mind',
+  'nevermind',
+  'rehne',
+  'rehne do',
+];
+
+/** "Cancel all the task", "sab cancel karo", "chhodo", "never mind": drop
+ * whatever Friday is doing (not "cancel the email to Ravi", which is a request). */
+export function isCancelCommand(text: string): boolean {
+  const words = normalise(text).split(' ').filter(Boolean);
+  if (!words.length || words.length > 8) return false;
+  const core = words.filter((word) => !CANCEL_FILLER.has(word)).join(' ');
+  return CANCEL.includes(core);
+}

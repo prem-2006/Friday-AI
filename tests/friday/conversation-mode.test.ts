@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import {
+  isCancelCommand,
   isQuietCommand,
   isSleepCommand,
   mentionsFriday,
@@ -87,4 +88,25 @@ it('sleeps on a stop said with filler words, never on a longer request', () => {
 it('knows when Friday is named in a sentence', () => {
   expect(mentionsFriday('stop Friday')).toBe(true);
   expect(mentionsFriday('stop the fridge')).toBe(false);
+});
+
+it('cancels on "cancel all the task", in Hindi too, not on a request', () => {
+  for (const said of [
+    'cancel all the task',
+    'Cancel all the tasks.',
+    'Friday, cancel everything',
+    'sab cancel karo',
+    'saare kaam cancel kar do',
+    'chhodo',
+    'never mind',
+    'stop all the tasks',
+  ])
+    expect(isCancelCommand(said), said).toBe(true);
+  for (const said of [
+    'cancel the email to Ravi',
+    'cancel my meeting at 5',
+    'open chrome',
+    '',
+  ])
+    expect(isCancelCommand(said), said).toBe(false);
 });

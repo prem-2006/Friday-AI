@@ -452,6 +452,19 @@ function StageSession({
   // When the owner last spoke to Friday (follow-ups need no "Friday" until
   // AWAKE_MS after it).
   const awakeAt = useRef(0);
+  // Told "stop": only "Hey Friday" (or Caps Lock) brings Friday back; the
+  // services ignore double claps meanwhile.
+  const stoppedRef = useRef(false);
+  const markStopped = (stopped: boolean) => {
+    if (stoppedRef.current === stopped) return;
+    stoppedRef.current = stopped;
+    void fetch('/api/friday/wake/stopped', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ stopped }),
+      signal: AbortSignal.timeout(3000),
+    }).catch(() => {});
+  };
   // The notch shows Friday asleep again once that time is up.
   useEffect(() => {
     if (!alwaysOn) return;
@@ -974,6 +987,7 @@ function StageSession({
         if (!sleepCall) {
           quietRef.current = false;
           setQuiet(false);
+          markStopped(false);
           awakeAt.current = Date.now();
           if (!back.rest) {
             caption('you', text);
@@ -989,9 +1003,13 @@ function StageSession({
     if (text && isSleepCommand(text)) {
       quietRef.current = true;
       setQuiet(true);
+      markStopped(true);
       caption('you', text);
       await stopEverything();
       setPhase('off');
+      // Said aloud, so the owner knows without looking (not "Hey Friday":
+      // its own voice would wake it again).
+      await speak('Theek hai, main band ho gayi.', true);
       setSubtitle(
         'Stopped. Say “Hey Friday” or hold Caps Lock when you need me.',
       );
@@ -1011,6 +1029,7 @@ function StageSession({
     } else if (held && quietRef.current) {
       quietRef.current = false;
       setQuiet(false);
+      markStopped(false);
     }
     if (!text) {
       if (!startedOverFriday) setPhase(runningRef.current ? 'thinking' : 'off');
@@ -1268,6 +1287,7 @@ function StageSession({
     } else if (action === 'wake' && detail) {
       quietRef.current = false;
       setQuiet(false);
+      markStopped(false);
       awakeAt.current = Date.now();
       // "Hey Friday" or a double clap: hello about what is on screen, then
       // friday/services starts listening once it has been said.

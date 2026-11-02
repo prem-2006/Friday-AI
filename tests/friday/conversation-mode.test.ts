@@ -85,6 +85,37 @@ it('sleeps on a stop said with filler words, never on a longer request', () => {
     expect(isSleepCommand(said), said).toBe(false);
 });
 
+it('stops on the ways the owner really says it, in Hindi script too', () => {
+  for (const said of [
+    'stopped',
+    'Friday stopped.',
+    'kuchh nahi stop',
+    'nahi nahi kuchh nahi toh stop ho ja',
+    'stop stop stop',
+    'Friday, stop ho jao',
+    'disable Friday',
+    'Friday off',
+    'स्टॉप',
+    'स्टॉप फ्राइडे',
+  ])
+    expect(isSleepCommand(said), said).toBe(true);
+  for (const said of [
+    'stop the song and play the next one',
+    'turn off the lights',
+    'nahi stop mat karo gaana',
+  ])
+    expect(isSleepCommand(said), said).toBe(false);
+});
+
+it('wakes on "Hey Friday" as Gnani mishears it, only at the start', () => {
+  for (const said of ['a friday', 'He Friday!', 'हे फ्राइडे', 'फ्राइडे'])
+    expect(resumeRequest(said).resume, said).toBe(true);
+  expect(resumeRequest('a friday play some music').rest).toBe(
+    'play some music',
+  );
+  expect(resumeRequest('kal hai friday').resume).toBe(false);
+});
+
 it('knows when Friday is named in a sentence', () => {
   expect(mentionsFriday('stop Friday')).toBe(true);
   expect(mentionsFriday('stop the fridge')).toBe(false);

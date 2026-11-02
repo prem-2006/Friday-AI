@@ -21,3 +21,6 @@ data/
 
 # Added by CopilotKit CLI: browser snapshots a coding agent writes.
 .playwright-mcp/
+
+# Graphify: the local code map, rebuilt with `graphify update .`
+graphify-out/

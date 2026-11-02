@@ -29,7 +29,7 @@ from friday_services.activity import ActivityFeed
 from friday_services.browser import BrowserError, OnScreenBrowser, first_video, nth_video
 from friday_services.desktop import DesktopApps, DesktopError
 from friday_services.files import FilesError, find_files, open_file
-from friday_services.media import MediaError, OwnerMedia
+from friday_services.media import MediaError, OwnerMedia, youtube_window
 from friday_services.meetings import MeetingError, calendar_event_url
 from friday_services.organizer import (
     Notes,
@@ -73,6 +73,32 @@ MediaAction = Literal[
     "rewind",
     "forward",
 ]
+YouTubeAction = Literal[
+    "fullscreen",
+    "exit_fullscreen",
+    "theater",
+    "captions",
+    "mute",
+    "unmute",
+    "faster",
+    "slower",
+    "pause",
+    "play",
+    "next",
+    "previous",
+    "rewind",
+    "forward",
+]
+YOUTUBE_SAID = {
+    "fullscreen": "Full screen.",
+    "exit_fullscreen": "Back from full screen.",
+    "theater": "Theater mode.",
+    "captions": "Captions switched.",
+    "mute": "Muted.",
+    "unmute": "Unmuted.",
+    "faster": "Faster.",
+    "slower": "Slower.",
+}
 MEDIA_SAID = {
     "pause": "Paused.",
     "play": "Playing.",
@@ -339,6 +365,41 @@ def build_quick_server(
 
         done = await act("media_control", f"Media: {action.replace('_', ' ')}.", run)
         say = MEDIA_SAID[action]
+        if action in ("rewind", "forward"):
+            say = f"{'Back' if action == 'rewind' else 'Ahead'} {seconds} seconds."
+        return {**done, "friday_say": say}
+
+    @server.tool(
+        name="youtube_control",
+        description=(
+            "In YouTube (the YouTube app or a browser tab with YouTube), the one the "
+            "owner used last: fullscreen, exit_fullscreen, theater, captions, mute, "
+            "unmute, faster, slower, pause, play, next, previous, rewind, forward. While "
+            "the owner is on YouTube, 'full screen', 'mute', 'next' and so on mean the "
+            "video: use this, never snap_window or press_keys_in_app. in_front: act only "
+            "if YouTube is the window in front."
+        ),
+        annotations=ACT,
+    )
+    async def youtube_control(
+        action: YouTubeAction,
+        seconds: Annotated[int, Field(ge=1, le=600)] = 10,
+        in_front: bool = False,
+    ) -> dict:
+        if owner_media is None:
+            raise ToolError("I cannot reach YouTube on this PC.")
+        windows = await asyncio.to_thread(winctl.windows)
+        window = youtube_window(windows, in_front)
+        if window is None:
+            if in_front:
+                return {"skipped": True, "friday_say": ""}
+            raise ToolError("YouTube is not open.")
+        done = await act(
+            "youtube_control",
+            f"YouTube: {action.replace('_', ' ')}.",
+            lambda: desktop_worker.run(owner_media.youtube, action, window, seconds),
+        )
+        say = YOUTUBE_SAID.get(action) or MEDIA_SAID[action]
         if action in ("rewind", "forward"):
             say = f"{'Back' if action == 'rewind' else 'Ahead'} {seconds} seconds."
         return {**done, "friday_say": say}
@@ -1140,7 +1201,8 @@ def build_quick_server(
             "Move an open window: a half or quarter of a screen, the center, maximize or "
             f"minimize. Positions: {', '.join(POSITIONS)}. screen: laptop (the built-in "
             "panel), monitor (the external display) or current. The window is found by its "
-            "app ('chrome', 'notepad'), process or part of its title."
+            "app ('chrome', 'notepad'), process or part of its title. Not for 'full "
+            "screen' while the owner is on YouTube: that is youtube_control."
         ),
         annotations=ACT,
     )

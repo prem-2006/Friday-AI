@@ -282,3 +282,42 @@ def test_youtube_pe_is_where_to_play_not_what(friday):
         }, said
     for said, n in (("youtube pe pehla video play karo", 1), ("youtube pe doosra video chalao", 2)):
         assert ask(friday, said)["calls"][0] == {"tool": "play_shown_video", "args": {"n": n}}, said
+
+
+def test_youtube_player_asks_go_to_youtube(friday):
+    for said, action in [
+        ("full screen", "fullscreen"),
+        ("video ko full screen karo", "fullscreen"),
+        ("exit full screen", "exit_fullscreen"),
+        ("full screen band karo", "exit_fullscreen"),
+        ("captions on", "captions"),
+        ("theater mode", "theater"),
+        ("video mute karo", "mute"),
+        ("next video", "next"),
+        ("agla video", "next"),
+        ("youtube speed badhao", "faster"),
+    ]:
+        call = ask(friday, said)["calls"][0]
+        assert call["tool"] == "youtube_control", said
+        assert call["args"]["action"] == action, said
+    # Without "video" or "YouTube": only while YouTube is in front.
+    assert ask(friday, "full screen")["calls"][0]["args"]["in_front"] is True
+    assert ask(friday, "video full screen")["calls"][0]["args"]["in_front"] is False
+    # Someone else's: the PC's volume, a window move, the next song.
+    for said in ["mute", "full screen chrome", "next song", "maximize notepad"]:
+        done = ask(friday, said)
+        assert not done or done["calls"][0]["tool"] != "youtube_control", said
+
+
+def test_full_screen_off_youtube_is_not_a_video_ask(tmp_path):
+    ran: list = []
+
+    async def run(tool, args):
+        ran.append(tool)
+        if tool == "youtube_control" and args.get("in_front"):
+            return {"skipped": True, "friday_say": ""}
+        return {"friday_say": "ok"}
+
+    instant = Instant(tmp_path / "s.json", lambda: APPS, run)
+    assert asyncio.run(instant.handle("full screen")) is None  # the model decides
+    assert ran == ["youtube_control"]

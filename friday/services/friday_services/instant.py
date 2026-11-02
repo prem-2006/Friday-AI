@@ -620,8 +620,22 @@ class Instant:
             rf"(?: (?:{HINDI_PLAY}|play|karo|kholo))?",
             t,
         )
+        # "3rd number ka play karo", "teesra wala chalao", "number 3 video".
+        loose = re.fullmatch(
+            rf"(?:(?P<verb1>play|open|click(?: on)?|start) )?(?:the )?(?:number )?"
+            rf"(?P<n>{place}|\d{{1,2}}(?:st|nd|rd|th)?)(?: number)?"
+            r"(?: (?:ka|ki|ke|wala|vaala|vala|waala|wali|waali|vaali))?"
+            r"(?: (?P<noun>video|result|one|song|link|gaana|wala|vaala))?"
+            rf"(?: (?P<verb2>{HINDI_PLAY}|play|play karo|play kar do|karo|kholo))?",
+            t,
+        )
         if m:
             n = ORDINALS[m[1]]
+        elif loose and (loose["verb1"] or loose["noun"] or loose["verb2"]):
+            word = loose["n"]
+            n = ORDINALS.get(word) or int(re.sub(r"\D", "", word))
+            if not 1 <= n <= 30:
+                return None
         elif re.fullmatch(
             r"(?:play|open|click(?: on)?|start) (?:the |this |that )?(?:video|one)"
             r"(?: (?:which|that) (?:is|'s))?(?: (?:visible|shown|showing|open))?"

@@ -321,3 +321,19 @@ def test_full_screen_off_youtube_is_not_a_video_ask(tmp_path):
     instant = Instant(tmp_path / "s.json", lambda: APPS, run)
     assert asyncio.run(instant.handle("full screen")) is None  # the model decides
     assert ran == ["youtube_control"]
+
+
+def test_a_number_on_the_page_plays_that_video_there(friday):
+    for said, n in [
+        ("play the third video", 3),
+        ("3rd number ka play karo", 3),
+        ("teesra wala chalao", 3),
+        ("number 4 video", 4),
+        ("play 2nd one", 2),
+        ("youtube pe pehla video play karo", 1),
+    ]:
+        call = ask(friday, said)["calls"][0]
+        assert call == {"tool": "play_shown_video", "args": {"n": n}}, said
+    for said in ["third", "volume 3", "play 3 idiots trailer"]:
+        done = ask(friday, said)
+        assert not done or done["calls"][0]["tool"] != "play_shown_video", said

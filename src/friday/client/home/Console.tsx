@@ -1,6 +1,6 @@
 // Friday: the console at the top of the main page, in the layout of the ARRC
 // "J" console: how to talk and system status on the left, Friday's reactor
-// and what it is doing in the middle, and the live feed, reminders and
+// and what it is doing in the middle, and the live feed and
 // abilities on the right.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -129,20 +129,6 @@ const clock = (seconds: number) =>
     minute: '2-digit',
   });
 
-function dueLabel(due: number) {
-  const date = new Date(due * 1000);
-  const today = new Date();
-  const tomorrow = new Date(today.getTime() + 86_400_000);
-  const time = date.toLocaleTimeString([], {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-  if (date.toDateString() === today.toDateString()) return `Today ${time}`;
-  if (date.toDateString() === tomorrow.toDateString())
-    return `Tomorrow ${time}`;
-  return `${date.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })} ${time}`;
-}
-
 function Reactor({
   state,
   word,
@@ -226,8 +212,6 @@ export function FridayConsole() {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [online, setOnline] = useState(false);
   const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [draft, setDraft] = useState({ text: '', when: '', kind: 'deadline' });
-  const [note, setNote] = useState('');
   const [now, setNow] = useState(Date.now());
 
   const loadReminders = useCallback(async () => {
@@ -299,31 +283,6 @@ export function FridayConsole() {
   const word = latest
     ? latest.action.replace(/_/g, ' ').replace(/^browser /, '') || 'Friday'
     : 'Friday';
-
-  const addReminder = async () => {
-    setNote('');
-    try {
-      await api('/friday/reminders', {
-        method: 'POST',
-        body: JSON.stringify({
-          kind: draft.kind,
-          text: draft.text,
-          when: draft.when,
-        }),
-      });
-      setDraft({ text: '', when: '', kind: draft.kind });
-      await loadReminders();
-    } catch (error) {
-      setNote(error instanceof Error ? error.message : 'Could not save it.');
-    }
-  };
-  const finish = async (id: string) => {
-    await api(`/friday/reminders/${encodeURIComponent(id)}/done`, {
-      method: 'POST',
-      body: '{}',
-    }).catch(() => {});
-    await loadReminders();
-  };
 
   // FRIDAY: one clear order: who Friday is and how to talk to it, what it is
   // doing, then everything it can do.
@@ -423,72 +382,6 @@ export function FridayConsole() {
                 </div>
               ))}
           </div>
-        </div>
-        <div className="panel reminders">
-          <div className="label">Reminders & deadlines</div>
-          <div className="dls">
-            {reminders.length === 0 && (
-              <div className="empty">Nothing coming up.</div>
-            )}
-            {reminders.map((item) => {
-              const left = item.due * 1000 - now;
-              return (
-                <div
-                  key={item.id}
-                  className={`dl ${left < 0 ? 'late' : left < 3 * 3_600_000 ? 'soon' : ''}`}
-                >
-                  <div>
-                    <b>{item.text}</b>
-                    <small>
-                      {item.kind} · {dueLabel(item.due)}
-                    </small>
-                  </div>
-                  <button type="button" onClick={() => void finish(item.id)}>
-                    Done
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-          <form
-            className="add"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void addReminder();
-            }}
-          >
-            <input
-              placeholder="What, e.g. DBMS project"
-              value={draft.text}
-              onChange={(event) =>
-                setDraft({ ...draft, text: event.target.value })
-              }
-            />
-            <div className="add-row">
-              <input
-                type="datetime-local"
-                aria-label="When"
-                value={draft.when}
-                onChange={(event) =>
-                  setDraft({ ...draft, when: event.target.value })
-                }
-              />
-              <select
-                aria-label="Kind"
-                value={draft.kind}
-                onChange={(event) =>
-                  setDraft({ ...draft, kind: event.target.value })
-                }
-              >
-                <option value="deadline">Deadline</option>
-                <option value="reminder">Reminder</option>
-              </select>
-            </div>
-            <button type="submit" disabled={!draft.text.trim() || !draft.when}>
-              Add
-            </button>
-            {note && <div className="watchmsg">{note}</div>}
-          </form>
         </div>
         <div className="panel samples">
           <div className="label">Try saying</div>

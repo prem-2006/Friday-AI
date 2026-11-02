@@ -521,7 +521,6 @@
 .console-row > :nth-child(2) {
   animation-delay: 0.12s;
 }
-.console-row > :nth-child(3),
 .friday-home .abilities {
   animation-delay: 0.24s;
 }
@@ -586,7 +585,7 @@
 }
 .console-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
   align-items: stretch;
 }
@@ -614,12 +613,6 @@
   }
   .friday-home .console-core {
     order: -1;
-  }
-  .console-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .console-row > .samples {
-    grid-column: 1 / -1;
   }
 }
 @media (max-width: 700px) {

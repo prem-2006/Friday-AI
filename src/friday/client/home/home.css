@@ -410,54 +410,6 @@
   text-align: center;
   padding: 16px 0;
 }
-.dls {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-.dl {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 9px 11px;
-  background: rgba(255, 255, 255, 0.9);
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  align-items: center;
-}
-.dl b {
-  display: block;
-  font-weight: 600;
-}
-.dl small {
-  color: var(--muted);
-  font: 12px var(--mono);
-}
-.dl.soon {
-  border-color: var(--amber);
-  background: rgba(217, 119, 6, 0.08);
-}
-.dl.late {
-  border-color: var(--red);
-  background: rgba(220, 38, 38, 0.07);
-}
-.add {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.add-row {
-  display: flex;
-  gap: 6px;
-}
-.add-row input {
-  flex: 1;
-}
-.watchmsg {
-  font-size: 13px;
-  color: var(--red);
-}
 .caps {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -551,46 +503,6 @@
   font-size: 13px;
   cursor: pointer;
 }
-.home-calls {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 6px;
-}
-.home-calls li {
-  border: 1px solid var(--line, rgba(127, 127, 127, 0.2));
-  border-radius: 10px;
-  overflow: hidden;
-}
-.home-call-head {
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.home-call-lines {
-  display: grid;
-  gap: 6px;
-  max-height: 260px;
-  overflow-y: auto;
-  padding: 4px 12px 12px;
-  font-size: 13px;
-  line-height: 1.45;
-}
-.home-call-lines p {
-  margin: 0;
-}
-.home-call-lines p.friday b {
-  color: var(--accent, #6d5ef6);
-}
 .home-contacts button {
   display: grid;
   place-items: center;
@@ -599,6 +511,28 @@
   background: transparent;
   color: var(--muted);
   cursor: pointer;
+}
+.home-contacts-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin: -6px 0 14px;
+  padding: 7px 10px;
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.2));
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.home-contacts-more svg {
+  transition: transform 0.2s ease;
+}
+.home-contacts-more.open svg {
+  transform: rotate(180deg);
 }
 .home-form {
   display: grid;
@@ -634,9 +568,6 @@
   outline: none;
   resize: vertical;
 }
-.friday-home .add-row select {
-  width: auto;
-}
 .friday-home input:focus,
 .friday-home textarea:focus,
 .friday-home select:focus {
@@ -663,17 +594,15 @@
   font-size: 13px;
   cursor: pointer;
 }
-.friday-home button:not(.primary, .add button):hover:not(:disabled) {
+.friday-home button:not(.primary):hover:not(:disabled) {
   border-color: var(--cyan) !important;
   color: var(--cyan) !important;
 }
 /* A filled button keeps its text colour on hover (cyan on cyan hid it). */
-.friday-home button.primary:hover:not(:disabled),
-.friday-home .add button:hover:not(:disabled) {
+.friday-home button.primary:hover:not(:disabled) {
   filter: brightness(1.12);
 }
-.friday-home button.primary,
-.friday-home .add button {
+.friday-home button.primary {
   border-color: transparent !important;
   background: var(--cyan) !important;
   color: #fff !important;

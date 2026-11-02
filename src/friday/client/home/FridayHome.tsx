@@ -1,10 +1,11 @@
-// Friday: the main page. The owner's details, Friday's Google account and
+// Friday: the main page. The owner's contacts, Friday's Google account and
 // shortcuts into it, and what Friday is allowed to do. Talking happens on the
 // voice screen or the desktop notch, by holding Caps Lock.
 import { useCallback, useEffect, useState } from 'react';
 import {
   Activity,
   CalendarDays,
+  ChevronDown,
   HardDrive,
   LayoutGrid,
   Loader2,
@@ -13,7 +14,6 @@ import {
   Phone,
   Play,
   ShieldCheck,
-  UserRound,
   X,
 } from 'lucide-react';
 import type { Connection } from '../../../shared/connection-types';
@@ -58,114 +58,21 @@ type Profile = Partial<
     string
   >
 >;
-const FIELDS: {
-  key: keyof Profile;
-  label: string;
-  type?: string;
-  wide?: boolean;
-}[] = [
-  { key: 'name', label: 'Name' },
-  { key: 'email', label: 'Email', type: 'email' },
-  { key: 'phone', label: 'Phone', type: 'tel' },
-  { key: 'city', label: 'City' },
-  { key: 'address', label: 'Address', wide: true },
-];
-
-function ProfileCard({
-  saved,
-  onSaved,
-  loadError,
-}: {
-  saved: Profile;
-  onSaved: (profile: Profile) => void;
-  loadError: boolean;
-}) {
-  const [draft, setDraft] = useState<Profile>(saved);
-  const [status, setStatus] = useState('');
-  useEffect(() => setDraft(saved), [saved]);
-  const changed = FIELDS.concat({ key: 'notes', label: '' }).some(
-    ({ key }) => (draft[key] ?? '') !== (saved[key] ?? ''),
-  );
-  const save = async () => {
-    setStatus('');
-    try {
-      const profile = await api<Profile>('/friday/profile', {
-        method: 'PUT',
-        body: JSON.stringify(draft),
-      });
-      onSaved(profile);
-      setStatus('Saved.');
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Could not save.');
-    }
-  };
-  return (
-    <section className="home-card">
-      <header>
-        <UserRound size={18} />
-        <h2>Your details</h2>
-      </header>
-      <p className="home-muted">
-        Kept on this PC. Friday uses them only when a task needs them, and asks
-        before sharing them with anyone.
-      </p>
-      <form
-        className="home-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void save();
-        }}
-      >
-        {FIELDS.map(({ key, label, type, wide }) => (
-          <label key={key} className={wide ? 'wide' : ''}>
-            <span>{label}</span>
-            <input
-              type={type ?? 'text'}
-              value={draft[key] ?? ''}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  [key]: event.target.value,
-                }))
-              }
-            />
-          </label>
-        ))}
-        <label className="wide">
-          <span>Notes for Friday</span>
-          <textarea
-            rows={4}
-            placeholder="Preferences, e.g. “I prefer morning appointments.”"
-            value={draft.notes ?? ''}
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, notes: event.target.value }))
-            }
-          />
-        </label>
-        <div className="home-actions wide">
-          <span className="home-muted">
-            {status || (loadError ? 'Could not load your details.' : '')}
-          </span>
-          <button type="submit" className="primary" disabled={!changed}>
-            Save
-          </button>
-        </div>
-      </form>
-    </section>
-  );
-}
-
 interface Contact {
   name: string;
   phone: string;
   note?: string;
 }
 
+// How many contacts show before "Show more".
+const CONTACTS_SHOWN = 2;
+
 // The people Friday may phone for the owner: "call Rahul" uses Rahul's number.
 function ContactsCard() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [draft, setDraft] = useState({ name: '', phone: '' });
   const [status, setStatus] = useState('');
+  const [showAll, setShowAll] = useState(false);
   useEffect(() => {
     void api<Contact[]>('/friday/contacts')
       .then(setContacts)
@@ -195,6 +102,8 @@ function ContactsCard() {
     if (await save([...others, { name, phone: draft.phone.trim() }]))
       setDraft({ name: '', phone: '' });
   };
+  const shown = showAll ? contacts : contacts.slice(0, CONTACTS_SHOWN);
+  const hidden = Math.max(0, contacts.length - CONTACTS_SHOWN);
   return (
     <section className="home-card">
       <header>
@@ -208,7 +117,7 @@ function ContactsCard() {
       </p>
       {contacts.length > 0 && (
         <ul className="home-contacts">
-          {contacts.map((contact) => (
+          {shown.map((contact) => (
             <li key={contact.name}>
               <span>{contact.name}</span>
               <span className="home-muted">{contact.phone}</span>
@@ -224,6 +133,17 @@ function ContactsCard() {
             </li>
           ))}
         </ul>
+      )}
+      {hidden > 0 && (
+        <button
+          type="button"
+          className={`home-contacts-more ${showAll ? 'open' : ''}`}
+          aria-expanded={showAll}
+          onClick={() => setShowAll(!showAll)}
+        >
+          {showAll ? 'Show less' : `Show ${hidden} more`}
+          <ChevronDown size={16} />
+        </button>
       )}
       <form
         className="home-form"
@@ -269,15 +189,6 @@ function ContactsCard() {
   );
 }
 
-interface CallLog {
-  id: string;
-  who: string;
-  started: string;
-  seconds: number;
-  lines: { who: 'Friday' | 'Them'; text: string }[];
-}
-
-// Friday's phone calls (through Sarvam) and what was said on each.
 interface ConnectedApp {
   id: string;
   name: string;
@@ -579,87 +490,6 @@ function ConnectionsCard() {
   );
 }
 
-function CallsCard() {
-  const [calls, setCalls] = useState<CallLog[]>();
-  const [open, setOpen] = useState<string>();
-  const [status, setStatus] = useState('');
-  const load = useCallback(async () => {
-    try {
-      setCalls(await api<CallLog[]>('/friday/calls'));
-      setStatus('');
-    } catch (error) {
-      setStatus(
-        error instanceof Error ? error.message : 'Could not load the calls.',
-      );
-    }
-  }, []);
-  useEffect(() => {
-    void load();
-    const refresh = setInterval(() => void load(), 30_000);
-    return () => clearInterval(refresh);
-  }, [load]);
-  return (
-    <section className="home-card">
-      <header>
-        <Phone size={18} />
-        <h2>Calls</h2>
-        <button type="button" className="home-link" onClick={() => void load()}>
-          Refresh
-        </button>
-      </header>
-      <p className="home-muted">
-        {status ||
-          (calls === undefined
-            ? 'Loading…'
-            : calls.length
-              ? 'Friday’s calls from the last 7 days. Click one to read it.'
-              : 'No calls in the last 7 days.')}
-      </p>
-      {calls && calls.length > 0 && (
-        <ul className="home-calls">
-          {calls.map((call) => (
-            <li key={call.id}>
-              <button
-                type="button"
-                className="home-call-head"
-                aria-expanded={open === call.id}
-                onClick={() => setOpen(open === call.id ? undefined : call.id)}
-              >
-                <span>{call.who}</span>
-                <span className="home-muted">
-                  {new Date(call.started).toLocaleString('en-IN', {
-                    day: 'numeric',
-                    month: 'short',
-                    hour: 'numeric',
-                    minute: '2-digit',
-                  })}{' '}
-                  · {call.seconds}s
-                </span>
-              </button>
-              {open === call.id && (
-                <div className="home-call-lines">
-                  {call.lines.length === 0 && (
-                    <p className="home-muted">Nothing was said.</p>
-                  )}
-                  {call.lines.map((line, index) => (
-                    <p
-                      key={index}
-                      className={line.who === 'Friday' ? 'friday' : ''}
-                    >
-                      <b>{line.who === 'Friday' ? 'Friday' : call.who}:</b>{' '}
-                      {line.text}
-                    </p>
-                  ))}
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
 // Gmail, Calendar and Drive in the account Friday is signed in to, even if
 // more Google accounts get signed in to Friday's Chrome later.
 export function googleShortcuts(email?: string | null) {
@@ -948,13 +778,12 @@ export function FridayHome({
   onVoice: () => void;
   onAdvanced: () => void;
 }) {
-  // Your details, shared by the details card and the Google card.
+  // Your details, which the Google card reads and updates.
   const [profile, setProfile] = useState<Profile>({});
-  const [profileError, setProfileError] = useState(false);
   useEffect(() => {
     void api<Profile>('/friday/profile')
       .then(setProfile)
-      .catch(() => setProfileError(true));
+      .catch(() => {});
   }, []);
   return (
     <div className="friday-home">
@@ -993,14 +822,8 @@ export function FridayHome({
         <FridayConsole />
         <h2 className="home-section">Setup &amp; accounts</h2>
         <div className="home-grid">
-          <ProfileCard
-            saved={profile}
-            onSaved={setProfile}
-            loadError={profileError}
-          />
           <ContactsCard />
           <GoogleCard profile={profile} onSaved={setProfile} />
-          <CallsCard />
           <ConnectionsCard />
           <PermissionsCard dots={workspace?.dots ?? []} />
         </div>

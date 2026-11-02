@@ -35,6 +35,8 @@ export const ABILITIES: Ability[] = [
           'open_website',
           'play_youtube',
           'web_search',
+          'research_topic',
+          'open_research_report',
           'play_shown_video',
           'youtube_control',
           'weather',

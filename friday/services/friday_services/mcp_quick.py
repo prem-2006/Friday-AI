@@ -174,6 +174,7 @@ def build_quick_server(
     chrome: Callable[[], Any] | None = None,
     mail_map: Any = None,
     summarise: Callable[[list[dict], bool], Awaitable[str | None]] | None = None,
+    research: Any = None,
 ) -> MCPServer:
     volume = volume or Volume()
     server = MCPServer(
@@ -1176,6 +1177,63 @@ def build_quick_server(
         on = f" on the {screen}" if screen != "current" else ""
         name = placed.get("app") or placed.get("window") or window
         return {**placed, "friday_say": f"{_short(name, 40)} is {where}{on}."}
+
+    if research is not None:
+
+        @server.tool(
+            name="research_topic",
+            description=(
+                "Research a topic on the web in the background and write a report with "
+                "sources: 'research electric scooters in India', 'iske baare mein research "
+                "karke report do', 'compare these suppliers and give me a report'. Nothing "
+                "opens on screen; Friday says when the report is ready. Not for a quick "
+                "search the owner wants to see (web_search) or anything needing their login "
+                "(the helpers). hinglish: true when the owner spoke Hindi or Hinglish."
+            ),
+            annotations=ACT,
+        )
+        async def research_topic(
+            topic: Annotated[str, Field(min_length=3, max_length=200)],
+            hinglish: bool = False,
+        ) -> dict:
+            async def begin() -> bool:
+                return research.start(topic, hinglish)
+
+            started = await act("research_topic", f"Starting research on {topic}.", begin)
+            if not started:
+                return {
+                    "started": False,
+                    "friday_say": (
+                        f"Abhi {research.topic} par research chal rahi hai, uske baad karungi."
+                        if hinglish
+                        else f"I am still researching {research.topic}. Ask me again after that."
+                    ),
+                }
+            return {
+                "started": True,
+                "friday_say": (
+                    "Theek hai, research background mein shuru kar di. Report ready hote hi bataungi."
+                    if hinglish
+                    else "Okay, I started the research in the background. "
+                    "I will tell you when the report is ready."
+                ),
+            }
+
+        @server.tool(
+            name="open_research_report",
+            description="Open Friday's latest research report on screen.",
+            annotations=ACT,
+        )
+        async def open_research_report() -> dict:
+            report = research.latest()
+            if report is None:
+                return {"opened": False, "friday_say": "You have no research reports yet."}
+
+            async def show() -> None:
+                await asyncio.to_thread(open_path, str(report))
+
+            await act("open_research_report", "Opening your research report.", show)
+            return {"opened": True, "friday_say": "Your research report is open."}
 
     if mail_map is not None:
         from friday_services.mail_map import MailError, new_mail_sentence

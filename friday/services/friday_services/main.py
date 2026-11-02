@@ -69,6 +69,7 @@ from friday_services.phone_in import (
     latest_request,
     same_caller,
 )
+from friday_services.research import Researcher, find_obscura
 from friday_services.screen import capture_screen, describe_screen, snap_window
 from friday_services.tunnel import NgrokTunnel, QuickTunnel, TunnelGuard
 from friday_services.usage import timed, usage
@@ -201,6 +202,17 @@ def create_app(
                 else None
             ),
             summarise=lambda mails, hinglish: summarise_mail(settings, mails, hinglish),
+            # Background research needs Obscura (friday/obscura; not in tests).
+            research=(
+                Researcher(
+                    settings,
+                    announce=lambda text: announce(text),
+                    progress=lambda detail: feed.emit("friday", "research", detail),
+                    stopped=lambda: feed.stopped,
+                )
+                if owner_media is not None and find_obscura(settings).exists()
+                else None
+            ),
         ),
         "/calendar": build_calendar_server(calendar, settings.calendar_url),
         "/phone": build_phone_server(

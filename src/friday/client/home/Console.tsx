@@ -1,22 +1,6 @@
-// Friday: the console at the top of the main page, in the layout of the ARRC
-// "J" console: how to talk and system status on the left, Friday's reactor
-// and what it is doing in the middle, and the live feed and
-// abilities on the right.
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  AlarmClock,
-  AppWindow,
-  CalendarDays,
-  CloudSun,
-  Code2,
-  FolderOpen,
-  Globe,
-  Mail,
-  MessageCircle,
-  Monitor,
-  Music,
-  NotebookPen,
-} from 'lucide-react';
+// Friday: the top of the main page. A hello and how to talk, then what is
+// coming up and what Friday has done, from the real activity feed.
+import { useCallback, useEffect, useState } from 'react';
 import { followActivity, ownerHeaders } from '../stage/activity';
 import type { ActivityEvent } from '../stage/narration';
 
@@ -36,77 +20,22 @@ async function api<T>(path: string, init: RequestInit = {}) {
   return data as T;
 }
 
-// Which ability lights up for each action Friday or a helper runs.
-export const ABILITY_OF: Record<string, string> = {
-  open_website: 'web',
-  web_search: 'web',
-  browser_search: 'web',
-  browser_open: 'web',
-  browser_task: 'web',
-  browser_click: 'web',
-  browser_type: 'web',
-  browser_read: 'web',
-  play_youtube: 'music',
-  play_shown_video: 'music',
-  media_control: 'music',
-  run_mode: 'apps',
-  open_app: 'apps',
-  write_in_app: 'apps',
-  clear_in_app: 'apps',
-  press_keys_in_app: 'apps',
-  window_type: 'apps',
-  window_click: 'apps',
-  snap_window: 'apps',
-  find_files: 'files',
-  open_file: 'files',
-  draft_email: 'email',
-  send_email: 'email',
-  schedule_meeting: 'calendar',
-  whatsapp_send_message: 'whatsapp',
-  whatsapp_call: 'whatsapp',
-  whatsapp_find_chat: 'whatsapp',
-  set_timer: 'reminders',
-  add_reminder: 'reminders',
-  add_deadline: 'reminders',
-  finish_reminder: 'reminders',
-  reminder: 'reminders',
-  focus_session: 'reminders',
-  take_note: 'notes',
-  read_notes: 'notes',
-  show_notes: 'notes',
-  look_at_screen: 'screen',
-  take_screenshot: 'screen',
-  system_status: 'screen',
-  lock_screen: 'screen',
-  weather: 'weather',
-  directions: 'weather',
-  code_editor_read: 'coding',
-  code_editor_write: 'coding',
-};
-
-const ABILITIES = [
-  { id: 'web', label: 'Web & Google', Icon: Globe },
-  { id: 'music', label: 'YouTube & music', Icon: Music },
-  { id: 'apps', label: 'Apps & modes', Icon: AppWindow },
-  { id: 'files', label: 'Files', Icon: FolderOpen },
-  { id: 'email', label: 'Gmail', Icon: Mail },
-  { id: 'calendar', label: 'Meetings', Icon: CalendarDays },
-  { id: 'whatsapp', label: 'WhatsApp', Icon: MessageCircle },
-  { id: 'reminders', label: 'Timers & deadlines', Icon: AlarmClock },
-  { id: 'notes', label: 'Notes', Icon: NotebookPen },
-  { id: 'screen', label: 'Screen & PC', Icon: Monitor },
-  { id: 'weather', label: 'Weather & maps', Icon: CloudSun },
-  { id: 'coding', label: 'Coding practice', Icon: Code2 },
-] as const;
+// Actions that change what is coming up.
+const REMINDER_ACTIONS = new Set([
+  'set_timer',
+  'add_reminder',
+  'add_deadline',
+  'finish_reminder',
+  'reminder',
+  'focus_session',
+]);
 
 const SAMPLES = [
-  'Play Arijit Singh on YouTube',
-  'Remind me, DBMS project due tomorrow 5 pm',
-  '25 minute focus session for my assignment',
+  'Arijit Singh ka gaana chalao',
+  'Kal 5 baje DBMS project ka reminder laga do',
+  'Research electric scooters in India and give me a report',
   'Open Notepad and write my shopping list',
-  'What’s the weather in Pune?',
-  'Schedule a meeting with Ruchita tomorrow at 3',
-  'Solve this LeetCode problem',
+  'Priya ko WhatsApp karo ki 10 minute late hoon',
   'Find my resume',
 ];
 
@@ -118,7 +47,6 @@ interface Reminder {
 }
 
 const ACTORS: Record<string, string> = {
-  friday: 'Friday',
   navigator: 'Navigator',
   operator: 'Operator',
 };
@@ -129,85 +57,22 @@ const clock = (seconds: number) =>
     minute: '2-digit',
   });
 
-function Reactor({
-  state,
-  word,
-}: {
-  state: 'idle' | 'fire' | 'deny';
-  word: string;
-}) {
-  return (
-    <div className={`reactor ${state}`}>
-      <div className="reactor-gyro" aria-hidden>
-        <i />
-        <i />
-        <i />
-      </div>
-      <div className="reactor-sweep" aria-hidden />
-      <svg viewBox="0 0 200 200" aria-hidden>
-        <g className="spin">
-          <circle
-            cx="100"
-            cy="100"
-            r="92"
-            className="ring thin"
-            strokeDasharray="2 6"
-          />
-        </g>
-        <g className="spin r">
-          <circle
-            cx="100"
-            cy="100"
-            r="80"
-            className="ring"
-            strokeDasharray="60 18 8 18"
-          />
-        </g>
-        <g className="spin f">
-          <circle
-            cx="100"
-            cy="100"
-            r="68"
-            className="ring bold"
-            strokeDasharray="22 140"
-          />
-        </g>
-        <g className="spin r">
-          <circle
-            cx="100"
-            cy="100"
-            r="58"
-            className="ring thin"
-            strokeDasharray="1 4"
-          />
-        </g>
-        {Array.from({ length: 12 }, (_, i) => (
-          <line
-            key={i}
-            x1="100"
-            y1="6"
-            x2="100"
-            y2="14"
-            className="tick"
-            transform={`rotate(${i * 30} 100 100)`}
-          />
-        ))}
-      </svg>
-      <div className="center">
-        <div className="state">
-          {state === 'fire'
-            ? 'WORKING'
-            : state === 'deny'
-              ? 'PROBLEM'
-              : 'READY'}
-        </div>
-        <div className="big">{word}</div>
-      </div>
-    </div>
+/** "5:00 pm", "Tomorrow", or "12 Nov" for a reminder's list. */
+export function dueLabel(seconds: number, now = new Date()) {
+  const due = new Date(seconds * 1000);
+  const days = Math.round(
+    (new Date(due).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) /
+      86_400_000,
   );
+  if (days <= 0) return clock(seconds);
+  if (days === 1) return 'Tomorrow';
+  return due.toLocaleDateString([], { day: 'numeric', month: 'short' });
 }
 
-export function FridayConsole() {
+/** What Friday did, in plain words: the feed ends finished steps in "Done." */
+export const doneText = (detail: string) => detail.replace(/\s*Done\.$/, '');
+
+export function FridayConsole({ name }: { name?: string }) {
   const [googleAccount, setGoogleAccount] = useState('');
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [online, setOnline] = useState(false);
@@ -218,7 +83,7 @@ export function FridayConsole() {
     try {
       setReminders(await api<Reminder[]>('/friday/reminders'));
     } catch {
-      // services offline: the System panel says so
+      // services offline: the status line says so
     }
   }, []);
 
@@ -241,12 +106,12 @@ export function FridayConsole() {
       (event) => {
         if (event.actor === 'control') return;
         setEvents((list) => [...list.slice(-80), event]);
-        if (ABILITY_OF[event.action] === 'reminders') void loadReminders();
+        if (REMINDER_ACTIONS.has(event.action)) void loadReminders();
       },
       setOnline,
       false,
     );
-    const ticker = setInterval(() => setNow(Date.now()), 1000);
+    const ticker = setInterval(() => setNow(Date.now()), 5000);
     const refresh = setInterval(() => void loadReminders(), 20_000);
     return () => {
       stop();
@@ -256,153 +121,85 @@ export function FridayConsole() {
   }, [loadReminders]);
 
   const latest = events.at(-1);
-  const recentHot = useMemo(
-    () =>
-      new Set(
-        events
-          .filter((event) => now - event.at * 1000 < 6000)
-          .map((event) => ABILITY_OF[event.action])
-          .filter(Boolean),
-      ),
-    [events, now],
-  );
-  const reactorState =
-    latest && now - latest.at * 1000 < 8000
-      ? latest.state === 'failed'
-        ? 'deny'
-        : latest.state === 'running'
-          ? 'fire'
-          : 'idle'
-      : 'idle';
-  const today = new Date().toDateString();
-  const actionsToday = events.filter(
-    (event) =>
-      event.state === 'done' &&
-      new Date(event.at * 1000).toDateString() === today,
-  ).length;
-  const word = latest
-    ? latest.action.replace(/_/g, ' ').replace(/^browser /, '') || 'Friday'
-    : 'Friday';
+  const working =
+    latest?.state === 'running' && now - latest.at * 1000 < 60_000;
+  const first = name?.trim().split(/\s+/)[0];
+  const coming = [...reminders].sort((a, b) => a.due - b.due).slice(0, 5);
+  const done = [...events]
+    .reverse()
+    .filter((event) => event.state !== 'running')
+    .slice(0, 8);
 
-  // FRIDAY: one clear order: who Friday is and how to talk to it, what it is
-  // doing, then everything it can do.
   return (
     <div className="console">
-      <section className="console-hero">
-        <div className="hero-copy">
-          <h1 data-text="FRIDAY">
-            F<span>R</span>IDAY
-          </h1>
-          <div className="tag">Your AI voice assistant, built on Gnani</div>
-          <div className="panel talk">
-            <div className="label">Talk to Friday</div>
-            Hold
-            <b>
-              <kbd>Caps Lock</kbd>
-            </b>
-            <div className="hint">
-              anywhere and speak; let go when you are done. English, Hindi or
-              any mix. Gnani hears you, Friday and its Dots do the work, Gnani
-              speaks. Ctrl + Caps Lock hides the notch.
-            </div>
-          </div>
-          <div className="panel system">
-            <div className="label">System</div>
-            <div className="chips">
-              <div className="chip">
-                <span>Friday services</span>
-                <i className={online ? 'ok' : 'bad'}>
-                  <span className="dot" />
-                  {online ? 'ONLINE' : 'OFFLINE'}
-                </i>
-              </div>
-              <div className="chip">
-                <span>Google account</span>
-                <i className={googleAccount ? 'ok' : 'warn'}>
-                  {googleAccount ? 'SIGNED IN' : 'NOT YET'}
-                </i>
-              </div>
-              <div className="chip">
-                <span>Actions today</span>
-                <i>{actionsToday}</i>
-              </div>
-              <div className="chip">
-                <span>Coming up</span>
-                <i>{reminders.length}</i>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="console-core">
-          <Reactor state={reactorState} word={word} />
-          <div className="now">
-            <div className="cmd">
-              {latest ? (
-                <>
-                  <b>{ACTORS[latest.actor] ?? latest.actor}</b> {latest.detail}
-                </>
-              ) : (
-                'Waiting for you. Hold Caps Lock to talk.'
-              )}
-            </div>
-            <div className="res">{latest ? clock(latest.at) : ''}</div>
-          </div>
-        </div>
+      <section className="hello">
+        <h1>{first ? `Namaste, ${first}.` : 'Namaste.'}</h1>
+        <p className="hello-talk">
+          Hold <kbd>Caps Lock</kbd> anywhere and talk. Hindi, English or both.
+        </p>
+        <p className="hello-status">
+          <span className={working ? 'ok' : online ? 'ok' : 'bad'}>
+            <i className={`dot ${working ? 'working' : ''}`} />
+            {working
+              ? doneText(latest.detail)
+              : online
+                ? 'Friday is ready'
+                : 'Friday’s services are not running'}
+          </span>
+          <span>
+            Google: <b>{googleAccount || 'not signed in'}</b>
+          </span>
+        </p>
       </section>
 
-      <h2 className="home-section">Activity</h2>
-      <div className="console-row">
-        <div className="panel live">
-          <div className="label">Live</div>
-          <div className="feed">
-            {events.length === 0 && (
-              <div className="empty">
-                Nothing yet. What Friday does shows up here.
-              </div>
-            )}
-            {[...events]
-              .reverse()
-              .filter((event) => event.state !== 'running')
-              .slice(0, 12)
-              .map((event) => (
-                <div
+      <div className="today">
+        <section>
+          <h2 className="home-section">What Friday did</h2>
+          {done.length === 0 ? (
+            <p className="lines-empty">Nothing yet today.</p>
+          ) : (
+            <ul className="lines">
+              {done.map((event) => (
+                <li
                   key={event.id}
-                  className={`item ${event.state === 'failed' ? 'refused' : ''}`}
+                  className={event.state === 'failed' ? 'failed' : ''}
                 >
-                  <div className="top">
-                    <span className="act">
-                      {event.action.replace(/_/g, ' ')}
-                    </span>
-                    <span>{clock(event.at)}</span>
-                  </div>
-                  <div className="in">{event.detail}</div>
-                  <div className="out">
-                    {ACTORS[event.actor] ?? event.actor}
-                  </div>
-                </div>
+                  <time>{clock(event.at)}</time>
+                  <span>
+                    {doneText(event.detail)}
+                    {ACTORS[event.actor] && (
+                      <small>{ACTORS[event.actor]}</small>
+                    )}
+                  </span>
+                </li>
               ))}
-          </div>
-        </div>
-        <div className="panel samples">
-          <div className="label">Try saying</div>
-          {SAMPLES.map((sample) => (
-            <div key={sample}>
-              <span>“{sample}”</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <h2 className="home-section">Abilities</h2>
-      <div className="panel abilities">
-        <div className="label">Abilities</div>
-        <div className="caps">
-          {ABILITIES.map(({ id, label, Icon }) => (
-            <div key={id} className={`cap ${recentHot.has(id) ? 'hot' : ''}`}>
-              <Icon size={15} className="ic" />
-              {label}
-            </div>
-          ))}
+            </ul>
+          )}
+        </section>
+        <div className="today-side">
+          <section>
+            <h2 className="home-section">Coming up</h2>
+            {coming.length === 0 ? (
+              <p className="lines-empty">No reminders.</p>
+            ) : (
+              <ul className="lines">
+                {coming.map((reminder) => (
+                  <li key={reminder.id}>
+                    <time>{dueLabel(reminder.due)}</time>
+                    <span>{reminder.text}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+          <section>
+            <h2 className="home-section">Try saying</h2>
+            <ul className="sayings">
+              {SAMPLES.map((sample) => (
+                <li key={sample}>“{sample}”</li>
+              ))}
+            </ul>
+          </section>
         </div>
       </div>
     </div>

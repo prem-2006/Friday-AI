@@ -26,6 +26,7 @@ from pydantic import Field
 
 from friday_services import winctl
 from friday_services.activity import ActivityFeed
+from friday_services.briefing import briefing_sentence, owner_city
 from friday_services.browser import BrowserError, OnScreenBrowser, first_video, nth_video
 from friday_services.desktop import DesktopApps, DesktopError
 from friday_services.files import FilesError, find_files, open_file
@@ -715,6 +716,40 @@ def build_quick_server(
             "path": str(path),
             "friday_say": "Done, it's in your Screenshots folder.",
         }
+
+    @server.tool(
+        name="daily_briefing",
+        description=(
+            "The owner's day in one go, spoken: 'aaj ka briefing do', 'brief me', 'what is my "
+            "day like', 'aaj ka plan kya hai'. Says the date, the weather, what is due today "
+            "and how much email is unread. hinglish: true when the owner spoke Hindi or "
+            "Hinglish."
+        ),
+        annotations=LOOK,
+    )
+    async def daily_briefing(hinglish: bool = False) -> dict:
+        def unread_mail() -> int | None:
+            try:
+                return mail_map.refresh()[0]
+            except Exception:
+                return None
+
+        def city_weather() -> str:
+            city = owner_city()
+            try:
+                return weather(city) if city else ""
+            except Exception:
+                return ""
+
+        async def gather() -> str:
+            items, forecast, unread = await asyncio.gather(
+                asyncio.to_thread(reminders.upcoming),
+                asyncio.to_thread(city_weather),
+                browser_worker.run(unread_mail) if mail_map is not None else asyncio.sleep(0),
+            )
+            return briefing_sentence(datetime.now(), items, forecast, unread, hinglish)
+
+        return {"friday_say": await act("daily_briefing", "Your briefing.", gather)}
 
     @server.tool(
         name="weather",

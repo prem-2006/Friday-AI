@@ -138,6 +138,10 @@ IN_BROWSER = (
 HINDI_PLAY = r"bajao|baja do|play karo|play kar do|laga do|lagao|chalao|chala do"
 HINDI_SEARCH = r"search karo|search kar do|dhundo|dhoondo|google karo"
 # YouTube's player, said with filler around it ("video ko full screen karo").
+BRIEFING = re.compile(
+    r"\b(briefing|brief me|daily brief|aaj ka (plan|din|schedule)|mera din|my day|"
+    r"plan for today|today s plan|todays plan)\b"
+)
 YOUTUBE_NAMES = {"video", "youtube", "yt", "vid"}
 YOUTUBE_FILLER = YOUTUBE_NAMES | {
     "please", "friday", "the", "it", "this", "is", "ko", "ka", "ki", "ke", "karo", "kar",
@@ -464,6 +468,7 @@ class Instant:
 
         for rule in (
             self._mail,
+            self._briefing,
             self._status,
             self._youtube,
             self._media,
@@ -508,6 +513,15 @@ class Instant:
         if not re.search(r"\b(new|naye?|nayi|any|koi|unread|check|aaye?|aayi)\b", t):
             return None
         result = await self._call("gmail_new", {}, done)
+        return {"say": result.get("friday_say") or "Done.", "calls": done}
+
+    async def _briefing(self, t: str, _text: str):
+        """ "Aaj ka briefing do", "brief me", "what is my day like"."""
+        if MORE.search(t) or len(t.split()) > 9 or not BRIEFING.search(t):
+            return None
+        hinglish = bool(re.search(HINGLISH, t)) or "aaj" in t.split()
+        done: list = []
+        result = await self._call("daily_briefing", {"hinglish": hinglish}, done)
         return {"say": result.get("friday_say") or "Done.", "calls": done}
 
     async def _status(self, t: str, _text: str):

@@ -244,28 +244,28 @@ export function FridayConsole() {
           </h1>
           <div className="tag">Your AI voice assistant, built on Gnani</div>
           <div className="panel system">
-            <div className="label">System</div>
-            <div className="chips">
-              <div className="chip">
-                <span>Friday services</span>
-                <i className={online ? 'ok' : 'bad'}>
+            <div className="label">System status</div>
+            <div className="stats">
+              <div className="stat">
+                <b className={online ? 'ok' : 'bad'}>
                   <span className="dot" />
-                  {online ? 'ONLINE' : 'OFFLINE'}
-                </i>
+                  {online ? 'Online' : 'Offline'}
+                </b>
+                <span>Friday services</span>
               </div>
-              <div className="chip">
+              <div className="stat" title={googleAccount || undefined}>
+                <b className={googleAccount ? 'ok' : 'warn'}>
+                  {googleAccount ? 'Signed in' : 'Not yet'}
+                </b>
                 <span>Google account</span>
-                <i className={googleAccount ? 'ok' : 'warn'}>
-                  {googleAccount ? 'SIGNED IN' : 'NOT YET'}
-                </i>
               </div>
-              <div className="chip">
+              <div className="stat">
+                <b>{actionsToday}</b>
                 <span>Actions today</span>
-                <i>{actionsToday}</i>
               </div>
-              <div className="chip">
+              <div className="stat">
+                <b>{reminders.length}</b>
                 <span>Coming up</span>
-                <i>{reminders.length}</i>
               </div>
             </div>
           </div>

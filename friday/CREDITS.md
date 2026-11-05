@@ -38,7 +38,7 @@ Friday is built on one open-source project, took ideas from two more, and uses a
 | [Pipecat](https://github.com/pipecat-ai/pipecat)      | Runs live voice: mic in, Gnani speech-to-text, Friday's reply, Gnani text-to-speech out, over WebRTC and phone streams |
 | pipecat-gnani, gnani-vachana                          | Gnani's speech-to-text (Prisma) and text-to-speech (Timbre) inside Pipecat                                             |
 | Silero VAD (through Pipecat)                          | Notices when someone starts and stops talking                                                                          |
-| [ngrok-python](https://github.com/ngrok/ngrok-python) | The fixed public address that Sarvam's agent uses to reach Friday                                                      |
+| [ngrok-python](https://github.com/ngrok/ngrok-python) | The fixed public address the phone number uses to reach Friday                                                         |
 | sounddevice, numpy                                    | Mic audio for the clap detector and the wake word                                                                      |
 | [Vosk](https://github.com/alphacep/vosk-api) | Offline listening for "Hey Friday" only (small Indian-English model) |
 
@@ -68,4 +68,4 @@ Friday is built on one open-source project, took ideas from two more, and uses a
 
 ## 4. Services Friday calls (accounts, not code)
 
-Gnani (Evon for planning, Prisma for hearing, Timbre for speaking, Inya for calls), Sarvam (voice agent and phone number), Google Gemini and an OpenAI-compatible backup model, Twilio (optional), ngrok, Cloudflare quick tunnels (with Twilio), Open-Meteo (weather), Parallel (web research in OpenDots).
+Gnani (Evon for planning, Prisma for hearing, Timbre for speaking), Google Gemini and an OpenAI-compatible backup model, Twilio or Exotel (phone number and call audio), ngrok, Cloudflare quick tunnels (with Twilio), Open-Meteo (weather), Parallel (web research in OpenDots).

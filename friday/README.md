@@ -106,7 +106,7 @@ This adds "Friday" to the Start menu and the desktop. The shell shows Friday fro
 
 ## Call Friday
 
-Friday has its own calling agent. Exotel gives it an Indian number and carries the call audio, and everything else is Friday's own: a Pipecat pipeline in `friday/services` (`calls/bot.py`) hears with **Gnani Prisma**, thinks with **Evon** and speaks with **Gnani Timbre**, with Silero voice detection so the caller can talk over it. Exotel's Voicebot applet streams the call both ways to `/exotel/stream` through a fixed ngrok address; when Friday ends the call it closes the stream and the call flow hangs up.
+Friday has its own calling agent, and nobody else's agent is on the line. Twilio (or Exotel, for an Indian number) gives it a number and carries the call audio, and everything else is Friday's own: a Pipecat pipeline in `friday/services` (`calls/bot.py`) hears with **Gnani Prisma**, thinks with **Evon** and speaks with **Gnani Timbre**, with Silero voice detection so the caller can talk over it. The provider streams the call both ways to Friday (`/twilio/stream` or `/exotel/stream`) through a fixed ngrok address.
 
 **Calls Friday places.** `start_call` phones someone for you with one goal ("book a dental check-up tomorrow at 6 PM"). Friday says it is your AI assistant, never agrees to pay, checks with you before accepting a different option, and ends with an outcome, a summary and the transcript (`get_call_result`). `schedule_call` does the same at a later time. Friday also phones **you** when you ask ("call me at 5") and before deadlines, with your updates.
 
@@ -117,7 +117,9 @@ Friday has its own calling agent. Exotel gives it an Indian number and carries t
 
 Every call's transcript, outcome and reply times are kept in `friday/services/data/calls`.
 
-Once:
+**Over Twilio,** put `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_FROM_NUMBER` in `.env` along with the two ngrok settings below, and restart the services: they point the number at Friday by themselves. A Twilio trial plays its own notice first, asks for a key press, and calls only numbers verified in its console; upgrading removes all three. Calling India needs India switched on under Voice → Geo Permissions.
+
+**Over Exotel,** once:
 
 1. **ngrok:** sign up free at dashboard.ngrok.com, copy your authtoken, and claim your free static domain (Domains). Put them in `.env` as `NGROK_AUTHTOKEN` and `NGROK_DOMAIN`. Exotel's call flow points at this address, so it must not change.
 2. **Exotel:** sign up at exotel.com. The free trial lasts 7 days, has one number (ExoPhone), and calls only numbers you verify under Settings → Whitelist Numbers. Ask hello@exotel.com to switch on the Voicebot applet (AgentStream) for your account. From API settings put `EXOTEL_API_KEY`, `EXOTEL_API_TOKEN` and `EXOTEL_ACCOUNT_SID` in `.env`, your ExoPhone as `EXOTEL_CALLER_ID`, and any random string of 20+ characters as `EXOTEL_STREAM_KEY`. An India account uses `api.in.exotel.com` (the default); set `EXOTEL_SUBDOMAIN=api.exotel.com` for a Singapore one.
@@ -179,7 +181,6 @@ cd friday/browser-agent; python -m uv run pytest
 - **Operator** depends on how well each app exposes Windows UI Automation. Most standard apps work; some custom-drawn ones don't.
 - **Helpers have no approval cards,** because they run in background conversations. Their browser and app tools run without asking. Anything sensitive (WhatsApp) stays with Friday behind your OK.
 - **Echo:** echo cancellation and a raised threshold while Friday speaks keep it from hearing itself, but headphones work best.
-- **Phone calls over Twilio** (the earlier calling service) are parked; the code remains under `friday/services/friday_services/calls`.
 - **The browser agent** (browser-use, `friday/browser-agent`) runs in its own Python environment because it pins exact library versions; it attaches to Navigator's Chrome window through Chrome's debugging port on 127.0.0.1 (`FRIDAY_BROWSER_CDP_PORT`). Every step is one model call, so a free Gemini key runs out quickly; its log is `friday/services/data/browser-agent.log`.
 - **Playing on YouTube** takes 4–7 s, mostly YouTube's own page load; the first web task also starts Friday's own Chrome. `FRIDAY_BROWSER_PREWARM=true` opens it when the services start instead.
 - **Conversations live in CopilotKit's cloud** (its local version is macOS-only). Telegram was dropped.

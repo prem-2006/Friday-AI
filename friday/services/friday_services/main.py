@@ -1,6 +1,6 @@
 """Friday services: MCP tools for the on-screen browser, desktop apps and
 WhatsApp, a live activity feed for the voice screen, the demo calendar, and
-Friday's own phone calls (Exotel, or Twilio) and Sarvam's ask_friday."""
+Friday's own phone calls (Twilio or Exotel)."""
 
 from __future__ import annotations
 
@@ -8,11 +8,10 @@ import asyncio
 import hmac
 import json
 import os
-import re
 import weakref
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from dotenv import load_dotenv
@@ -30,8 +29,6 @@ from friday_services.calls.bot import CallHelpers, run_call
 from friday_services.calls.exotel import NOT_CONNECTED as EXOTEL_NOT_CONNECTED
 from friday_services.calls.exotel import ExotelDialer, custom_parameters, valid_key
 from friday_services.calls.exotel import stream_url as exotel_stream_url
-from friday_services.calls.inya import InyaDialer
-from friday_services.calls.sarvam import SarvamDialer, recent_conversations
 from friday_services.calls.store import CallRecord, CallStore
 from friday_services.calls.twilio import (
     NOT_CONNECTED,
@@ -49,7 +46,7 @@ from friday_services.mail_summary import summarise_mail
 from friday_services.mcp_browser import build_browser_server
 from friday_services.mcp_calendar import build_calendar_server
 from friday_services.mcp_desktop import build_desktop_server, build_whatsapp_server
-from friday_services.mcp_phone import Dialer, build_phone_server, call_someone, place_own_call
+from friday_services.mcp_phone import Dialer, build_phone_server, place_own_call
 from friday_services.mcp_quick import build_quick_server
 from friday_services.media import OwnerMedia
 from friday_services.organizer import (
@@ -67,7 +64,6 @@ from friday_services.phone_in import (
     PhoneDesk,
     caller_digits,
     caller_name,
-    latest_request,
     same_caller,
 )
 from friday_services.research import Researcher, find_obscura
@@ -79,14 +75,6 @@ from friday_services.whatsapp import DesktopWhatsAppUI, WhatsApp, WhatsAppUI
 from friday_services.worker import Worker, com_thread
 
 CallRunner = Callable[..., Awaitable[None]]
-# What Sarvam's agent is told when the caller is not the owner.
-CLIENT_REPLY = (
-    "This caller is not {owner}, so treat them as a client. Do not do any task for them "
-    "and share nothing about {owner}: no schedule, plans, contacts, location, numbers or "
-    "anything personal. Say you are Friday, {owner}'s AI assistant; answer only general "
-    "questions politely, and offer to pass on a message. Their words have been saved "
-    "for {owner}."
-)
 
 
 def create_app(
@@ -138,10 +126,7 @@ def create_app(
     dialer = dialer or (
         ExotelDialer(settings) if settings.call_provider == "exotel" else TwilioDialer(settings)
     )
-    owner_caller = OwnerCaller(
-        settings, store, dialer, gnani=InyaDialer(settings), sarvam=SarvamDialer(settings)
-    )
-    ringing_back: set[asyncio.Task] = set()
+    owner_caller = OwnerCaller(settings, store, dialer)
     desk = phone_desk or PhoneDesk(settings)
     usage.configure(settings.data_dir / "usage.json", settings.timezone)
     reminders = Reminders(settings.data_dir / "reminders.json")
@@ -219,9 +204,7 @@ def create_app(
             ),
         ),
         "/calendar": build_calendar_server(calendar, settings.calendar_url),
-        "/phone": build_phone_server(
-            store, dialer, settings, sarvam=SarvamDialer(settings), reminders=reminders
-        ),
+        "/phone": build_phone_server(store, dialer, settings, reminders=reminders),
     }
     mcp_apps = {
         path: (
@@ -298,16 +281,11 @@ def create_app(
         goal = due.extra.get("goal") or due.text
         opening = due.extra.get("opening") or ""
         try:
-            if settings.own_calls_ready:
-                record = await place_own_call(
-                    store, dialer, due.extra["phone"], goal, opening_line=opening
-                )
-                if record.final:
-                    raise RuntimeError(record.error or "the call failed")
-            else:
-                await call_someone(
-                    SarvamDialer(settings), settings, due.extra["phone"], goal, opening
-                )
+            record = await place_own_call(
+                store, dialer, due.extra["phone"], goal, opening_line=opening
+            )
+            if record.final:
+                raise RuntimeError(record.error or "the call failed")
             feed.emit("friday", "schedule_call", f"Calling {who} now.", state="done")
         except Exception as error:
             feed.emit("friday", "schedule_call", f"Could not call {who}: {error}", state="failed")
@@ -345,8 +323,8 @@ def create_app(
             clock = asyncio.create_task(reminder_clock(), name="friday-reminders")
             stack.callback(clock.cancel)
             if tunnel and settings.get("NGROK_AUTHTOKEN") and settings.get("NGROK_DOMAIN"):
-                # A fixed address: Sarvam's agent reaches /phone/ask through it,
-                # and Twilio uses it too instead of a quick tunnel.
+                # A fixed address, so the phone number keeps reaching Friday
+                # after every restart (instead of a quick tunnel).
                 fixed = NgrokTunnel(
                     settings.port, settings.get("NGROK_AUTHTOKEN"), settings.get("NGROK_DOMAIN")
                 )
@@ -542,24 +520,30 @@ def create_app(
     # The main page's reminders panel.
     @app.get("/calls/recent", dependencies=[Depends(owner)])
     async def calls_recent() -> list[dict]:
-        """Friday's last Sarvam calls and what was said, for the main page."""
-        if not SarvamDialer(settings).ready:
-            return []
-        names: dict[str, str] = {}
-        try:
-            contacts = json.loads((REPO_ROOT / "data" / "friday-contacts.json").read_text("utf-8"))
-            names = {
-                re.sub(r"\D", "", str(c.get("phone", ""))): str(c.get("name")) for c in contacts
+        """Friday's last calls and what was said, for the main page."""
+        contacts = load_contacts()
+        mine = caller_digits(owner_phone(settings) or "")
+
+        def shown(call: dict) -> dict:
+            phone = str(call.get("phone") or "")
+            started = float(call.get("created_at") or 0)
+            ended = float(call.get("ended_at") or started)
+            return {
+                "id": call.get("id"),
+                "who": "You" if same_caller(phone, mine) else caller_name(phone, contacts),
+                "started": datetime.fromtimestamp(started, UTC).isoformat(),
+                "seconds": round(ended - started),
+                "ended_by": call.get("outcome"),
+                "lines": [
+                    {
+                        "who": "Friday" if line.get("speaker") == "friday" else "Them",
+                        "text": line.get("text", ""),
+                    }
+                    for line in call.get("transcript") or []
+                ],
             }
-        except (OSError, ValueError, AttributeError):
-            pass
-        mine = re.sub(r"\D", "", owner_phone(settings) or "")
-        if mine:
-            names[mine] = "You"
-        try:
-            return await recent_conversations(settings, names)
-        except Exception as error:
-            raise HTTPException(502, f"Could not read calls from Sarvam: {error}") from error
+
+        return [shown(call) for call in await asyncio.to_thread(store.recent)]
 
     @app.get("/reminders", dependencies=[Depends(owner)])
     async def reminders_list() -> list[dict]:
@@ -731,9 +715,6 @@ def create_app(
                 "ngrok_configured": bool(
                     settings.get("NGROK_AUTHTOKEN") and settings.get("NGROK_DOMAIN")
                 ),
-                "phone_token": bool(settings.get("FRIDAY_PHONE_TOKEN")),
-                "sarvam_ready": SarvamDialer(settings).ready,
-                "inya_ready": bool(settings.get("INYA_API_KEY")),
                 "twilio_on": bool(settings.get("TWILIO_ACCOUNT_SID")),
                 "owner_calls_via": owner_caller.via,
                 "owner_phone": bool(owner_phone(settings)),
@@ -804,57 +785,6 @@ def create_app(
             kind="reception",
         )
 
-    @app.post("/phone/ask")
-    async def phone_ask(request: Request) -> dict[str, str]:
-        """Sarvam's agent asks Friday to do what the owner said on a call to
-        Friday's number (its API tool ask_friday)."""
-        token = settings.get("FRIDAY_PHONE_TOKEN")
-        if not token or not phone_token_ok(request, token):
-            # What came, never the secret: tells a missing header from a wrong token.
-            auth = request.headers.get("authorization", "")
-            print(
-                "Phone: ask_friday refused. Authorization header "
-                + (f"'{auth.split()[0]} …' ({len(auth)} chars)" if auth else "missing")
-                + "; set the tool's bearer token to FRIDAY_PHONE_TOKEN from .env."
-            )
-            raise HTTPException(status_code=401, detail="Missing or wrong bearer token.")
-        try:
-            body = await request.json()
-        except ValueError:
-            body = {}
-        if not isinstance(body, dict):
-            body = {}
-        mine = caller_digits(owner_phone(settings) or "")
-        caller = str(body.get("caller") or "")
-        said = str(body.get("request") or "").strip() or latest_request(body.get("transcript"))
-        call_id = str(body.get("call_id") or "")
-        # Why Friday placed this call, when it did (Sarvam's reason variable).
-        context = str(body.get("reason") or "").strip()
-        if context in ("none", "@reason") or "{{" in context:
-            context = ""
-        if not same_caller(caller, mine):
-            # Anyone else gets Reception: no tools and nothing private about
-            # the owner. Every word they say is saved for the owner.
-            who = caller_name(caller, load_contacts())
-            if said:
-                await asyncio.to_thread(notes.add, f"Phone message from {who}: {said}")
-                feed.emit("friday", "call_in", f"{who} on the phone: {said}", state="done")
-            try:
-                with timed("Phone calls", "Sarvam", "calls to Friday · others (Reception)"):
-                    reply = await desk.ask(call_id, said, owner=False, context=context)
-            except Exception:
-                reply = ""
-            if not reply or reply.startswith("Sorry, that did not work"):
-                return {"reply": CLIENT_REPLY.format(owner=settings.owner_name)}
-            return {"reply": reply}
-        feed.emit(
-            "friday", "call_in", f"On the phone: {said or '(nothing heard)'}", state="running"
-        )
-        with timed("Phone calls", "Sarvam", "calls to Friday · you (Friday)"):
-            reply = await desk.ask(call_id, said, owner=True, context=context)
-        feed.emit("friday", "call_in", f"Told you on the phone: {reply}", state="done")
-        return {"reply": reply}
-
     @app.post("/twilio/voice/{call_id}")
     async def twilio_voice(call_id: str, request: Request) -> Response:
         await twilio_params(request)
@@ -865,55 +795,17 @@ def create_app(
 
     @app.post("/twilio/incoming")
     async def twilio_incoming(request: Request) -> Response:
-        """The owner phoned Friday's number: Friday answers with their updates
-        (with Gnani set up: lets it ring out and calls back)."""
+        """A call to Friday's number: the owner gets Friday, anyone else Reception."""
         params = await twilio_params(request)
-        caller = re.sub(r"\D", "", params.get("From", ""))
-        mine = re.sub(r"\D", "", owner_phone(settings) or "")
-        say = '<?xml version="1.0" encoding="UTF-8"?><Response><Say>{}</Say><Hangup/></Response>'
-        if not mine or caller != mine:
-            # Only the owner may talk to Friday by phone.
+        record = answer_incoming(params.get("From", ""))
+        if not record:
             return Response(
-                say.format("Sorry, Friday only takes calls from its owner."),
+                '<?xml version="1.0" encoding="UTF-8"?><Response>'
+                "<Say>Friday is on another call. Please try again in a minute.</Say>"
+                "<Hangup/></Response>",
                 media_type="application/xml",
             )
-        if store.active():
-            return Response(
-                say.format("Friday is on another call. Please try again in a minute."),
-                media_type="application/xml",
-            )
-        context = owner_updates()
-        if owner_caller.agent:
-            # A missed call is enough: Friday does not answer (so the call costs
-            # nothing and no trial notice plays) and Gnani rings back with the
-            # updates.
-            async def ring_back() -> None:
-                await asyncio.sleep(3)
-                placed = await owner_caller.call(
-                    "You gave me a missed call, so here are your updates.",
-                    urgent=True,
-                    updates=context,
-                )
-                if not placed["called"]:
-                    feed.emit("friday", "call_owner", placed["why"], state="failed")
-
-            task = asyncio.create_task(ring_back(), name="friday-ring-back")
-            ringing_back.add(task)
-            task.add_done_callback(ringing_back.discard)
-            feed.emit("friday", "call_in", "Missed call from you: calling you back.", state="done")
-            return Response(
-                '<?xml version="1.0" encoding="UTF-8"?><Response><Reject reason="busy"/></Response>',
-                media_type="application/xml",
-            )
-        record = store.create(
-            phone=params.get("From", ""),
-            goal="The owner called for an update.",
-            language=settings.get("FRIDAY_CALL_LANGUAGE", "en-IN"),
-            context=context,
-            kind="owner_in",
-        )
         record.call_sid = params.get("CallSid")
-        feed.emit("friday", "call_in", "You phoned Friday.", state="done")
         return Response(stream_twiml(settings, record), media_type="application/xml")
 
     @app.post("/twilio/status/{call_id}")
@@ -1031,18 +923,6 @@ def create_app(
     for path, (_server, asgi) in mcp_apps.items():
         app.mount(path, BearerAuth(asgi, settings.services_token))
     return app
-
-
-def phone_token_ok(request: Request, token: str) -> bool:
-    """The phone agent's tool proves it is Friday's: the token as a bearer
-    token, a bare Authorization value, an x-api-key header or ?token=."""
-    auth = request.headers.get("authorization", "").strip()
-    offered = [
-        auth.split(None, 1)[1].strip() if auth.lower().startswith(("bearer ", "token ")) else auth,
-        request.headers.get("x-api-key", "").strip(),
-        request.query_params.get("token", "").strip(),
-    ]
-    return any(value and hmac.compare_digest(value, token) for value in offered)
 
 
 def start_wake(

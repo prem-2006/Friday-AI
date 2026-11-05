@@ -19,6 +19,8 @@ class CallRecord:
     goal: str
     language: str
     context: str
+    # The exact first words, when the caller of Friday's tools chose them.
+    opening: str = ""
     # business: Friday calls someone for the owner; owner: Friday calls the owner;
     # owner_in: the owner calls Friday; reception: anyone else calls Friday.
     kind: str = "business"
@@ -79,9 +81,18 @@ class CallStore:
         self._dir = data_dir / "calls" if data_dir else None
 
     def create(
-        self, *, phone: str, goal: str, language: str, context: str, kind: str = "business"
+        self,
+        *,
+        phone: str,
+        goal: str,
+        language: str,
+        context: str,
+        kind: str = "business",
+        opening: str = "",
     ) -> CallRecord:
-        record = CallRecord(phone=phone, goal=goal, language=language, context=context, kind=kind)
+        record = CallRecord(
+            phone=phone, goal=goal, language=language, context=context, kind=kind, opening=opening
+        )
         self._calls[record.id] = record
         self._finished[record.id] = asyncio.Event()
         return record
@@ -149,6 +160,19 @@ class CallStore:
         except TimeoutError:
             pass
         return self._calls[call_id]
+
+    def recent(self, limit: int = 20) -> list[dict]:
+        """The saved calls, newest first."""
+        if not self._dir or not self._dir.exists():
+            return []
+        calls = []
+        for path in self._dir.glob("*.json"):
+            try:
+                calls.append(json.loads(path.read_text("utf-8")))
+            except (OSError, ValueError):
+                continue
+        calls.sort(key=lambda call: call.get("created_at") or 0, reverse=True)
+        return calls[:limit]
 
     def _save(self, record: CallRecord) -> None:
         if not self._dir:

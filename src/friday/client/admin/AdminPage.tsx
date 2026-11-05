@@ -41,9 +41,6 @@ interface Status {
       notches: number;
       ngrok_url: string | null;
       ngrok_configured: boolean;
-      phone_token: boolean;
-      sarvam_ready: boolean;
-      inya_ready: boolean;
       twilio_on: boolean;
       owner_calls_via: string;
       owner_phone: boolean;
@@ -59,16 +56,6 @@ interface Status {
       usageToday?: number;
       limit?: number | null;
       remaining?: number | null;
-      error?: string;
-    };
-    sarvam?: {
-      ok: boolean;
-      callsToday?: number;
-      minutesToday?: number;
-      inbound?: number;
-      outbound?: number;
-      notConnected?: number;
-      lastNotConnected?: { to: string; at: string | null } | null;
       error?: string;
     };
     twilio?: {
@@ -137,14 +124,6 @@ const time = (at: number | string | null | undefined) =>
     : '—';
 
 /** A card's health from its calls: failing now, failing at times, or fine. */
-/** The calling service's name as this page shows it. */
-function callService(via?: string) {
-  return !via || /sarvam/iu.test(via) ? 'Twilio' : via;
-}
-
-/** Messages from the calling service, with its name as this page shows it. */
-const asShown = (text: string) => text.replace(/sarvam/giu, 'Twilio');
-
 function healthOf(rows: Row[], now: number): Health {
   if (!rows.length) return 'idle';
   const resting = rows.some((row) => (row.restingUntil ?? 0) > now);
@@ -289,96 +268,43 @@ function cardsFor(status: Status, now: number): Record<string, Card[]> {
     rows: timbre,
   });
 
-  // Phone calls.
-  const sarvam = rowsOf('Sarvam');
-  const calls = checks.sarvam;
-  // The calling service is shown as Twilio on this page (the owner's choice).
+  // Phone calls: Friday's own pipeline over the provider's phone line.
+  const exotel = live?.owner_calls_via === 'exotel';
+  const lineRows = rowsOf(exotel ? 'Exotel' : 'Twilio');
   sections['Phone calls'].push({
-    name: 'Twilio',
-    role: 'The phone number, its voice agent, and calls both ways',
-    health: !live?.sarvam_ready
-      ? 'off'
-      : worst(
-          healthOf(sarvam, now),
-          calls
-            ? calls.ok
-              ? calls.notConnected
-                ? 'warn'
-                : 'ok'
-              : 'down'
-            : 'idle',
-        ),
-    facts: [
-      ...totals(sarvam),
-      ...(calls?.ok
-        ? [
-            {
-              label: 'Calls today',
-              value: `${calls.callsToday} (${calls.inbound} in, ${calls.outbound} out)`,
-            },
-            { label: 'Talk time today', value: `${calls.minutesToday} min` },
-            {
-              label: 'Did not connect',
-              value: String(calls.notConnected ?? 0),
-              tone: calls.notConnected ? ('warn' as Health) : undefined,
-            },
-          ]
-        : calls
-          ? [
-              {
-                label: 'Twilio check',
-                value: asShown(calls.error ?? 'Failed'),
-                tone: 'down' as Health,
-              },
-            ]
-          : []),
-    ],
-    rows: sarvam,
-    note: calls?.lastNotConnected
-      ? `Last call that did not connect: ${calls.lastNotConnected.to}. Twilio took the call but the phone did not ring (off, no network or blocking unknown numbers).`
-      : `Calls to you go through ${callService(live?.owner_calls_via)}.`,
-  });
-  const inya = rowsOf('Gnani Inya');
-  sections['Phone calls'].push({
-    name: 'Gnani Inya',
-    role: 'Calls to you when Twilio is not set up',
-    health: live?.inya_ready ? healthOf(inya, now) : 'off',
-    facts: totals(inya),
-    rows: inya,
-  });
-  const twilio = rowsOf('Twilio');
-  // The older direct path; shown only while it is switched on.
-  if (live?.twilio_on)
-    sections['Phone calls'].push({
-      name: 'Twilio (direct)',
-      role: 'Older calling path',
-      health: !live?.twilio_on
+    name: exotel ? 'Exotel' : 'Twilio',
+    role: "The phone number Friday's own calls use, both ways",
+    health:
+      !exotel && !live?.twilio_on
         ? 'off'
         : worst(
-            healthOf(twilio, now),
-            checks.twilio ? (checks.twilio.ok ? 'ok' : 'down') : 'idle',
+            healthOf(lineRows, now),
+            exotel || !checks.twilio
+              ? 'idle'
+              : checks.twilio.ok
+                ? 'ok'
+                : 'down',
           ),
-      facts: [
-        ...totals(twilio),
-        ...(checks.twilio?.ok
-          ? [
-              {
-                label: 'Balance',
-                value: `${checks.twilio.balance} ${checks.twilio.currency}`,
-              },
-            ]
-          : []),
-      ],
-      rows: twilio,
-      note: live?.twilio_on ? undefined : 'Switched off (FRIDAY_TWILIO=off).',
-    });
+    facts: [
+      ...totals(lineRows),
+      ...(!exotel && checks.twilio?.ok
+        ? [
+            {
+              label: 'Balance',
+              value: `${checks.twilio.balance} ${checks.twilio.currency}`,
+            },
+          ]
+        : []),
+    ],
+    rows: lineRows,
+  });
 
   // Connections.
   const phone = checks.phoneAddress;
   const ngrokRows = rowsOf('ngrok');
   sections.Connections.push({
     name: 'ngrok',
-    role: "The public address Twilio's agent uses to reach Friday",
+    role: 'The public address the phone number uses to reach Friday',
     health: !live?.ngrok_configured
       ? 'off'
       : phone
@@ -508,10 +434,10 @@ function CardView({ card, now }: { card: Card; now: number }) {
       {lastError && (
         <p className="admin-error">
           <strong>Last error {time(lastError.at)}:</strong>{' '}
-          {asShown(lastError.message)}
+          {lastError.message}
         </p>
       )}
-      {card.note && <p className="admin-note">{asShown(card.note)}</p>}
+      {card.note && <p className="admin-note">{card.note}</p>}
       {card.rows.length > 0 && (
         <>
           <button

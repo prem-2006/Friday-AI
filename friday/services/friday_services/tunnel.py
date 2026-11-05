@@ -25,7 +25,7 @@ from friday_services.usage import counted
 
 log = logging.getLogger("friday.tunnel")
 # What the phone providers reach through the tunnel; nothing else answers there.
-CALL_ROUTES = ("/exotel/", "/twilio/", "/phone/")
+CALL_ROUTES = ("/exotel/", "/twilio/")
 TUNNEL_URL = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 
 
@@ -90,7 +90,7 @@ NGROK_MARK = "x-friday-tunnel"
 
 class NgrokTunnel:
     """A fixed public address (NGROK_DOMAIN, free with an ngrok account), so
-    Sarvam's agent can reach /phone/ask at the same URL after every restart.
+    the phone number reaches Friday at the same URL after every restart.
     Every request through it carries NGROK_MARK, which TunnelGuard checks."""
 
     def __init__(self, port: int, authtoken: str, domain: str):
@@ -121,7 +121,7 @@ class NgrokTunnel:
 
 class TunnelGuard:
     """ASGI middleware: through a tunnel, only the call routes answer (Exotel's
-    /exotel/, Twilio's /twilio/ and Sarvam's /phone/)."""
+    /exotel/ and Twilio's /twilio/)."""
 
     def __init__(self, app):
         self.app = app

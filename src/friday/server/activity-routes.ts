@@ -72,6 +72,10 @@ export function fridayActivityRoutes({
   app.post('/friday/wake/stopped', async (c) =>
     relay('/wake/stopped', 'POST', undefined, await c.req.text()),
   );
+  // Shift + Caps Lock: the words go into the field with the cursor.
+  app.post('/friday/dictate', async (c) =>
+    relay('/dictate', 'POST', undefined, await c.req.text()),
+  );
   // The screen overlay: the area the owner dragged round.
   app.post('/friday/overlay/picked', async (c) =>
     relay('/overlay/picked', 'POST', undefined, await c.req.text()),

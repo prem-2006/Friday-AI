@@ -973,6 +973,19 @@ function StageSession({
   // What to do with something the owner said (from either voice path).
   const respond = async (heardText: string, startedOverFriday: boolean) => {
     let text = fixMishearings(heardText, languageRef.current);
+    // Shift + Caps Lock: the words are typed where the cursor is, not answered.
+    if (dictating.current) {
+      dictating.current = false;
+      heldTurn.current = false;
+      setPhase('off');
+      if (text)
+        await fetch('/api/friday/dictate', {
+          method: 'POST',
+          headers: { ...ownerHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        }).catch(() => setError('Friday could not type that.'));
+      return;
+    }
     // A Caps Lock hold is always meant for Friday, quiet or not.
     const held = heldTurn.current;
     heldTurn.current = false;
@@ -1226,6 +1239,7 @@ function StageSession({
   const holding = useRef(false);
   // The turn now being heard began with a Caps Lock hold (or "Hey Friday").
   const heldTurn = useRef(false);
+  const dictating = useRef(false);
   const pushToTalk = async (down: boolean) => {
     trace('ptt', {
       down,
@@ -1315,7 +1329,8 @@ function StageSession({
               () => undefined,
             ),
         );
-    } else if (action === 'ptt_down') void pushRef.current(true);
+    } else if (action === 'dictate_next') dictating.current = true;
+    else if (action === 'ptt_down') void pushRef.current(true);
     else if (action === 'ptt_up') void pushRef.current(false);
     else if (action === 'notch_toggle' && variant === 'notch')
       (

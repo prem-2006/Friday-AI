@@ -39,6 +39,7 @@ from friday_services.calls.twilio import (
 )
 from friday_services.config import REPO_ROOT, Settings
 from friday_services.desktop import DesktopApps, press_media_key
+from friday_services.dictate import dictate
 from friday_services.files import owner_folders
 from friday_services.instant import Instant
 from friday_services.mail_map import MailMap, composio_reader
@@ -574,6 +575,17 @@ def create_app(
     @app.post("/reminders/{reminder_id}/done", dependencies=[Depends(owner)])
     async def reminders_done(reminder_id: str) -> dict:
         return {"done": bool(await asyncio.to_thread(reminders.finish_id, reminder_id))}
+
+    # Shift + Caps Lock: the words go into the field with the cursor.
+    @app.post("/dictate", dependencies=[Depends(owner)])
+    async def dictate_words(request: Request) -> dict[str, str]:
+        body = await request.json()
+        text = str(body.get("text") or "") if isinstance(body, dict) else ""
+        feed.guard()
+        typed = await asyncio.to_thread(dictate, text[:4000])
+        if typed:
+            feed.emit("friday", "dictate", f"Typed: {typed[:80]}", state="done")
+        return {"typed": typed}
 
     # The overlay's answer: the area the owner dragged round, or none.
     @app.post("/overlay/picked", dependencies=[Depends(owner)])

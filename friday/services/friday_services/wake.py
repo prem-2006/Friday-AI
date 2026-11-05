@@ -1,7 +1,8 @@
 """Ways to reach Friday without touching the screen.
 
 Push-to-talk: hold Caps Lock, speak, let go. A quick tap still toggles Caps
-Lock as usual; only a hold counts. Ctrl + Caps Lock hides or shows the notch. Works in any app, through a low-level
+Lock as usual; only a hold counts. Shift + Caps Lock types the words instead
+of answering. Ctrl + Caps Lock hides or shows the notch. Works in any app, through a low-level
 keyboard hook that acts on Caps Lock alone.
 
 Double clap: two sharp claps within about half a second open Friday's voice
@@ -47,6 +48,11 @@ def ctrl_is_down() -> bool:
     return bool(ctypes.windll.user32.GetAsyncKeyState(VK_CONTROL) & 0x8000)
 
 
+def shift_is_down() -> bool:
+    """Whether Shift is held right now, from Windows itself."""
+    return bool(ctypes.windll.user32.GetAsyncKeyState(0x10) & 0x8000)
+
+
 class PushToTalkKey:
     def __init__(
         self,
@@ -55,8 +61,11 @@ class PushToTalkKey:
         send: Callable[[str], None] | None = None,
         hold_seconds: float = HOLD_SECONDS,
         ctrl_held: Callable[[], bool] | None = None,
+        shift_held: Callable[[], bool] | None = None,
     ):
         self._ctrl_held = ctrl_held
+        self._shift_held = shift_held
+        self._dictating = False
         self._toggling = False
         self._signal = signal
         self._hook_key = hook_key
@@ -75,6 +84,7 @@ class PushToTalkKey:
             self._hook_key = self._hook_key or keyboard.hook_key
             self._send = self._send or keyboard.send
             self._ctrl_held = self._ctrl_held or ctrl_is_down
+            self._shift_held = self._shift_held or shift_is_down
         self._remove = self._hook_key("caps lock", self.on_event, suppress=True)
 
     @property
@@ -92,6 +102,9 @@ class PushToTalkKey:
             if self._down_at is None or self._talking:
                 return
             self._talking = True
+        # Shift + Caps Lock: the words are typed, not answered (dictate.py).
+        if self._dictating:
+            self._signal("dictate_next")
         self._signal("ptt_down")
 
     def on_event(self, event: Any) -> bool:
@@ -111,6 +124,7 @@ class PushToTalkKey:
                 if self._down_at is not None:
                     return False  # key repeat while held
                 self._down_at = time.monotonic()
+                self._dictating = bool(self._shift_held and self._shift_held())
                 self._timer = threading.Timer(self._hold, self._held)
                 self._timer.daemon = True
                 self._timer.start()

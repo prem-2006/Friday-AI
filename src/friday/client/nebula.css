@@ -224,7 +224,7 @@
   scrollbar-color: rgba(88, 201, 243, 0.28) transparent;
 }
 
-/* The main page: the console grid in steel, and a metal Caps Lock key. */
+/* The main page: the console grid in steel. */
 :root[data-theme='dark'] body .friday-home {
   --bg: #061826;
   --panel: rgba(6, 24, 38, 0.6);
@@ -247,13 +247,5 @@
         rgba(88, 201, 243, 0.05) 0
       )
       0 0 / 32px 100%;
-}
-:root[data-theme='dark'] body .friday-home .caps {
-  background: var(--nebula-gunmetal);
-  border: 1px solid rgba(189, 229, 255, 0.28);
-  box-shadow:
-    var(--nebula-gunmetal-edge),
-    0 3px 0 #04121d;
-  color: #bde5ff;
 }
 /* palette: end */

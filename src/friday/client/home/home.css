@@ -215,17 +215,6 @@
   margin-right: 6px;
   box-shadow: 0 0 6px currentColor;
 }
-.samples {
-  font-size: 13px;
-  color: var(--muted);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.samples span {
-  color: var(--ink);
-}
-
 /* the reactor */
 .reactor {
   position: relative;
@@ -410,35 +399,6 @@
   text-align: center;
   padding: 16px 0;
 }
-.caps {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-}
-.cap {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 8px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  font-size: 13px;
-  background: rgba(255, 255, 255, 0.9);
-  transition: all 0.3s;
-}
-.cap .ic {
-  flex: none;
-  color: var(--cyan);
-}
-.cap.hot {
-  border-color: var(--amber);
-  background: rgba(255, 181, 71, 0.12);
-  box-shadow: 0 0 18px rgba(255, 181, 71, 0.25);
-}
-.cap.hot .ic {
-  color: var(--amber);
-}
-
 /* settings cards under the console */
 .home-main {
   max-width: 1280px;

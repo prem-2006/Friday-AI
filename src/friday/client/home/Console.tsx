@@ -1,22 +1,7 @@
 // Friday: the console at the top of the main page, in the layout of the ARRC
 // "J" console: how to talk and system status on the left, Friday's reactor
-// and what it is doing in the middle, and the live feed and
-// abilities on the right.
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  AlarmClock,
-  AppWindow,
-  CalendarDays,
-  CloudSun,
-  Code2,
-  FolderOpen,
-  Globe,
-  Mail,
-  MessageCircle,
-  Monitor,
-  Music,
-  NotebookPen,
-} from 'lucide-react';
+// and what it is doing in the middle, and the live feed under them.
+import { useCallback, useEffect, useState } from 'react';
 import { followActivity, ownerHeaders } from '../stage/activity';
 import type { ActivityEvent } from '../stage/narration';
 
@@ -83,35 +68,6 @@ export const ABILITY_OF: Record<string, string> = {
   code_editor_read: 'coding',
   code_editor_write: 'coding',
 };
-
-const ABILITIES = [
-  { id: 'web', label: 'Web & Google', Icon: Globe },
-  { id: 'music', label: 'YouTube & music', Icon: Music },
-  { id: 'apps', label: 'Apps & modes', Icon: AppWindow },
-  { id: 'files', label: 'Files', Icon: FolderOpen },
-  { id: 'email', label: 'Gmail', Icon: Mail },
-  { id: 'calendar', label: 'Meetings', Icon: CalendarDays },
-  { id: 'whatsapp', label: 'WhatsApp', Icon: MessageCircle },
-  { id: 'reminders', label: 'Timers & deadlines', Icon: AlarmClock },
-  { id: 'notes', label: 'Notes', Icon: NotebookPen },
-  { id: 'screen', label: 'Screen & PC', Icon: Monitor },
-  { id: 'weather', label: 'Weather & maps', Icon: CloudSun },
-  { id: 'coding', label: 'Coding practice', Icon: Code2 },
-] as const;
-
-const SAMPLES = [
-  'Arijit Singh ka gaana chalao',
-  'Aaj ka briefing do',
-  'Ye kaun hai?',
-  'Wi-Fi setting kahan hai, dikhao',
-  'Kal 5 baje DBMS project ka reminder laga do',
-  'Research electric scooters in India and give me a report',
-  'Open Notepad and write my shopping list',
-  'What’s the weather in Pune?',
-  'Schedule a meeting with Ruchita tomorrow at 3',
-  'Solve this LeetCode problem',
-  'Find my resume',
-];
 
 interface Reminder {
   id: string;
@@ -259,16 +215,6 @@ export function FridayConsole() {
   }, [loadReminders]);
 
   const latest = events.at(-1);
-  const recentHot = useMemo(
-    () =>
-      new Set(
-        events
-          .filter((event) => now - event.at * 1000 < 6000)
-          .map((event) => ABILITY_OF[event.action])
-          .filter(Boolean),
-      ),
-    [events, now],
-  );
   const reactorState =
     latest && now - latest.at * 1000 < 8000
       ? latest.state === 'failed'
@@ -385,27 +331,6 @@ export function FridayConsole() {
                 </div>
               ))}
           </div>
-        </div>
-        <div className="panel samples">
-          <div className="label">Try saying</div>
-          {SAMPLES.map((sample) => (
-            <div key={sample}>
-              <span>“{sample}”</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <h2 className="home-section">Abilities</h2>
-      <div className="panel abilities">
-        <div className="label">Abilities</div>
-        <div className="caps">
-          {ABILITIES.map(({ id, label, Icon }) => (
-            <div key={id} className={`cap ${recentHot.has(id) ? 'hot' : ''}`}>
-              <Icon size={15} className="ic" />
-              {label}
-            </div>
-          ))}
         </div>
       </div>
     </div>

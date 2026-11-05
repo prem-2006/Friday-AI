@@ -15,12 +15,11 @@ interface Desktop {
 }
 const desktop = () => (globalThis as { fridayDesktop?: Desktop }).fridayDesktop;
 
-const BARS = 27;
+const BARS = 13;
 
-// The owner talking: slim icy bars, mirrored from the middle, that jump up
+// The owner talking: slim white bars, mirrored from the middle, that jump up
 // with each sound and settle slowly, with a faint ripple running through them
-// in pauses so the notch never looks frozen while it listens. The pill's edge
-// glows with the mic (--mic on the pill).
+// in pauses so the notch never looks frozen while it listens.
 function Bars({
   spectrum,
   level,
@@ -37,9 +36,7 @@ function Bars({
     element.width = element.clientWidth * ratio;
     element.height = element.clientHeight * ratio;
     ctx.scale(ratio, ratio);
-    const pill = element.parentElement;
     const heights = new Float32Array(BARS);
-    let mic = 0;
     let frame = 0;
     const draw = (now: number) => {
       const w = element.clientWidth;
@@ -47,16 +44,8 @@ function Bars({
       const t = now / 1000;
       const bins = spectrum();
       const loud = Math.min(1, level() * 1.5);
-      mic += (loud - mic) * 0.2;
-      pill?.style.setProperty('--mic', mic.toFixed(3));
       ctx.clearRect(0, 0, w, h);
-      const fill = ctx.createLinearGradient(0, 0, 0, h);
-      fill.addColorStop(0, '#58c9f3');
-      fill.addColorStop(0.5, '#bde5ff');
-      fill.addColorStop(1, '#58c9f3');
-      ctx.fillStyle = fill;
-      ctx.shadowColor = '#58c9f3';
-      ctx.shadowBlur = 4 + 6 * mic;
+      ctx.fillStyle = '#fff';
       const gap = w / BARS;
       for (let i = 0; i < BARS; i++) {
         // Mirror the voice band around the middle, like a waveform.
@@ -83,15 +72,13 @@ function Bars({
     frame = requestAnimationFrame(draw);
     return () => {
       cancelAnimationFrame(frame);
-      pill?.style.removeProperty('--mic');
     };
   }, [spectrum, level]);
   return <canvas ref={canvas} className="notch-bars" aria-hidden />;
 }
 
-// Friday's own voice: soft glowing waves that swell with what it says and keep
-// drifting in its pauses, unlike the owner's bars. The pill's glow follows the
-// same loudness (--voice on the pill).
+// Friday's own voice: soft white waves that swell with what it says and keep
+// drifting in its pauses, unlike the owner's bars.
 // Each line also vibrates up and down like a plucked string (shake, how
 // fast in turns per second), all the time while Friday talks.
 const WAVES = [
@@ -110,7 +97,6 @@ function Waves({ level }: { level: () => number }) {
     element.width = element.clientWidth * ratio;
     element.height = element.clientHeight * ratio;
     ctx.scale(ratio, ratio);
-    const pill = element.parentElement;
     const calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let loud = 0;
     let frame = 0;
@@ -120,18 +106,14 @@ function Waves({ level }: { level: () => number }) {
       const t = (now / 1000) * (calm ? 0.35 : 1);
       // Smooth the loudness so the waves breathe instead of jitter.
       loud += (Math.min(1, level() * 1.4) - loud) * 0.18;
-      pill?.style.setProperty('--voice', loud.toFixed(3));
       ctx.clearRect(0, 0, w, h);
       ctx.globalCompositeOperation = 'lighter';
       const gradient = ctx.createLinearGradient(0, 0, w, 0);
-      gradient.addColorStop(0, 'rgba(88, 201, 243, 0)');
-      gradient.addColorStop(0.2, '#58c9f3');
-      gradient.addColorStop(0.5, '#2fa0c6');
-      gradient.addColorStop(0.8, '#e6d6ea');
-      gradient.addColorStop(1, 'rgba(230, 214, 234, 0)');
+      gradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
+      gradient.addColorStop(0.2, '#fff');
+      gradient.addColorStop(0.8, '#fff');
+      gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
       ctx.strokeStyle = gradient;
-      ctx.shadowColor = '#2fa0c6';
-      ctx.shadowBlur = 6;
       // Never flat: a little swell even between words.
       const swell = 0.3 + 0.7 * loud;
       for (const [index, wave] of WAVES.entries()) {
@@ -170,7 +152,6 @@ function Waves({ level }: { level: () => number }) {
     frame = requestAnimationFrame(draw);
     return () => {
       cancelAnimationFrame(frame);
-      pill?.style.removeProperty('--voice');
     };
   }, [level]);
   return <canvas ref={canvas} className="notch-waves" aria-hidden />;

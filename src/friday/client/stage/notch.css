@@ -32,7 +32,7 @@
   justify-content: center;
   /* At rest: a tiny flat black pill. A hairline edge keeps it visible on a
      dark wallpaper. No glow, no gradient. */
-  width: 44px;
+  width: 64px;
   height: 8px;
   padding: 0;
   overflow: hidden;
@@ -49,33 +49,33 @@
 }
 /* The owner talking: opens just enough for its white bars. */
 .friday-notch.hearing .notch-pill {
-  width: 92px;
+  width: 112px;
   height: 26px;
 }
 /* Friday talking: a little wider, with flowing white waves. */
 .friday-notch.speaking .notch-pill {
-  width: 108px;
+  width: 128px;
   height: 26px;
 }
 /* The canvases have fixed sizes: they measure themselves once, while the pill
    is still opening. */
 .notch-waves {
   flex: none;
-  width: 92px;
+  width: 112px;
   height: 20px;
 }
 .friday-notch.thinking .notch-pill,
 .friday-notch.asking .notch-pill {
-  width: 52px;
+  width: 64px;
   height: 18px;
 }
 .friday-notch.offline .notch-pill {
-  width: 44px;
+  width: 64px;
   height: 10px;
 }
 .notch-bars {
   flex: none;
-  width: 76px;
+  width: 96px;
   height: 18px;
 }
 .notch-dots {

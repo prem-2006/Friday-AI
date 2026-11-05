@@ -20,6 +20,7 @@ dependencies = [
     "pycaw>=20240316",
     "python-dotenv>=1.2.4",
     "pywinauto>=0.6.9",
+    "soundcard>=0.4.3",
     "sounddevice>=0.5",
     "tzdata>=2026.5",
     "uvicorn[standard]>=0.54.0",

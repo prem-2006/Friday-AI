@@ -114,6 +114,23 @@ export const ABILITIES: Ability[] = [
     ],
   },
   {
+    id: 'meetings-notes',
+    title: 'Take meeting notes',
+    detail:
+      'When you ask, hear the mic and the PC’s sound, send speech to Gnani, and save notes in your vault. No audio is kept.',
+    tools: [
+      {
+        dot: 'Friday',
+        connection: 'quick',
+        names: [
+          'start_meeting_notes',
+          'meeting_question',
+          'stop_meeting_notes',
+        ],
+      },
+    ],
+  },
+  {
     id: 'people',
     title: 'Recognise people I saved',
     detail:

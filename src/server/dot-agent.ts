@@ -49,6 +49,7 @@ import {
 } from '../friday/server/delegate.js';
 import { rememberTool } from '../friday/server/remember.js';
 import type { ObsidianMemory } from '../friday/server/obsidian-memory.js';
+import { agentTools, workspaceAgents } from '../friday/server/agents.js';
 import { fridayPersonality } from '../friday/server/personality.js';
 
 import {
@@ -422,6 +423,10 @@ export class DotAgent extends AbstractAgent {
               check,
               controller.signal,
             ),
+            // FRIDAY: "make an agent called Researcher", for the Friday Dot only.
+            ...(this.channel
+              ? []
+              : agentTools(dot, workspaceAgents(this.workspace), check)),
             // FRIDAY: remember and search the Obsidian vault when memory is allowed.
             ...(initialSettings.memoryAllowed && dot.memoryAllowed
               ? rememberTool(dot, this.store, check, this.obsidianMemory)

@@ -12,7 +12,7 @@ Friday is built on one open-source project, took ideas from two more, and uses a
 
 | Project | What Friday took | Where in Friday | License |
 | ------- | ---------------- | --------------- | ------- |
-| [Atticus for Mac](https://github.com/SaarthurR/atticus-mac) by SaarthurR, and its Windows port [atticus-windows](https://github.com/FindlayHi/atticus-windows) | Instant commands with no AI call, learned shortcuts that replay a task said in any order or for another app, "When I say X, …" voice shortcuts, "watch for me", the opt-in wake word idea, and the Windows display and window code (laptop vs monitor, exact window frames). Adapted to replay Friday's own quick tools and to Hindi and Hinglish asks. | `friday/services/friday_services/instant.py`, `winctl.py`, `watch.py`, `wake.py` (wake word), `src/friday/server/instant.ts` | MIT |
+| [Atticus for Mac](https://github.com/SaarthurR/atticus-mac) by SaarthurR, and its Windows port [atticus-windows](https://github.com/FindlayHi/atticus-windows) | Instant commands with no AI call, learned shortcuts that replay a task said in any order or for another app, "When I say X, …" voice shortcuts, "watch for me", the opt-in wake word idea, the Windows display and window code (laptop vs monitor, exact window frames), and the ideas for Show me where, Draw on screen, Point at your screen, Dictate anywhere, named agents and Meeting Copilot (rebuilt for Windows, no code copied). Adapted to replay Friday's own quick tools and to Hindi and Hinglish asks. | `friday/services/friday_services/instant.py`, `winctl.py`, `watch.py`, `wake.py` (wake word), `overlay.py`, `dictate.py`, `meeting.py`, `src/friday/server/instant.ts`, `agents.ts`, `src/friday/client/stage/ScreenOverlay.tsx` | MIT |
 
 ## 1c. Run alongside Friday
 

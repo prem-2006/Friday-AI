@@ -123,6 +123,19 @@ export class WorkspaceStore {
   dot(id: string) {
     return this.dots().find((dot) => dot.id === id);
   }
+  // FRIDAY: named agents can be deleted, with their tools and conversations.
+  deleteDot(id: string) {
+    this.db.exec('BEGIN');
+    try {
+      for (const table of ['mcp_connections', 'thread_bindings', 'dot_spaces'])
+        this.db.prepare(`DELETE FROM ${table} WHERE dotId=?`).run(id);
+      this.db.prepare('DELETE FROM dots WHERE id=?').run(id);
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
   createDot(
     spaceId: string,
     name: string,

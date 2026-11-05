@@ -31,6 +31,7 @@ from friday_services.browser import BrowserError, OnScreenBrowser, first_video, 
 from friday_services.desktop import DesktopApps, DesktopError
 from friday_services.files import FilesError, find_files, open_file
 from friday_services.media import MediaError, OwnerMedia, youtube_window
+from friday_services.meeting import MeetingNotesError
 from friday_services.meetings import MeetingError, calendar_event_url
 from friday_services.organizer import (
     Notes,
@@ -58,6 +59,7 @@ ACT = ToolAnnotations(read_only_hint=False, destructive_hint=False)
 SENDS = ToolAnnotations(read_only_hint=False, destructive_hint=True)
 LOOK = ToolAnnotations(read_only_hint=True)
 FAILURES = (
+    MeetingNotesError,
     PeopleError,
     BrowserError,
     DesktopError,
@@ -180,6 +182,7 @@ def build_quick_server(
     research: Any = None,
     people: Any = None,
     overlay: Any = None,
+    meeting: Any = None,
 ) -> MCPServer:
     volume = volume or Volume()
     server = MCPServer(
@@ -1216,6 +1219,62 @@ def build_quick_server(
         on = f" on the {screen}" if screen != "current" else ""
         name = placed.get("app") or placed.get("window") or window
         return {**placed, "friday_say": f"{_short(name, 40)} is {where}{on}."}
+
+    if meeting is not None:
+
+        @server.tool(
+            name="start_meeting_notes",
+            description=(
+                "Listen to a call or meeting (the mic and the PC's sound) and take notes: "
+                "'meeting notes shuru karo', 'take notes in this call'. Use the owner's title "
+                "if they give one."
+            ),
+            annotations=ACT,
+        )
+        async def start_meeting_notes(
+            title: Annotated[str, Field(max_length=60)] = "Meeting",
+        ) -> dict:
+            async def begin() -> None:
+                meeting.start(title or "Meeting")
+
+            await act("start_meeting_notes", "Taking meeting notes.", begin)
+            return {
+                "listening": True,
+                "friday_say": "I am taking notes now. Let everyone on the call know.",
+            }
+
+        @server.tool(
+            name="meeting_question",
+            description=(
+                "Answer a question from what was said in the meeting so far: 'abhi kya decide "
+                "hua', 'what did they say about the budget'."
+            ),
+            annotations=LOOK,
+        )
+        async def meeting_question(
+            question: Annotated[str, Field(min_length=2, max_length=300)],
+            hinglish: bool = False,
+        ) -> dict:
+            said = await act(
+                "meeting_question",
+                "Checking the meeting so far.",
+                lambda: meeting.answer(question, hinglish),
+            )
+            return {"friday_say": said}
+
+        @server.tool(
+            name="stop_meeting_notes",
+            description=(
+                "Stop listening to the meeting and save the summary and action items: 'meeting "
+                "khatam', 'stop the notes'."
+            ),
+            annotations=ACT,
+        )
+        async def stop_meeting_notes(hinglish: bool = False) -> dict:
+            done = await act(
+                "stop_meeting_notes", "Writing the meeting notes.", lambda: meeting.stop(hinglish)
+            )
+            return {"path": done["path"], "friday_say": done["say"]}
 
     if overlay is not None:
 

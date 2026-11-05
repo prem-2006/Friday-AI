@@ -50,6 +50,7 @@ from friday_services.mcp_desktop import build_desktop_server, build_whatsapp_ser
 from friday_services.mcp_phone import Dialer, build_phone_server, place_own_call
 from friday_services.mcp_quick import build_quick_server
 from friday_services.media import OwnerMedia
+from friday_services.meeting import Meeting
 from friday_services.organizer import (
     Notes,
     OrganizerError,
@@ -196,6 +197,7 @@ def create_app(
             summarise=lambda mails, hinglish: summarise_mail(settings, mails, hinglish),
             people=People(saved_people) if owner_media is not None else None,
             overlay=overlay if owner_media is not None else None,
+            meeting=Meeting(settings) if owner_media is not None else None,
             # Background research needs Obscura (friday/obscura; not in tests).
             research=(
                 Researcher(

@@ -155,28 +155,6 @@
   margin-top: -8px;
   font-size: 13px;
 }
-.talk {
-  font-size: 13px;
-  color: var(--muted);
-}
-.talk b {
-  display: block;
-  margin: 8px 0;
-}
-.talk kbd {
-  display: inline-block;
-  padding: 4px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: #fff;
-  color: var(--ink);
-  font: 600 20px var(--mono);
-  letter-spacing: 0.04em;
-  box-shadow: 0 2px 0 rgba(15, 76, 129, 0.14);
-}
-.talk .hint {
-  font-size: 13px;
-}
 .chips {
   display: flex;
   flex-direction: column;

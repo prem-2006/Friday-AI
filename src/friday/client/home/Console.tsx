@@ -1,5 +1,5 @@
 // Friday: the console at the top of the main page, in the layout of the ARRC
-// "J" console: how to talk and system status on the left, Friday's reactor
+// "J" console: system status on the left, Friday's reactor
 // and what it is doing in the middle, and the live feed under them.
 import { useCallback, useEffect, useState } from 'react';
 import { followActivity, ownerHeaders } from '../stage/activity';
@@ -233,8 +233,8 @@ export function FridayConsole() {
     ? latest.action.replace(/_/g, ' ').replace(/^browser /, '') || 'Friday'
     : 'Friday';
 
-  // FRIDAY: one clear order: who Friday is and how to talk to it, what it is
-  // doing, then everything it can do.
+  // FRIDAY: one clear order: who Friday is and its status, then what it is
+  // doing.
   return (
     <div className="console">
       <section className="console-hero">
@@ -243,18 +243,6 @@ export function FridayConsole() {
             F<span>R</span>IDAY
           </h1>
           <div className="tag">Your AI voice assistant, built on Gnani</div>
-          <div className="panel talk">
-            <div className="label">Talk to Friday</div>
-            Hold
-            <b>
-              <kbd>Caps Lock</kbd>
-            </b>
-            <div className="hint">
-              anywhere and speak; let go when you are done. English, Hindi or
-              any mix. Gnani hears you, Friday and its Dots do the work, Gnani
-              speaks. Ctrl + Caps Lock hides the notch.
-            </div>
-          </div>
           <div className="panel system">
             <div className="label">System</div>
             <div className="chips">

@@ -423,7 +423,7 @@
   animation-delay: 0.12s;
 }
 
-/* The layout: a hero (who Friday is, how to talk, system status beside the
+/* The layout: a hero (who Friday is, system status beside the
    reactor), then Activity and Setup, each under its own heading. */
 .friday-home .console {
   display: flex;

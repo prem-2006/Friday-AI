@@ -1,0 +1,98 @@
+/* Friday: marks drawn over the owner's screen (see ScreenOverlay.tsx). They sit
+   on any app, in light or dark, so each has a dark edge behind its colour. */
+/* theme: fixed .friday-overlay */
+/* palette: exact */
+.friday-overlay-page,
+.friday-overlay-page body,
+.friday-overlay-page #root {
+  background: transparent !important;
+  overflow: hidden;
+}
+.friday-overlay {
+  position: fixed;
+  inset: 0;
+  font:
+    600 15px/1.3 'Segoe UI Variable Text',
+    'Segoe UI',
+    system-ui,
+    sans-serif;
+}
+.friday-overlay.picking {
+  cursor: crosshair;
+  background: rgba(10, 12, 10, 0.28);
+  user-select: none;
+}
+.friday-overlay svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.overlay-ring,
+.overlay-box,
+.overlay-arrow {
+  fill: none;
+  stroke: #6cc7a1;
+  stroke-width: 3px;
+  paint-order: stroke;
+  filter: drop-shadow(0 0 1.5px #0c0f0d);
+  opacity: 0;
+  animation: overlay-in 0.3s ease-out forwards;
+}
+.overlay-ring {
+  stroke-width: 4px;
+  animation:
+    overlay-in 0.3s ease-out forwards,
+    overlay-pulse 1.4s ease-in-out 0.3s 3;
+}
+.overlay-head {
+  fill: #6cc7a1;
+}
+.overlay-label {
+  position: absolute;
+  max-width: 280px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: #161715;
+  color: #ecece7;
+  opacity: 0;
+  animation: overlay-in 0.3s ease-out forwards;
+}
+.overlay-hint {
+  position: absolute;
+  top: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 7px 14px;
+  border-radius: 8px;
+  background: #161715;
+  color: #ecece7;
+}
+.overlay-selection {
+  position: absolute;
+  border: 2px solid #6cc7a1;
+  background: rgba(108, 199, 161, 0.14);
+}
+@keyframes overlay-in {
+  to {
+    opacity: 1;
+  }
+}
+@keyframes overlay-pulse {
+  50% {
+    stroke-width: 7px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .overlay-ring,
+  .overlay-box,
+  .overlay-arrow,
+  .overlay-label {
+    animation: none;
+    opacity: 1;
+  }
+}
+/* palette: end */
+/* theme: end */

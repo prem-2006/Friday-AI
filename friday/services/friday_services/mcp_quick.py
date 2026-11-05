@@ -179,6 +179,7 @@ def build_quick_server(
     summarise: Callable[[list[dict], bool], Awaitable[str | None]] | None = None,
     research: Any = None,
     people: Any = None,
+    overlay: Any = None,
 ) -> MCPServer:
     volume = volume or Volume()
     server = MCPServer(
@@ -1215,6 +1216,73 @@ def build_quick_server(
         on = f" on the {screen}" if screen != "current" else ""
         name = placed.get("app") or placed.get("window") or window
         return {**placed, "friday_say": f"{_short(name, 40)} is {where}{on}."}
+
+    if overlay is not None:
+
+        @server.tool(
+            name="show_me_where",
+            description=(
+                "Find something on the owner's screen and mark the spot on the screen itself: "
+                "'where do I click', 'Wi-Fi setting kahan hai', 'show me where the export button "
+                "is'. hinglish: true when the owner spoke Hindi or Hinglish."
+            ),
+            annotations=LOOK,
+        )
+        async def show_me_where(
+            question: Annotated[str, Field(min_length=2, max_length=300)],
+            hinglish: bool = False,
+        ) -> dict:
+            done = await act(
+                "show_me_where",
+                "Looking at your screen.",
+                lambda: overlay.show_where(question, hinglish),
+            )
+            return {"marks": done["marks"], "friday_say": done["say"]}
+
+        @server.tool(
+            name="draw_on_screen",
+            description=(
+                "Explain something by drawing a labeled diagram over the screen: 'explain the "
+                "water cycle and draw it', 'ise draw karke samjhao'. hinglish: true when the "
+                "owner spoke Hindi or Hinglish."
+            ),
+            annotations=LOOK,
+        )
+        async def draw_on_screen(
+            topic: Annotated[str, Field(min_length=2, max_length=300)],
+            hinglish: bool = False,
+        ) -> dict:
+            done = await act("draw_on_screen", "Drawing it.", lambda: overlay.draw(topic, hinglish))
+            return {"marks": done["marks"], "friday_say": done["say"]}
+
+        @server.tool(
+            name="clear_drawing",
+            description="Remove what Friday drew on the screen.",
+            annotations=ACT,
+        )
+        async def clear_drawing() -> dict:
+            overlay.clear()
+            return {"friday_say": "Cleared."}
+
+        @server.tool(
+            name="point_and_ask",
+            description=(
+                "The owner shows you part of the screen by dragging round it, then you answer "
+                "about that part: 'main dikhata hoon, ye kya hai', 'let me point at it'. Use "
+                "look_at_screen for questions about the whole screen."
+            ),
+            annotations=LOOK,
+        )
+        async def point_and_ask(
+            question: Annotated[str, Field(min_length=2, max_length=300)],
+            hinglish: bool = False,
+        ) -> dict:
+            done = await act(
+                "point_and_ask",
+                "Drag round what you mean.",
+                lambda: overlay.point_and_ask(question, hinglish),
+            )
+            return {"picked": done["picked"], "friday_say": done["say"]}
 
     if people is not None:
 

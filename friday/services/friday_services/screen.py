@@ -92,6 +92,19 @@ def describe_screen(
     env: Mapping[str, str],
     transport: httpx.BaseTransport | None = None,
 ) -> str:
+    text = vision_answer(LOOK_PROMPT, question, image_b64, env, 300, transport)
+    return " ".join(text.split()) or "I could not make out the screen."
+
+
+def vision_answer(
+    system: str,
+    question: str,
+    image_b64: str | None,
+    env: Mapping[str, str],
+    max_tokens: int = 300,
+    transport: httpx.BaseTransport | None = None,
+) -> str:
+    """The vision model's answer, with a picture if there is one."""
     base_url = (env.get("EVON_BASE_URL") or "").rstrip("/")
     api_key = env.get("EVON_API_KEY") or ""
     model = env.get("FRIDAY_VISION_MODEL") or env.get("EVON_MODEL") or ""
@@ -99,17 +112,23 @@ def describe_screen(
         raise ScreenError("Set EVON_BASE_URL, EVON_API_KEY and EVON_MODEL to look at the screen.")
     body = {
         "model": model,
-        "max_tokens": 300,
+        "max_tokens": max_tokens,
         "messages": [
-            {"role": "system", "content": LOOK_PROMPT},
+            {"role": "system", "content": system},
             {
                 "role": "user",
                 "content": [
                     {"type": "text", "text": question},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"},
-                    },
+                    *(
+                        [
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"},
+                            }
+                        ]
+                        if image_b64
+                        else []
+                    ),
                 ],
             },
         ],
@@ -128,4 +147,4 @@ def describe_screen(
         text = response.json()["choices"][0]["message"]["content"]
     except (KeyError, IndexError, ValueError) as error:
         raise ScreenError("The vision model gave no answer.") from error
-    return " ".join(str(text or "").split()) or "I could not make out the screen."
+    return str(text or "")

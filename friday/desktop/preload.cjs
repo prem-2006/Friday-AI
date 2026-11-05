@@ -7,4 +7,6 @@ contextBridge.exposeInMainWorld('fridayDesktop', {
   setInteractive: (on) => ipcRenderer.send('friday:interactive', !!on),
   open: (hash) => ipcRenderer.send('friday:open', hash),
   toggle: () => ipcRenderer.send('friday:toggle'),
+  // The screen overlay takes the mouse only while the owner points.
+  setOverlayMouse: (on) => ipcRenderer.send('friday:overlay-mouse', !!on),
 });

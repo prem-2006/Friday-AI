@@ -72,6 +72,10 @@ export function fridayActivityRoutes({
   app.post('/friday/wake/stopped', async (c) =>
     relay('/wake/stopped', 'POST', undefined, await c.req.text()),
   );
+  // The screen overlay: the area the owner dragged round.
+  app.post('/friday/overlay/picked', async (c) =>
+    relay('/overlay/picked', 'POST', undefined, await c.req.text()),
+  );
   // The people saved for "who is this".
   app.get('/friday/people', () => relay('/people'));
   app.delete('/friday/people/:name', (c) =>

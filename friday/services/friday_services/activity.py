@@ -73,6 +73,12 @@ class ActivityFeed:
                 self._holder = target
             target.put_nowait(event)
 
+    def broadcast(self, action: str, detail: str = "") -> None:
+        """Tell every open page (the screen overlay listens). Not kept in history."""
+        event = Activity(next(self._ids), "control", action, detail, state="done")
+        for queue in list(self._listeners):
+            queue.put_nowait(event)
+
     @property
     def watched(self) -> bool:
         """Whether a voice window is connected right now."""

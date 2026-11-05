@@ -34,6 +34,7 @@ const SAMPLES = [
   'Arijit Singh ka gaana chalao',
   'Aaj ka briefing do',
   'Ye kaun hai?',
+  'Wi-Fi setting kahan hai, dikhao',
   'Kal 5 baje DBMS project ka reminder laga do',
   'Research electric scooters in India and give me a report',
   'Open Notepad and write my shopping list',

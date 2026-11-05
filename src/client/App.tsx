@@ -16,6 +16,10 @@ import {
   ActivityToast,
   TOAST_HASH,
 } from '../friday/client/stage/ActivityToast';
+import {
+  OVERLAY_HASH,
+  ScreenOverlay,
+} from '../friday/client/stage/ScreenOverlay';
 
 // FRIDAY: the desktop notch page (friday/desktop).
 const NOTCH_HASH = '#/notch';
@@ -288,6 +292,8 @@ export function App() {
   if (location.hash.startsWith(NOTCH_DEMO_HASH)) return <NotchDemo />;
   // FRIDAY: the live task toast window (friday/desktop), current step only.
   if (location.hash === TOAST_HASH) return <ActivityToast />;
+  // FRIDAY: marks over the whole screen (friday/desktop).
+  if (location.hash === OVERLAY_HASH) return <ScreenOverlay />;
   if (fridayScreen === 'notch' && (needsAuth || !state || !workspace || !dot))
     return <FridayStage variant="notch" configured={false} onExit={() => {}} />;
   if (needsAuth)

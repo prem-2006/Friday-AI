@@ -79,7 +79,15 @@ export const ABILITIES: Ability[] = [
       {
         dot: 'Friday',
         connection: 'quick',
-        names: ['look_at_screen', 'watch_window', 'stop_watching'],
+        names: [
+          'look_at_screen',
+          'watch_window',
+          'stop_watching',
+          'show_me_where',
+          'draw_on_screen',
+          'clear_drawing',
+          'point_and_ask',
+        ],
       },
     ],
   },

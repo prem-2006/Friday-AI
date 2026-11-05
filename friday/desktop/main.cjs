@@ -190,6 +190,50 @@ function createToast() {
   toast.webContents.on('render-process-gone', reload);
 }
 
+// Marks over the whole primary screen (#/overlay): Show me where and Draw on
+// screen. Clicks pass through it, except while the owner drags round an area.
+let overlay = null;
+const liveOverlay = () => (overlay && !overlay.isDestroyed() ? overlay : null);
+
+function createOverlay() {
+  overlay = new BrowserWindow({
+    ...screen.getPrimaryDisplay().bounds,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    focusable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    alwaysOnTop: true,
+    show: false,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      backgroundThrottling: false,
+      preload: path.join(__dirname, 'preload.cjs'),
+    },
+  });
+  overlay.on('closed', () => {
+    overlay = null;
+  });
+  overlay.setAlwaysOnTop(true, 'screen-saver');
+  overlay.setIgnoreMouseEvents(true);
+  overlay.webContents.on('did-finish-load', () => liveOverlay()?.showInactive());
+  void overlay.loadURL(`${WEB}/#/overlay`);
+  const reload = () =>
+    setTimeout(() => void liveOverlay()?.loadURL(`${WEB}/#/overlay`), 3000);
+  overlay.webContents.on('did-fail-load', reload);
+  overlay.webContents.on('render-process-gone', reload);
+}
+
+ipcMain.on('friday:overlay-mouse', (_event, on) => {
+  const window = liveOverlay();
+  if (!window) return;
+  window.setIgnoreMouseEvents(!on);
+  window.setFocusable(!!on);
+  if (on) window.focus();
+});
+
 // Friday's main page in its own app window (taskbar icon, no browser tab).
 // One window: opening it again brings it to the front on that page. Closing
 // it leaves the notch and the voice running.
@@ -437,6 +481,7 @@ app.whenReady().then(async () => {
   await ensureFriday();
   createNotch();
   createToast();
+  createOverlay();
   if (wantsMain(process.argv)) openMain('#/home');
   watchSelf();
   watchNotch();

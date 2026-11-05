@@ -57,6 +57,7 @@ from friday_services.organizer import (
     speak_with_windows,
     spoken_time,
 )
+from friday_services.overlay import Overlay
 from friday_services.owner_calls import OwnerCaller, owner_phone
 from friday_services.owner_chrome import owner_chrome
 from friday_services.people import People, SavedPeople
@@ -133,6 +134,8 @@ def create_app(
     notes = Notes(settings.data_dir / "notes.txt")
     # "Who is this": only people the owner saved, all on this PC.
     saved_people = SavedPeople(settings.data_dir / "people.json")
+    # Friday's marks over the screen (friday/desktop's #/overlay window).
+    overlay = Overlay(settings.values, feed.broadcast, capture_screen)
     whatsapp = WhatsApp(whatsapp_ui or DesktopWhatsAppUI(), settings.owner_name)
     # Watches run on their own thread; what they say goes back through the event loop.
     loop_ref: dict[str, asyncio.AbstractEventLoop] = {}
@@ -191,6 +194,7 @@ def create_app(
             ),
             summarise=lambda mails, hinglish: summarise_mail(settings, mails, hinglish),
             people=People(saved_people) if owner_media is not None else None,
+            overlay=overlay if owner_media is not None else None,
             # Background research needs Obscura (friday/obscura; not in tests).
             research=(
                 Researcher(
@@ -570,6 +574,12 @@ def create_app(
     @app.post("/reminders/{reminder_id}/done", dependencies=[Depends(owner)])
     async def reminders_done(reminder_id: str) -> dict:
         return {"done": bool(await asyncio.to_thread(reminders.finish_id, reminder_id))}
+
+    # The overlay's answer: the area the owner dragged round, or none.
+    @app.post("/overlay/picked", dependencies=[Depends(owner)])
+    async def overlay_picked(request: Request) -> dict[str, bool]:
+        body = await request.json()
+        return {"waiting": overlay.picked(body.get("rect") if isinstance(body, dict) else None)}
 
     # A helper Dot finished in the background: Friday says its report.
     @app.post("/activity/announce", dependencies=[Depends(owner)])

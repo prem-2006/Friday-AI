@@ -9,6 +9,7 @@ import type { Message } from '@ag-ui/core';
 import { FRIDAY_DOT_NAME } from './delegate.js';
 import { voiceLog } from './voice-log.js';
 import { fallbackReply } from './quick-finish.js';
+import { currentBackground } from './background.js';
 import { instantClient, turnCalls, type InstantClient } from './instant.js';
 import {
   localThread,
@@ -191,6 +192,13 @@ export function fridayRunRoutes(
       );
     }
   };
+  // Helper Dots working in the background: what they are doing, and "cancel".
+  app.get('/friday/background', (c) =>
+    c.json(currentBackground()?.list() ?? []),
+  );
+  app.post('/friday/background/cancel', (c) =>
+    c.json({ dropped: currentBackground()?.cancelAll() ?? 0 }),
+  );
   const history = z.array(message).min(1).max(MAX_MESSAGES);
   app.post('/friday/voice/run', async (c) => {
     const input = z

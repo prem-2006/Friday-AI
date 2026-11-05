@@ -33,6 +33,7 @@ it('runs the task on the named helper and returns its report', async () => {
   const result = await tool.execute!({
     dot: 'navigator',
     task: 'Add dentist 6 PM tomorrow to the calendar',
+    wait: true,
   });
   expect(delegate).toHaveBeenCalledWith(
     navigator,

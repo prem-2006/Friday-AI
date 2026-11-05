@@ -923,8 +923,19 @@ function StageSession({
     }
   };
 
+  // Helper Dots in the background; returns how many were dropped.
+  const cancelBackground = () =>
+    fetch('/api/friday/background/cancel', {
+      method: 'POST',
+      headers: ownerHeaders(),
+    })
+      .then((response) => response.json())
+      .then((data: { dropped?: number }) => data.dropped ?? 0)
+      .catch(() => 0);
+
   const stopEverything = async () => {
     caption('friday', 'Stopping.');
+    void cancelBackground();
     await cancelRunning();
   };
 
@@ -1042,7 +1053,8 @@ function StageSession({
     if (isCancelCommand(text)) {
       caption('you', text);
       if (pendingApproval) return decide(false);
-      const busy = runningRef.current || fridayTalking();
+      const dropped = await cancelBackground();
+      const busy = runningRef.current || fridayTalking() || dropped > 0;
       await cancelRunning();
       setPhase('off');
       return speak(

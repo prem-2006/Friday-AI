@@ -571,6 +571,16 @@ def create_app(
     async def reminders_done(reminder_id: str) -> dict:
         return {"done": bool(await asyncio.to_thread(reminders.finish_id, reminder_id))}
 
+    # A helper Dot finished in the background: Friday says its report.
+    @app.post("/activity/announce", dependencies=[Depends(owner)])
+    async def activity_announce(request: Request) -> dict[str, bool]:
+        body = await request.json()
+        text = str(body.get("text") or "").strip() if isinstance(body, dict) else ""
+        if not text:
+            raise HTTPException(400, "Send the text to say.")
+        announce(text[:800])
+        return {"said": True}
+
     @app.post("/activity/stop", dependencies=[Depends(owner)])
     async def activity_stop() -> dict[str, bool]:
         feed.stop()

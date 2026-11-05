@@ -1,6 +1,7 @@
 // Friday: "remember that I prefer morning meetings". Saves a fact to the
 // workspace memories, which every Dot that may use memory reads as the owner's
-// preferences on each turn. Only Friday saves them, and only when asked.
+// preferences on each turn. Only Friday saves them: when asked, or when the
+// owner says something lasting about themselves (friday/personality.md).
 import { defineTool, type ToolDefinition } from '@copilotkit/runtime/v2';
 import { z } from 'zod';
 import type { ObsidianMemory, ObsidianRecall } from './obsidian-memory.js';
@@ -22,7 +23,7 @@ export function rememberTool(
     defineTool({
       name: 'remember',
       description:
-        'Save something the owner asks you to remember (a preference, a fact about them or a standing instruction). It is saved in Friday and as a Markdown note in the Obsidian vault. Never save passwords, OTPs or card numbers.',
+        'Save something the owner asks you to remember (a preference, a fact about them or a standing instruction), or something lasting they tell you about themselves (a taste, opinion, habit, goal or who someone is to them). Not passing moods, and nothing about health or money unless they ask. It is saved in Friday and as a Markdown note in the Obsidian vault. Never save passwords, OTPs or card numbers.',
       parameters: z.object({
         fact: z
           .string()

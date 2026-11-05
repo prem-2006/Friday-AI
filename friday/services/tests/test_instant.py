@@ -180,6 +180,14 @@ def test_instant_route_runs_friday_quick_tools(server):
     assert httpx.post(f"{server.url}/instant", json={"text": "x"}).status_code == 401
 
 
+def test_who_is_this_runs_without_the_model(friday):
+    for text, hinglish in [("Who is this?", False), ("ye kaun hai", True), ("isko pehchano", True)]:
+        assert ask(friday, text)["calls"] == [
+            {"tool": "who_is_this", "args": {"hinglish": hinglish}}
+        ], text
+    assert ask(friday, "who is this song by") is None
+
+
 def test_briefing_asks_run_without_the_model(friday):
     for text, hinglish in [
         ("brief me", False),

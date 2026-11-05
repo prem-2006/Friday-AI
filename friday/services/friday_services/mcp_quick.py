@@ -47,6 +47,7 @@ from friday_services.organizer import (
     take_screenshot,
     weather,
 )
+from friday_services.people import PeopleError, who_sentence
 from friday_services.screen import POSITIONS, Position, Screen, ScreenError
 from friday_services.sites import site_name
 from friday_services.volume import Volume, VolumeError, volume_sentence
@@ -57,6 +58,7 @@ ACT = ToolAnnotations(read_only_hint=False, destructive_hint=False)
 SENDS = ToolAnnotations(read_only_hint=False, destructive_hint=True)
 LOOK = ToolAnnotations(read_only_hint=True)
 FAILURES = (
+    PeopleError,
     BrowserError,
     DesktopError,
     ScreenError,
@@ -176,6 +178,7 @@ def build_quick_server(
     mail_map: Any = None,
     summarise: Callable[[list[dict], bool], Awaitable[str | None]] | None = None,
     research: Any = None,
+    people: Any = None,
 ) -> MCPServer:
     volume = volume or Volume()
     server = MCPServer(
@@ -1212,6 +1215,87 @@ def build_quick_server(
         on = f" on the {screen}" if screen != "current" else ""
         name = placed.get("app") or placed.get("window") or window
         return {**placed, "friday_say": f"{_short(name, 40)} is {where}{on}."}
+
+    if people is not None:
+
+        @server.tool(
+            name="who_is_this",
+            description=(
+                "Look through the camera and say who is in front of it, from the people the "
+                "owner saved: 'who is this', 'ye kaun hai', 'isko pehchano'. Someone not saved "
+                "is reported as not saved: never guess a name or search for them anywhere. "
+                "hinglish: true when the owner spoke Hindi or Hinglish."
+            ),
+            annotations=LOOK,
+        )
+        async def who_is_this(hinglish: bool = False) -> dict:
+            async def look() -> dict:
+                return await asyncio.to_thread(people.who)
+
+            seen = await act("who_is_this", "Looking through the camera.", look)
+            said = who_sentence(seen["names"], hinglish)
+            if seen["image"]:
+                feed.emit("friday", "who_is_this", said, state="done", image=seen["image"])
+            return {"names": seen["names"], "scores": seen["scores"], "friday_say": said}
+
+        @server.tool(
+            name="remember_person",
+            description=(
+                "Save the one person in front of the camera under a name, so 'who is this' "
+                "knows them: 'isko Rahul ke naam se save karo'. Saves face numbers on this PC, "
+                "no photo. Only for someone who has agreed: unless the owner already said so, "
+                "ask whether this person agreed, and pass agreed true only after a yes."
+            ),
+            annotations=ACT,
+        )
+        async def remember_person(
+            name: Annotated[str, Field(min_length=2, max_length=60)],
+            agreed: bool = False,
+        ) -> dict:
+            if not agreed:
+                return {"saved": False, "friday_say": f"Has {name} agreed to be saved?"}
+
+            async def save() -> dict:
+                return await asyncio.to_thread(people.remember, name)
+
+            done = await act("remember_person", f"Saving {name}. Look at the camera.", save)
+            feed.emit(
+                "friday",
+                "remember_person",
+                f"Saved {done['name']}.",
+                state="done",
+                image=done["image"],
+            )
+            return {"saved": True, "friday_say": f"Saved. I will know {done['name']} now."}
+
+        @server.tool(
+            name="forget_person",
+            description="Delete a saved person's face data: 'Rahul ka data hata do'.",
+            annotations=ACT,
+        )
+        async def forget_person(name: Annotated[str, Field(min_length=2, max_length=60)]) -> dict:
+            async def forget() -> str | None:
+                return await asyncio.to_thread(people.saved.forget, name)
+
+            gone = await act("forget_person", f"Forgetting {name}.", forget)
+            return {
+                "forgotten": bool(gone),
+                "friday_say": f"I have deleted {gone}." if gone else f"I have not saved {name}.",
+            }
+
+        @server.tool(
+            name="list_people",
+            description="Say who Friday has saved for 'who is this'.",
+            annotations=LOOK,
+        )
+        async def list_people() -> dict:
+            names = [person["name"] for person in people.saved.listed()]
+            return {
+                "people": names,
+                "friday_say": f"I know {', '.join(names)}."
+                if names
+                else "I have not saved anyone.",
+            }
 
     if research is not None:
 

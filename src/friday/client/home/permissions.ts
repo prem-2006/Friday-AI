@@ -106,6 +106,24 @@ export const ABILITIES: Ability[] = [
     ],
   },
   {
+    id: 'people',
+    title: 'Recognise people I saved',
+    detail:
+      'Use the camera only when you ask “who is this”. It knows only the people you saved, and their face data stays on this PC.',
+    tools: [
+      {
+        dot: 'Friday',
+        connection: 'quick',
+        names: [
+          'who_is_this',
+          'remember_person',
+          'forget_person',
+          'list_people',
+        ],
+      },
+    ],
+  },
+  {
     id: 'calls',
     title: 'Call my phone',
     detail:

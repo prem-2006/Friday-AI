@@ -13,6 +13,7 @@ import {
   Mic,
   Phone,
   Play,
+  ScanFace,
   ShieldCheck,
   X,
 } from 'lucide-react';
@@ -65,6 +66,62 @@ interface Contact {
 
 // How many contacts show before "Show more".
 const CONTACTS_SHOWN = 2;
+
+// Who "who is this" knows, and deleting them. Adding is by voice, with the
+// person in front of the camera.
+function PeopleCard() {
+  const [people, setPeople] = useState<{ name: string }[]>([]);
+  const [status, setStatus] = useState('');
+  useEffect(() => {
+    void api<{ name: string }[]>('/friday/people')
+      .then(setPeople)
+      .catch(() => setStatus('Friday’s services are not running.'));
+  }, []);
+  const forget = async (name: string) => {
+    setStatus('');
+    try {
+      setPeople(
+        await api<{ name: string }[]>(
+          `/friday/people/${encodeURIComponent(name)}`,
+          { method: 'DELETE' },
+        ),
+      );
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Could not delete.');
+    }
+  };
+  return (
+    <section className="home-card">
+      <header>
+        <ScanFace size={16} />
+        <h2>People Friday knows</h2>
+      </header>
+      <p className="home-muted">
+        With a friend in front of the camera, and only if they agree, say “isko
+        Rahul ke naam se save karo”. Then ask “ye kaun hai?”. Face data stays on
+        this PC, and no photo is kept.
+      </p>
+      {people.length > 0 && (
+        <ul className="home-contacts">
+          {people.map(({ name }) => (
+            <li key={name}>
+              <strong>{name}</strong>
+              <span />
+              <button
+                type="button"
+                aria-label={`Delete ${name}`}
+                onClick={() => void forget(name)}
+              >
+                <X size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {status && <p className="home-note">{status}</p>}
+    </section>
+  );
+}
 
 // The people Friday may phone for the owner: "call Rahul" uses Rahul's number.
 function ContactsCard() {
@@ -821,6 +878,7 @@ export function FridayHome({
           <h2 className="home-section">Setup</h2>
           <div className="home-grid">
             <ContactsCard />
+            <PeopleCard />
             <GoogleCard profile={profile} onSaved={setProfile} />
             <ConnectionsCard />
             <PermissionsCard dots={workspace?.dots ?? []} />

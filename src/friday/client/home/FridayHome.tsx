@@ -28,6 +28,7 @@ import {
   type AbilityState,
 } from './permissions';
 import { FridayConsole } from './Console';
+import { HoloHud, HoloScene } from './HoloScene';
 import './home.css';
 
 export const HOME_HASH = '#/home';
@@ -843,6 +844,7 @@ export function FridayHome({
   }, []);
   return (
     <div className="friday-home">
+      <HoloScene />
       <header className="home-top">
         <div className="home-brand">
           <span className="home-mark" aria-hidden>
@@ -872,18 +874,17 @@ export function FridayHome({
           </button>
         </nav>
       </header>
+      <HoloHud />
       <main className="home-main">
-        <FridayConsole name={profile.name} />
-        <section className="home-setup">
-          <h2 className="home-section">Setup</h2>
-          <div className="home-grid">
-            <ContactsCard />
-            <PeopleCard />
-            <GoogleCard profile={profile} onSaved={setProfile} />
-            <ConnectionsCard />
-            <PermissionsCard dots={workspace?.dots ?? []} />
-          </div>
-        </section>
+        <FridayConsole />
+        <h2 className="home-section">Setup &amp; accounts</h2>
+        <div className="home-grid">
+          <ContactsCard />
+          <PeopleCard />
+          <GoogleCard profile={profile} onSaved={setProfile} />
+          <ConnectionsCard />
+          <PermissionsCard dots={workspace?.dots ?? []} />
+        </div>
       </main>
     </div>
   );

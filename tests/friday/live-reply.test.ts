@@ -12,24 +12,33 @@ it('cuts finished sentences off text that is still being written', () => {
     'Opening Notepad for you',
   ]);
   expect(
-    readySentences('Opening Notepad for you now. I will type the list'),
-  ).toEqual([['Opening Notepad for you now.'], 'I will type the list']);
-  // Short pieces wait, so the voice is not choppy; Hindi's danda ends one too.
-  expect(readySentences('Haan. Main abhi call laga deti hoon। Phir')).toEqual([
-    ['Haan. Main abhi call laga deti hoon।'],
-    'Phir',
+    readySentences(
+      'Opening Notepad for you now, and then your list. I will type the list',
+    ),
+  ).toEqual([
+    ['Opening Notepad for you now, and then your list.'],
+    'I will type the list',
+  ]);
+  // Short sentences join the next one, so each piece of voice keeps one pace;
+  // Hindi's danda ends a sentence too.
+  expect(
+    readySentences('Haan. Main abhi call laga deti hoon, ek minute। Phir'),
+  ).toEqual([['Haan. Main abhi call laga deti hoon, ek minute।'], 'Phir']);
+  expect(readySentences('Haan. Theek hai. Ok')).toEqual([
+    [],
+    'Haan. Theek hai. Ok',
   ]);
 });
 
-it('starts talking at the first pause once a few words are in', () => {
+it('starts talking at the first comma once a full clause is in', () => {
+  // Never a clipped two-word piece like "Haan Prem,".
   expect(readySentences('Haan Prem, main abhi', true)).toEqual([
-    ['Haan Prem,'],
-    'main abhi',
+    [],
+    'Haan Prem, main abhi',
   ]);
-  expect(readySentences('Okay, the', true)).toEqual([[], 'Okay, the']);
   expect(
-    readySentences('Main abhi YouTube pe gaana laga rahi hoon', true),
-  ).toEqual([['Main abhi YouTube pe gaana laga'], 'rahi hoon']);
+    readySentences('Main abhi YouTube pe gaana laga rahi hoon, bas ek', true),
+  ).toEqual([['Main abhi YouTube pe gaana laga rahi hoon,'], 'bas ek']);
   // After the first piece, whole sentences, as before.
   expect(readySentences('Haan Prem, main abhi', false)).toEqual([
     [],

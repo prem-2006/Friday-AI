@@ -5,7 +5,12 @@ import { usage } from './usage.js';
 
 export const GNANI_STT_URL = 'https://api.vachana.ai/stt/v3';
 export const GNANI_TTS_URL = 'https://api.vachana.ai/api/v1/tts/inference';
-export const TIMBRE_MODEL = 'timbre-v2.5';
+// FRIDAY_TTS_MODEL picks Gnani's voice model (timbre-v3.0 sounds most human),
+// FRIDAY_VOICE one voice for every language.
+export const timbreModel = (env = process.env) =>
+  env.FRIDAY_TTS_MODEL || 'timbre-v2.5';
+export const voiceFor = (voice: string, env = process.env) =>
+  env.FRIDAY_VOICE || voice;
 
 export class GnaniError extends Error {
   constructor(
@@ -123,8 +128,8 @@ export async function synthesize({
     headers: { 'Content-Type': 'application/json', 'X-API-Key-ID': apiKey },
     body: JSON.stringify({
       text,
-      model: TIMBRE_MODEL,
-      voice,
+      model: timbreModel(),
+      voice: voiceFor(voice),
       language,
       speed: 1,
       audio_config: {

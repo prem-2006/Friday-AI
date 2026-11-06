@@ -197,10 +197,15 @@ export async function runFriday(
   }
 }
 
+// Each piece is its own request to the voice, with its own pace, so pieces
+// are whole sentences of at least this many characters: a two-word piece
+// ("Haan Prem,") sounds clipped and machine-like.
+const MIN_PIECE = 40;
+
 /** Cuts finished sentences off the front of text being written: returns
  * [sentences ready to speak, the rest still being written]. For the reply's
- * first piece (first), a pause such as a comma is enough once a few words are
- * in, so Friday starts talking sooner. */
+ * first piece (first), a comma is enough once a full clause is in, so Friday
+ * starts talking sooner without sounding clipped. */
 export function readySentences(
   text: string,
   first = false,
@@ -208,7 +213,7 @@ export function readySentences(
   const out: string[] = [];
   let rest = text;
   if (first) {
-    const pause = /^(\S+\s+){1,}?\S*?[,;:—–-](?=\s)|^(\S+\s+){6}/u.exec(
+    const pause = /^(\S+\s+){5,}?\S*?[,;:—–](?=\s)|^(\S+\s+){12}/u.exec(
       rest.trimStart(),
     );
     if (pause) {
@@ -221,9 +226,9 @@ export function readySentences(
   for (;;) {
     // A sentence end (also the Hindi danda), then a space; short pieces wait
     // for more so the voice does not sound choppy.
-    const match = /[.!?।]+["')\]]?\s+|\n+/u.exec(rest.slice(20));
+    const match = /[.!?।]+["')\]]?\s+|\n+/u.exec(rest.slice(MIN_PIECE));
     if (!match) break;
-    const end = 20 + match.index + match[0].length;
+    const end = MIN_PIECE + match.index + match[0].length;
     out.push(rest.slice(0, end).trim());
     rest = rest.slice(end);
   }

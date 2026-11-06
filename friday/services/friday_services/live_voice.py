@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import os
 import time
 from collections.abc import Callable
 from typing import Any
@@ -57,7 +58,41 @@ from friday_services.usage import usage
 
 TAIL_SECONDS = 1.0
 PREROLL_SECONDS = 1.5  # audio kept from before a "Hey Friday" hold began  # silence after Caps Lock is let go, so Gnani ends the turn
-TTS_MODEL = "timbre-v2.5"
+# Gnani's voice model and, optionally, one voice for every language (Timbre
+# v3.0 voices speak all ten): FRIDAY_TTS_MODEL and FRIDAY_VOICE in .env.
+TTS_MODEL = os.environ.get("FRIDAY_TTS_MODEL") or "timbre-v2.5"
+
+
+def allow_newer_timbre(tts: Any) -> None:
+    """pipecat-gnani 0.5 checks models against v2.0 and v2.5 only, while Gnani's
+    API also serves Timbre v3.0, which reads its language and speed too."""
+    if getattr(tts, "_friday_v3", False):
+        return
+    check, build = tts._validate_tts_settings, tts._build_tts_payload
+
+    def validate(voice, model, language):
+        if not str(model).startswith("timbre-v3"):
+            check(voice, model, language)
+
+    def payload(text, settings, sample_rate):
+        model = tts._settings_model(settings)
+        if not str(model).startswith("timbre-v3"):
+            return build(text, settings, sample_rate)
+        body = {
+            "text": text,
+            "voice": tts._settings_voice(settings),
+            "model": model,
+            "audio_config": tts._build_audio_config(settings, sample_rate),
+        }
+        language = tts._optional_tts_language_code(settings)
+        if language is not None:
+            body["language"] = language
+        return body
+
+    tts._validate_tts_settings, tts._build_tts_payload = validate, payload
+    tts._friday_v3 = True
+
+
 # Gnani allows one Timbre request at a time per key. Every voice window has its
 # own pipeline, so they take turns here instead of Gnani refusing one (429).
 _ONE_VOICE: dict[asyncio.AbstractEventLoop, asyncio.Lock] = {}
@@ -254,7 +289,7 @@ class LiveVoiceSession:
         self._connection = connection
         self._api_key = api_key
         self._language = language
-        self._voice = voice
+        self._voice = os.environ.get("FRIDAY_VOICE") or voice
         self.gate = AudioGate()
         self._task: Any = None
 
@@ -284,6 +319,7 @@ class LiveVoiceSession:
 
     async def run(self) -> None:
         import aiohttp
+        import pipecat_gnani.tts
         from pipecat.audio.vad.silero import SileroVADAnalyzer
         from pipecat.audio.vad.vad_analyzer import VADParams
         from pipecat.pipeline.pipeline import Pipeline
@@ -293,6 +329,8 @@ class LiveVoiceSession:
         from pipecat.transports.base_transport import TransportParams
         from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
         from pipecat_gnani import GnaniSSETTSService, GnaniSTTService
+
+        allow_newer_timbre(pipecat_gnani.tts)
 
         transport = SmallWebRTCTransport(
             webrtc_connection=self._connection,

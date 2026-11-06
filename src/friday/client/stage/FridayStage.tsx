@@ -510,7 +510,11 @@ function StageSession({
   // The screen is closing: stop reconnecting the live voice.
   const leaving = useRef(false);
   const liveEventRef = useRef<(event: LiveEvent) => void>(() => {});
-  const spokenWaiter = useRef<(() => void) | null>(null);
+  // Live voice: the pieces Friday is still to finish saying, oldest first;
+  // each ends when the pipeline says it stopped playing. liveQueued counts
+  // their characters, for a cap in case that message is lost.
+  const liveWaiters = useRef<(() => void)[]>([]);
+  const liveQueued = useRef(0);
   // What Friday said lately, to tell its echo from the owner talking over it.
   const spokenLately = useRef<{ text: string; at: number }[]>([]);
   // Hands-free: the mic is open and turns start by voice. For push-to-talk
@@ -620,11 +624,45 @@ function StageSession({
     speechToken.current += 1; // cancels any parts still queued
     audio.current?.pause();
     audio.current = null;
-    if (live.current?.speaking || spokenWaiter.current)
+    if (live.current?.speaking || liveWaiters.current.length)
       live.current?.interrupt();
-    spokenWaiter.current?.();
-    spokenWaiter.current = null;
+    endAllLive();
     speakingMain.current = false;
+  };
+
+  const endAllLive = () => {
+    const waiting = liveWaiters.current;
+    liveWaiters.current = [];
+    liveQueued.current = 0;
+    waiting.forEach((done) => done());
+  };
+
+  // Sends a piece to the live voice at once: the pipeline speaks it right
+  // after the pieces before it, with no gap. Resolves when it has played.
+  const sayLive = (text: string) =>
+    new Promise<void>((resolve) => {
+      liveQueued.current += text.length;
+      let cap: ReturnType<typeof setTimeout> | undefined;
+      const finish = () => {
+        if (cap === undefined) return;
+        clearTimeout(cap);
+        cap = undefined;
+        liveQueued.current = Math.max(0, liveQueued.current - text.length);
+        liveWaiters.current = liveWaiters.current.filter((w) => w !== finish);
+        resolve();
+      };
+      cap = setTimeout(finish, 4000 + liveQueued.current * 90);
+      liveWaiters.current.push(finish);
+      live.current?.say(text);
+    });
+
+  // A live piece has played: once nothing more is queued, the reply is over.
+  const endLive = (token: number, main: boolean) => {
+    if (token !== speechToken.current || liveWaiters.current.length) return;
+    if (main) {
+      speakingMain.current = false;
+      setPhase('off');
+    }
   };
 
   const playPart = async (blob: Blob, token: number) => {
@@ -649,6 +687,16 @@ function StageSession({
     URL.revokeObjectURL(url);
   };
 
+  // The next piece of a reply already being spoken on the live voice: queued
+  // behind it instead of stopping it.
+  const speakMore = async (text: string) => {
+    if (!text || !voiceReady) return;
+    const token = speechToken.current;
+    spokenLately.current.push({ text, at: Date.now() });
+    await sayLive(text);
+    endLive(token, true);
+  };
+
   // Speaks sentence by sentence: the first part plays while the next ones are
   // still being synthesised, so the first word comes much sooner.
   const speak = async (text: string, main: boolean, startedAt?: number) => {
@@ -666,26 +714,10 @@ function StageSession({
     const voice = live.current;
     if (voice?.connected) {
       // The live pipeline streams Friday's voice; wait until it has finished
-      // (or was interrupted), with a cap in case a message is lost.
-      try {
-        await new Promise<void>((resolve) => {
-          const cap = setTimeout(resolve, 4000 + text.length * 90);
-          spokenWaiter.current = () => {
-            clearTimeout(cap);
-            resolve();
-          };
-          if (main) logTiming();
-          voice.say(text);
-        });
-      } finally {
-        if (token === speechToken.current) {
-          spokenWaiter.current = null;
-          if (main) {
-            speakingMain.current = false;
-            setPhase('off');
-          }
-        }
-      }
+      // (or was interrupted).
+      if (main) logTiming();
+      await sayLive(text);
+      endLive(token, main);
       return;
     }
     const parts = speechParts(text);
@@ -778,6 +810,23 @@ function StageSession({
     const heardAt = talkedOver.current;
     const say = (sentence: string) => {
       spokenText += `${sentence} `;
+      if (live.current?.connected) {
+        // Live voice: each piece goes out as soon as it is written and is
+        // spoken right after the one before. Waiting for a piece to finish
+        // before sending the next left a pause between sentences.
+        if (
+          controller.signal.aborted ||
+          stopping.current ||
+          talkedOver.current !== heardAt
+        )
+          return;
+        const spoken = replying.current
+          ? speakMore(sentence)
+          : speak(sentence, true, performance.now());
+        replying.current = true;
+        voiceQueue = voiceQueue.then(() => spoken);
+        return;
+      }
       voiceQueue = voiceQueue.then(async () => {
         if (
           controller.signal.aborted ||
@@ -1245,14 +1294,10 @@ function StageSession({
       );
     } else if (event.event === 'speaking') {
       if (event.on) setPhase('speaking');
-      else {
-        spokenWaiter.current?.();
-        spokenWaiter.current = null;
-      }
+      else liveWaiters.current[0]?.(); // the oldest piece has played
     } else if (event.event === 'error') {
       // Friday cannot be waiting to finish speaking after a voice problem.
-      spokenWaiter.current?.();
-      spokenWaiter.current = null;
+      endAllLive();
       setError(friendlyError(new Error(event.message), 'Voice problem.'));
     }
   };

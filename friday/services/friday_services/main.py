@@ -69,6 +69,7 @@ from friday_services.phone_in import (
 )
 from friday_services.research import Researcher, ask_model, find_obscura
 from friday_services.screen import capture_screen, describe_screen, snap_window
+from friday_services.scripted import reply as scripted_reply
 from friday_services.tunnel import NgrokTunnel, TunnelGuard
 from friday_services.usage import timed, usage
 from friday_services.watch import Watches
@@ -648,6 +649,12 @@ def create_app(
         text = str(body.get("text") or "")[:500]
         if not text.strip() or feed.stopped:
             return {"handled": False}
+        # A demo shoot (FRIDAY_SCRIPTED_REPLIES=true): the script's exact line.
+        if settings.get("FRIDAY_SCRIPTED_REPLIES", "false").lower() == "true":
+            line = await asyncio.to_thread(scripted_reply, text)
+            if line:
+                feed.emit("friday", "instant", line, state="done")
+                return {"handled": True, "say": line, "calls": []}
         last = (feed.recent(1) or [{"id": 0}])[-1]["id"]
         try:
             done = await instant.handle(text)

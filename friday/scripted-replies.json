@@ -1,0 +1,28 @@
+{
+  "about": "Exact replies for a demo shoot. Used only while FRIDAY_SCRIPTED_REPLIES=true in .env. Each line: the ways the question may be asked, and what Friday says.",
+  "lines": [
+    {
+      "scene": "The Human Memory Problem",
+      "when": [
+        "where did I put my headphones",
+        "where are my headphones",
+        "mere headphones kahan rakhe"
+      ],
+      "say": "You mentioned leaving them on your study table."
+    },
+    {
+      "scene": "The Human Memory Problem",
+      "when": [
+        "what was I supposed to do today",
+        "what do I have to do today",
+        "aaj mujhe kya karna tha"
+      ],
+      "say": "You planned to finish your assignment, attend your meeting at 4 p.m."
+    },
+    {
+      "scene": "The Human Memory Problem",
+      "when": ["how do you remember everything", "tum sab kaise yaad rakhti ho"],
+      "say": "That's literally my job."
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-"""One phone call: Exotel or Twilio audio -> Prisma -> Evon -> Timbre -> back."""
+"""One phone call: Exotel audio -> Prisma -> Evon -> Timbre -> back to Exotel."""
 
 from __future__ import annotations
 
@@ -24,7 +24,6 @@ from pipecat.processors.aggregators.llm_response_universal import (
 )
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.serializers.exotel import ExotelFrameSerializer
-from pipecat.serializers.twilio import TwilioFrameSerializer
 from pipecat.services.llm_service import FunctionCallParams
 from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.transcriptions.language import Language
@@ -160,7 +159,7 @@ def end_call_handler(store: CallStore, record: CallRecord, ended: asyncio.Event)
         )
         ended.set()
         await params.result_callback({"ok": True})
-        # Ends the pipeline after queued speech; the serializer hangs up Twilio.
+        # Ends the pipeline after queued speech; Exotel's flow then hangs up.
         await params.llm.push_frame(EndWorkerFrame(), FrameDirection.UPSTREAM)
 
     return end_call
@@ -190,30 +189,17 @@ def take_message_handler(
     return take_message
 
 
-def call_transport(
-    websocket: Any, provider: str, stream_sid: str, call_sid: str, settings: Settings
-) -> FastAPIWebsocketTransport:
-    """The call's audio over the provider's WebSocket. Twilio's serializer
-    hangs up through its API; Exotel's flow hangs up when the socket closes."""
-    if provider == "exotel":
-        serializer = ExotelFrameSerializer(stream_sid=stream_sid, call_sid=call_sid)
-        chunks = EXOTEL_OUT_10MS_CHUNKS
-    else:
-        serializer = TwilioFrameSerializer(
-            stream_sid=stream_sid,
-            call_sid=call_sid,
-            account_sid=settings.get("TWILIO_ACCOUNT_SID"),
-            auth_token=settings.get("TWILIO_AUTH_TOKEN"),
-        )
-        chunks = 4
+def call_transport(websocket: Any, stream_sid: str, call_sid: str) -> FastAPIWebsocketTransport:
+    """The call's audio over Exotel's WebSocket; Exotel's call flow hangs up
+    when the socket closes."""
     return FastAPIWebsocketTransport(
         websocket=websocket,
         params=FastAPIWebsocketParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
             add_wav_header=False,
-            audio_out_10ms_chunks=chunks,
-            serializer=serializer,
+            audio_out_10ms_chunks=EXOTEL_OUT_10MS_CHUNKS,
+            serializer=ExotelFrameSerializer(stream_sid=stream_sid, call_sid=call_sid),
         ),
     )
 
@@ -226,14 +212,13 @@ def build_call_pipeline(
     record: CallRecord,
     store: CallStore,
     settings: Settings,
-    provider: str = "twilio",
     helpers: CallHelpers | None = None,
 ) -> CallPipeline:
     """Wire the pipeline for one call. Nothing connects until it runs."""
     voice = voice_for(record.language)
     gnani_key = settings.get("GNANI_API_KEY")
     helpers = helpers or CallHelpers()
-    transport = call_transport(websocket, provider, stream_sid, call_sid, settings)
+    transport = call_transport(websocket, stream_sid, call_sid)
     tools = [END_CALL]
     if record.kind in OWNER_KINDS and helpers.ask:
         tools.append(ASK_FRIDAY)
@@ -378,7 +363,6 @@ async def run_call(
     record: CallRecord,
     store: CallStore,
     settings: Settings,
-    provider: str = "twilio",
     helpers: CallHelpers | None = None,
 ) -> None:
     store.set_stage(record.id, "in_progress")
@@ -390,7 +374,6 @@ async def run_call(
         record=record,
         store=store,
         settings=settings,
-        provider=provider,
         helpers=helpers,
     )
     runner = WorkerRunner(handle_sigint=False)

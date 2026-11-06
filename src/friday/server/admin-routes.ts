@@ -2,7 +2,7 @@
 // for every outside API (this server's model and Gnani calls, and
 // friday/services' calls, voice, tunnel and tools) with live checks that cost
 // nothing: whether each Gemini key still works, OpenRouter's credits,
-// Twilio's balance, and whether the public phone
+// Sarvam's calls today, and whether the public phone
 // address answers. Live checks run at most once a minute unless asked.
 // No key ever leaves this server; keys are shown by their last 4 characters.
 import { Hono } from 'hono';
@@ -18,6 +18,19 @@ const list = (value?: string) =>
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
+
+/** Start of today (owner's time zone) as an ISO time in UTC. */
+function startOfToday(timeZone: string, now = new Date()) {
+  const day = new Intl.DateTimeFormat('en-CA', { timeZone }).format(now);
+  const offset = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    timeZoneName: 'longOffset',
+  })
+    .formatToParts(now)
+    .find((part) => part.type === 'timeZoneName')
+    ?.value.replace('GMT', '');
+  return new Date(`${day}T00:00:00${offset || 'Z'}`).toISOString().slice(0, 19);
+}
 
 export interface KeyCheck {
   key: string;
@@ -38,10 +51,15 @@ export interface LiveChecks {
     remaining?: number | null;
     error?: string;
   };
-  twilio?: {
+  sarvam?: {
     ok: boolean;
-    balance?: string;
-    currency?: string;
+    callsToday?: number;
+    minutesToday?: number;
+    inbound?: number;
+    outbound?: number;
+    /** Calls Sarvam accepted but could not connect (phone off, no network). */
+    notConnected?: number;
+    lastNotConnected?: { to: string; at: string | null } | null;
     error?: string;
   };
   phoneAddress?: { url: string; ok: boolean; status?: number; error?: string };
@@ -127,42 +145,93 @@ export async function liveChecks(
       }).then((result) => (checks.openrouter = result)),
     );
 
-  if (env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN)
+  if (
+    env.SARVAM_API_KEY &&
+    env.SARVAM_ORG_ID &&
+    env.SARVAM_WORKSPACE_ID &&
+    env.SARVAM_APP_ID
+  )
     jobs.push(
       attempt(async (signal) => {
-        const auth = Buffer.from(
-          `${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`,
-        ).toString('base64');
+        const params = new URLSearchParams({
+          start_datetime: startOfToday(env.TIMEZONE || 'Asia/Kolkata'),
+          end_datetime: new Date().toISOString().slice(0, 19),
+          include_transcript: 'false',
+          limit: '100',
+        });
         const response = await fetch(
-          `https://api.twilio.com/2010-04-01/Accounts/${env.TWILIO_ACCOUNT_SID}/Balance.json`,
-          { headers: { Authorization: `Basic ${auth}` }, signal },
+          `https://apps.sarvam.ai/api/analytics/v1/${env.SARVAM_ORG_ID}/${env.SARVAM_WORKSPACE_ID}/${env.SARVAM_APP_ID}/interactions?${params}`,
+          { headers: { 'X-API-Key': env.SARVAM_API_KEY ?? '' }, signal },
         );
         if (!response.ok)
           return { ok: false, error: `HTTP ${response.status}` } as const;
-        const body = (await response.json()) as {
-          balance?: string;
-          currency?: string;
+        const { items = [] } = (await response.json()) as {
+          items?: {
+            duration_in_seconds?: number;
+            channel_direction?: string;
+          }[];
         };
-        return { ok: true, balance: body.balance, currency: body.currency };
-      }).then((result) => (checks.twilio = result)),
+        // Attempts include calls that never connected, which have no
+        // interaction: Sarvam took the request but the phone did not ring.
+        const attempts = await fetch(
+          `https://apps.sarvam.ai/api/analytics/v1/${env.SARVAM_ORG_ID}/${env.SARVAM_WORKSPACE_ID}/${env.SARVAM_APP_ID}/attempts?${params}`,
+          { headers: { 'X-API-Key': env.SARVAM_API_KEY ?? '' }, signal },
+        )
+          .then((answer) =>
+            answer.ok
+              ? (answer.json() as Promise<{
+                  items?: {
+                    connectivity_status?: string;
+                    user_contact_masked?: string;
+                    start_datetime?: string | null;
+                  }[];
+                }>)
+              : { items: [] },
+          )
+          .catch(() => ({ items: [] }));
+        const failed = (attempts.items ?? []).filter(
+          (attempt) => attempt.connectivity_status === 'failed',
+        );
+        const seconds = items.reduce(
+          (sum, item) => sum + Number(item.duration_in_seconds ?? 0),
+          0,
+        );
+        return {
+          ok: true,
+          callsToday: items.length,
+          minutesToday: Math.round((seconds / 60) * 10) / 10,
+          inbound: items.filter((item) => item.channel_direction === 'inbound')
+            .length,
+          outbound: items.filter(
+            (item) => item.channel_direction === 'outbound',
+          ).length,
+          notConnected: failed.length,
+          lastNotConnected: failed[0]
+            ? {
+                to: failed[0].user_contact_masked ?? 'unknown',
+                at: failed[0].start_datetime ?? null,
+              }
+            : null,
+        };
+      }).then((result) => (checks.sarvam = result)),
     );
 
-  // The phone provider reaches Friday here; unsigned, it must say 403.
+  // Sarvam's agent reaches Friday here; without the token it must say 401.
   if (ngrokUrl)
     jobs.push(
       attempt(async (signal) => {
-        const response = await fetch(`${ngrokUrl}/twilio/status/check`, {
+        const response = await fetch(`${ngrokUrl}/phone/ask`, {
           method: 'POST',
           signal,
         });
         return {
           url: ngrokUrl,
-          ok: response.status === 403,
+          ok: response.status === 401,
           status: response.status,
           error:
-            response.status === 403
+            response.status === 401
               ? undefined
-              : `Expected 403, got HTTP ${response.status}`,
+              : `Expected 401, got HTTP ${response.status}`,
         };
       }).then(
         (result) =>

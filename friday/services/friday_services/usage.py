@@ -2,7 +2,7 @@
 
 The same counts as the app's usage tracker (src/friday/server/usage.ts):
 today's calls, how many worked, the last error and how long calls take, for
-Twilio, Exotel, Gnani's live voice, ngrok and the small tools. Counts
+Exotel, Sarvam, Gnani's live voice, ngrok and the small tools. Counts
 reset at local midnight and survive restarts (data/usage.json). Nothing
 here stores what was said.
 """
@@ -131,7 +131,7 @@ usage = UsageBook()
 
 
 class timed:
-    """Counts one call: `with timed("Phone calls", "Twilio", "calls placed"):`.
+    """Counts one call: `with timed("Phone calls", "Exotel", "calls placed"):`.
     An exception inside counts as a failure and is raised again."""
 
     def __init__(self, group: str, api: str, item: str = ""):

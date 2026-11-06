@@ -114,7 +114,7 @@ This adds "Friday" to the Start menu and the desktop. The shell shows Friday fro
 
 ## Call Friday
 
-Friday has its own calling agent, and nobody else's agent is on the line. Twilio (or Exotel, for an Indian number) gives it a number and carries the call audio, and everything else is Friday's own: a Pipecat pipeline in `friday/services` (`calls/bot.py`) hears with **Gnani Prisma**, thinks with **Evon** and speaks with **Gnani Timbre**, with Silero voice detection so the caller can talk over it. The provider streams the call both ways to Friday (`/twilio/stream` or `/exotel/stream`) through a fixed ngrok address.
+Friday has its own calling agent, and nobody else's agent is on the line. Exotel gives it an Indian number and carries the call audio, and everything else is Friday's own: a Pipecat pipeline in `friday/services` (`calls/bot.py`) hears with **Gnani Prisma**, thinks with **Evon** and speaks with **Gnani Timbre**, with Silero voice detection so the caller can talk over it. Exotel's Voicebot applet streams the call both ways to `/exotel/stream` through a fixed ngrok address; when Friday ends the call it closes the stream and the call flow hangs up.
 
 **Calls Friday places.** `start_call` phones someone for you with one goal ("book a dental check-up tomorrow at 6 PM"). Friday says it is your AI assistant, never agrees to pay, checks with you before accepting a different option, and ends with an outcome, a summary and the transcript (`get_call_result`). `schedule_call` does the same at a later time. Friday also phones **you** when you ask ("call me at 5") and before deadlines, with your updates.
 
@@ -125,14 +125,12 @@ Friday has its own calling agent, and nobody else's agent is on the line. Twilio
 
 Every call's transcript, outcome and reply times are kept in `friday/services/data/calls`.
 
-**Over Twilio,** put `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_FROM_NUMBER` in `.env` along with the two ngrok settings below, and restart the services: they point the number at Friday by themselves. A Twilio trial plays its own notice first, asks for a key press, and calls only numbers verified in its console; upgrading removes all three. Calling India needs India switched on under Voice → Geo Permissions.
-
-**Over Exotel,** once:
+Once:
 
 1. **ngrok:** sign up free at dashboard.ngrok.com, copy your authtoken, and claim your free static domain (Domains). Put them in `.env` as `NGROK_AUTHTOKEN` and `NGROK_DOMAIN`. Exotel's call flow points at this address, so it must not change.
 2. **Exotel:** sign up at exotel.com. The free trial lasts 7 days, has one number (ExoPhone), and calls only numbers you verify under Settings → Whitelist Numbers. Ask hello@exotel.com to switch on the Voicebot applet (AgentStream) for your account. From API settings put `EXOTEL_API_KEY`, `EXOTEL_API_TOKEN` and `EXOTEL_ACCOUNT_SID` in `.env`, your ExoPhone as `EXOTEL_CALLER_ID`, and any random string of 20+ characters as `EXOTEL_STREAM_KEY`. An India account uses `api.in.exotel.com` (the default); set `EXOTEL_SUBDOMAIN=api.exotel.com` for a Singapore one.
 3. **The call flow:** in App Bazaar, create a flow with a **Voicebot** applet followed by a **Hangup** applet. The Voicebot's URL is `wss://<your domain>/exotel/stream?key=<EXOTEL_STREAM_KEY>`; the services print it at start (`Phone: Exotel Voicebot URL: …`). Put the flow's id (the number in its address) in `.env` as `EXOTEL_APP_ID`, and set the ExoPhone's incoming calls to the same flow.
-4. **Check:** restart the services. `GET /health` shows `"calls": {"ready": true, "provider": "exotel"}`; then ask Friday to call you, or call the ExoPhone from your own number.
+4. **Check:** restart the services. `GET /health` shows `"calls": {"ready": true}`; then ask Friday to call you, or call the ExoPhone from your own number.
 
 Exotel signs nothing, so the audio stream and its status callbacks must carry `EXOTEL_STREAM_KEY`, and through the tunnel only the call routes answer.
 

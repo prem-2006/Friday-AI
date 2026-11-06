@@ -38,3 +38,28 @@ def test_a_chosen_opening_still_says_friday_is_an_ai():
     )
     prompt = phone_prompt(record, "Prem", "Asia/Kolkata")
     assert 'say "Hi Didi!"' in prompt and "an AI assistant calling for Prem" in prompt
+
+
+class FakeSarvam:
+    ready = True
+
+    def __init__(self):
+        self.calls: list[dict] = []
+
+    async def call(self, **fields):
+        self.calls.append(fields)
+        return "ok"
+
+
+async def test_until_exotel_is_set_up_sarvams_agent_places_the_call(tmp_path):
+    env = {k: v for k, v in FAKE_ENV.items() if not k.startswith("EXOTEL_")}
+    settings = Settings.from_env(
+        {**env, "FRIDAY_OWNER_NAME": "Prem", "FRIDAY_OWNER_PHONE": "+919876543210"},
+        data_dir=tmp_path,
+    )
+    sarvam, dialer = FakeSarvam(), FakeDialer()
+    caller = OwnerCaller(settings, CallStore(tmp_path), dialer, sarvam=sarvam)
+    placed = await caller.call("Reminder: drink water.", urgent=True, opening="Hi Prem!")
+    assert placed == {"called": True, "via": "sarvam"} and dialer.placed == []
+    assert sarvam.calls[0]["greeting"] == "Hi Prem!"
+    assert sarvam.calls[0]["phone"] == "+919876543210"

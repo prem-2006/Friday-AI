@@ -70,4 +70,4 @@ Friday is built on one open-source project, took ideas from two more, and uses a
 
 ## 4. Services Friday calls (accounts, not code)
 
-Gnani (Evon for planning, Prisma for hearing, Timbre for speaking), Google Gemini and an OpenAI-compatible backup model, Twilio or Exotel (phone number and call audio), ngrok, Cloudflare quick tunnels (with Twilio), Open-Meteo (weather), Parallel (web research in OpenDots).
+Gnani (Evon for planning, Prisma for hearing, Timbre for speaking), Google Gemini and an OpenAI-compatible backup model, Exotel (phone number and call audio), ngrok, Open-Meteo (weather), Parallel (web research in OpenDots).

@@ -11,6 +11,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 from pydantic import Field
 
+from friday_services.calls.sarvam import SarvamDialer
 from friday_services.calls.store import CallRecord, CallStore
 from friday_services.config import Settings
 from friday_services.organizer import OrganizerError, Reminders, parse_when, spoken_time
@@ -34,7 +35,7 @@ async def place_own_call(
     context: str = "",
     opening_line: str = "",
 ) -> CallRecord:
-    """Friday's own pipeline phones someone for the owner (Exotel or Twilio).
+    """Friday's own pipeline phones someone for the owner over Exotel.
     The record is failed, not raised, when the provider refuses."""
     busy = store.active()
     if busy:
@@ -51,10 +52,30 @@ async def place_own_call(
     return record
 
 
+async def call_someone(
+    sarvam: SarvamDialer,
+    settings: Settings,
+    phone: str,
+    goal: str,
+    opening_line: str = "",
+    context: str = "",
+) -> None:
+    """Has the Sarvam agent phone someone other than the owner, for the owner."""
+    owner = settings.owner_name
+    greeting = opening_line.strip() or f"Hi, I'm Friday, {owner}'s AI assistant."
+    note = f"You are calling someone for {owner}, not {owner} themself. Goal: {goal}" + (
+        f" What you may share or accept: {context}" if context else ""
+    )
+    await sarvam.call(
+        phone=phone, greeting=greeting, prompt="", reference="", note=note, updates="none"
+    )
+
+
 def build_phone_server(
     store: CallStore,
     dialer: Dialer,
     settings: Settings,
+    sarvam: SarvamDialer | None = None,
     reminders: Reminders | None = None,
 ) -> MCPServer:
     server = MCPServer(
@@ -118,6 +139,24 @@ def build_phone_server(
             raise ToolError("Use an international number such as +919812345678.")
         if language not in LANGUAGES:
             raise ToolError(f"Unsupported language. Use one of: {', '.join(LANGUAGES)}.")
+        own_ready = settings.own_calls_ready
+        # Friday's own pipeline when it is set up; Sarvam's agent otherwise.
+        if sarvam and sarvam.ready and not own_ready:
+            # Sarvam's agent runs the call until Friday's own Exotel line is set up.
+            try:
+                await call_someone(sarvam, settings, phone, goal, opening_line, context)
+                return {
+                    "call_id": f"sarvam-{abs(hash((phone, goal))) % 10**8}",
+                    "status": "placed",
+                    "via": "sarvam",
+                    "next_step": (
+                        "Sarvam runs this call and does not report back. Tell the owner "
+                        "the call was placed; do not call get_call_result."
+                    ),
+                }
+            except Exception as error:
+                if not own_ready:
+                    raise ToolError(f"The call could not be placed: {error}") from error
         missing = settings.missing(settings.call_settings)
         if missing:
             raise ToolError(f"Phone calls are not set up. Missing in .env: {', '.join(missing)}.")
@@ -152,7 +191,7 @@ def build_phone_server(
     ) -> dict:
         if not PHONE_NUMBER.match(phone):
             raise ToolError("Use an international number such as +919812345678.")
-        missing = settings.missing(settings.call_settings)
+        missing = [] if sarvam and sarvam.ready else settings.missing(settings.call_settings)
         if reminders is None or missing:
             raise ToolError(
                 f"Scheduled calls are not set up. Missing in .env: {', '.join(missing)}."
@@ -186,6 +225,8 @@ def build_phone_server(
             Field(description="How long to wait for the call to end.", ge=0, le=MAX_WAIT_SECONDS),
         ] = MAX_WAIT_SECONDS,
     ) -> dict:
+        if call_id.startswith("sarvam-"):
+            return {"call_id": call_id, "status": "placed", "via": "sarvam"}
         if not store.get(call_id):
             raise ToolError(f"No call with id {call_id}.")
         record = await store.wait(call_id, wait_seconds)

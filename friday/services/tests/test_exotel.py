@@ -27,22 +27,13 @@ from friday_services.phone_in import caller_digits
 from .conftest import FAKE_ENV
 from .mcp_client import McpClient
 
-KEY = "exotel-stream-key-0123456789"
-EXOTEL_ENV = {
-    **{name: value for name, value in FAKE_ENV.items() if not name.startswith("TWILIO_")},
-    "EXOTEL_API_KEY": "exo-key",
-    "EXOTEL_API_TOKEN": "exo-token",
-    "EXOTEL_ACCOUNT_SID": "fridayindia1",
-    "EXOTEL_CALLER_ID": "08012345678",
-    "EXOTEL_APP_ID": "123456",
-    "EXOTEL_STREAM_KEY": KEY,
-    "FRIDAY_OWNER_PHONE": "+919800000001",
-}
+KEY = FAKE_ENV["EXOTEL_STREAM_KEY"]
+EXOTEL_ENV = {**FAKE_ENV, "FRIDAY_OWNER_PHONE": "+919800000001"}
 
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
-    # Overrides conftest's Twilio settings, so `server` runs with Exotel.
+    # Overrides conftest's settings, so the server knows the owner's number.
     return Settings.from_env(EXOTEL_ENV, data_dir=tmp_path)
 
 
@@ -79,13 +70,6 @@ def stream(server, key: str, call_sid: str, caller: str) -> int | None:
         except websockets.exceptions.ConnectionClosed as closed:
             return closed.rcvd.code if closed.rcvd else None
     return None
-
-
-def test_exotel_is_chosen_once_its_key_is_set(settings):
-    assert settings.call_provider == "exotel"
-    assert settings.own_calls_ready
-    twilio = Settings.from_env({**EXOTEL_ENV, "FRIDAY_CALL_PROVIDER": "twilio"})
-    assert twilio.call_provider == "twilio" and not twilio.own_calls_ready
 
 
 def test_voicebot_url_and_custom_parameters(settings):
@@ -148,7 +132,7 @@ def test_store_matches_exotel_audio_to_the_call_friday_placed():
 
 def test_health_reports_exotel(server):
     body = httpx.get(f"{server.url}/health").json()
-    assert body["calls"] == {"ready": True, "missing": [], "provider": "exotel"}
+    assert body["calls"] == {"ready": True, "missing": []}
 
 
 def test_a_placed_call_streams_through_exotel(server):
@@ -165,7 +149,7 @@ def test_a_placed_call_streams_through_exotel(server):
 
     stream(server, KEY, record.call_sid, "09812345678")
     run = server.call.runs[0]
-    assert run["record"] is record and run["provider"] == "exotel"
+    assert run["record"] is record
     assert run["stream_sid"] == "ST1" and run["call_sid"] == record.call_sid
     assert isinstance(run["helpers"], CallHelpers)
     result = client.call("get_call_result", {"call_id": call_id, "wait_seconds": 1})["data"]
@@ -226,7 +210,6 @@ async def test_each_kind_of_call_gets_its_tools(settings, kind, tools):
         record=record,
         store=store,
         settings=settings,
-        provider="exotel",
         helpers=CallHelpers(ask=noop_ask, take_message=noop_take),
     )
     assert tools_of(call) == tools

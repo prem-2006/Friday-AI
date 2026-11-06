@@ -1,18 +1,22 @@
-"""The owner asks for something on a phone call and Friday does it.
+"""The owner phones Friday's Sarvam number and Friday does what they ask.
 
-On a call with the owner, the pipeline's ask_friday tool (calls/bot.py) comes
-here. This runs the request through the Friday Dot exactly like the voice
-screen does (the app's /api/friday/voice/run) and returns the sentence to say.
+Sarvam's agent answers the call and hears the owner. For each request it
+calls its API tool `ask_friday`, which reaches POST /phone/ask here through
+the ngrok tunnel. This runs the request through the Friday Dot exactly like
+the voice screen does (the app's /api/friday/voice/run) and returns the
+sentence the agent should say.
 
 Only the owner's own number gets anything done. Something that needs the
 owner's OK (an email, a WhatsApp message) is read back on the call, and a
-yes on the same call approves it. A request that takes longer than a call
+yes on the same call approves it. A request that takes longer than Sarvam
 waits for a tool keeps running; the next question gets its answer.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import re
 import time
@@ -25,7 +29,7 @@ import httpx
 from friday_services.config import Settings
 
 APPROVAL_TOOL = "request_connection_action"
-# A call waits at most 30 s for a tool (bot.py); answer before that.
+# Sarvam waits at most 30 s for a tool; answer before that.
 REPLY_WITHIN_SECONDS = 22.0
 KEEP_CALLS_SECONDS = 2 * 60 * 60
 KEEP_MESSAGES = 30
@@ -46,9 +50,19 @@ def caller_digits(value: str) -> str:
     return "91" + digits if len(digits) == 10 else digits
 
 
+def number_code(digits: str) -> str:
+    """Sarvam's "User Identifier": SHA-256 of the number as +<digits>."""
+    return hashlib.sha256(f"+{digits}".encode()).hexdigest()
+
+
 def same_caller(caller: str, digits: str) -> bool:
-    """Whether the caller's number is this number."""
-    return bool(digits) and caller_digits(caller) == digits
+    """Whether Sarvam's caller value (the number, or its code) is this number."""
+    if not digits:
+        return False
+    caller = (caller or "").strip()
+    if re.fullmatch(r"[0-9a-fA-F]{64}", caller):
+        return hmac.compare_digest(caller.lower(), number_code(digits))
+    return caller_digits(caller) == digits
 
 
 def caller_name(caller: str, contacts: list[dict[str, Any]]) -> str:
@@ -56,8 +70,39 @@ def caller_name(caller: str, contacts: list[dict[str, Any]]) -> str:
     for contact in contacts:
         if same_caller(caller, caller_digits(str(contact.get("phone") or ""))):
             return str(contact.get("name") or "a contact")
-    digits = caller_digits(caller)
+    digits = caller_digits(caller) if not re.fullmatch(r"[0-9a-fA-F]{64}", caller or "") else ""
     return f"+{digits}" if digits else "an unknown caller"
+
+
+def latest_request(transcript: Any) -> str:
+    """What the caller said last, from Sarvam's call transcript (a list of
+    turns or plain 'role: text' lines)."""
+    if isinstance(transcript, str):
+        text = transcript.strip()
+        try:
+            transcript = json.loads(text)
+        except ValueError:
+            said: list[str] = []
+            for line in text.splitlines():
+                who, _, rest = line.partition(":")
+                if rest and who.strip().lower() in ("user", "caller", "customer", "human"):
+                    said.append(rest.strip())
+                elif rest and who.strip().lower() in ("agent", "bot", "assistant"):
+                    said = []
+            return " ".join(said) or (text.splitlines()[-1] if text else "")
+    if isinstance(transcript, list):
+        said = []
+        for turn in transcript:
+            if not isinstance(turn, dict):
+                continue
+            role = str(turn.get("role") or turn.get("speaker") or "").lower()
+            words = str(turn.get("text") or turn.get("content") or turn.get("message") or "")
+            if role in ("user", "caller", "customer", "human"):
+                said.append(words.strip())
+            elif role in ("agent", "bot", "assistant"):
+                said = []
+        return " ".join(part for part in said if part)
+    return ""
 
 
 def pending_approval(messages: list[dict[str, Any]]) -> dict[str, str] | None:
@@ -210,7 +255,7 @@ class PhoneDesk:
         if call.working and not call.working.done():
             return "I'm still working on your last request. Ask me again in a moment."
         if call.working:
-            # The previous request finished after the call stopped waiting.
+            # The previous request finished after Sarvam stopped waiting.
             finished, call.working = call.working, None
             try:
                 said = finished.result()

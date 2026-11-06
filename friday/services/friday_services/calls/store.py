@@ -33,7 +33,7 @@ class CallRecord:
     transcript: list[dict[str, str]] = field(default_factory=list)
     latency_ms: list[int] = field(default_factory=list)
     error: str | None = None
-    # The provider's id for the call (Twilio's or Exotel's CallSid).
+    # Exotel's id for the call (its CallSid).
     call_sid: str | None = None
     stream_started: bool = False
     # Proves an audio stream belongs to this call; never returned to the model.

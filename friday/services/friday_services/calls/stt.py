@@ -8,7 +8,7 @@ from pipecat.frames.frames import Frame
 from pipecat_gnani import GnaniSTTService
 
 # Gnani's realtime STT expects every binary frame to be exactly 1,024 bytes
-# (512 16-bit samples). Twilio delivers 20 ms packets (320 bytes at 8 kHz), and
+# (512 16-bit samples). The phone line delivers 20 ms packets (320 bytes at 8 kHz), and
 # pipecat-gnani forwards whatever it receives, so regroup the audio here.
 GNANI_FRAME_BYTES = 1024
 

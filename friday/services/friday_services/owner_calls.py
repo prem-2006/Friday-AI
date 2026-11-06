@@ -1,8 +1,9 @@
 """Friday phones its owner: for deadlines, and when asked ("call me at 5").
 
-Friday's own pipeline (calls/bot.py) makes the call, over Twilio or Exotel,
-with the owner prompt and ask_friday, so the owner can get things done on the
-call. Calls are limited so a mistake can never ring the owner
+With Exotel set up (EXOTEL_*), Friday's own pipeline (calls/bot.py) makes
+the call from its Indian number, with the owner prompt and ask_friday, so
+the owner can get things done on the call. Until then Sarvam's agent
+(calls/sarvam.py, SARVAM_*) places it. Calls are limited so a mistake can never ring the owner
 again and again.
 """
 
@@ -44,19 +45,28 @@ class OwnerCaller:
         store: CallStore,
         dialer: Any,
         clock=time.time,
+        sarvam: Any = None,
     ):
         self._settings = settings
         self._store = store
         self._dialer = dialer
         self._clock = clock
+        self._sarvam = sarvam
         self._calls: list[float] = []
 
     @property
+    def agent(self) -> Any:
+        """Sarvam's agent, while Friday's own Exotel line is not set up."""
+        if self._settings.own_calls_ready:
+            return None
+        return self._sarvam if self._sarvam and self._sarvam.ready else None
+
+    @property
     def via(self) -> str:
-        return self._settings.call_provider
+        return "sarvam" if self.agent else "exotel"
 
     def missing(self) -> list[str]:
-        missing = self._settings.missing(self._settings.call_settings)
+        missing = [] if self.agent else self._settings.missing(self._settings.call_settings)
         if not owner_phone(self._settings):
             missing.append("your phone number (Your details, or FRIDAY_OWNER_PHONE)")
         return missing
@@ -78,6 +88,8 @@ class OwnerCaller:
             return {"called": False, "why": "I called you less than 10 minutes ago."}
         if self._store.active():
             return {"called": False, "why": "Another call is in progress."}
+        if self.agent:
+            return await self._call_with_agent(reason, updates, now, opening)
         record = self._store.create(
             phone=owner_phone(self._settings) or "",
             goal=reason,
@@ -94,3 +106,20 @@ class OwnerCaller:
         self._store.set_stage(record.id, "ringing")
         self._calls.append(now)
         return {"called": True, "call_id": record.id}
+
+    async def _call_with_agent(
+        self, reason: str, updates: str, now: float, opening: str = ""
+    ) -> dict[str, Any]:
+        try:
+            await self.agent.call(
+                phone=owner_phone(self._settings) or "",
+                greeting=opening or reason,
+                prompt="",
+                reference=f"friday-{int(now)}",
+                note=reason,
+                updates=updates,
+            )
+        except Exception as error:
+            return {"called": False, "why": f"The call could not be placed: {error}"}
+        self._calls.append(now)
+        return {"called": True, "via": self.via}

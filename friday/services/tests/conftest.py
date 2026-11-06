@@ -1,4 +1,4 @@
-"""Shared fixtures. Nothing here reaches Twilio, Gnani, Evon or WhatsApp."""
+"""Shared fixtures. Nothing here reaches Exotel, Gnani, Evon or WhatsApp."""
 
 from __future__ import annotations
 
@@ -23,9 +23,12 @@ FAKE_ENV = {
     "GNANI_API_KEY": "fake-gnani",
     "EVON_BASE_URL": "http://127.0.0.1:9/v1",
     "EVON_MODEL": "gnani-evon-v3.3",
-    "TWILIO_ACCOUNT_SID": "AC00000000000000000000000000000000",
-    "TWILIO_AUTH_TOKEN": "twilio-test-auth-token",
-    "TWILIO_FROM_NUMBER": "+15550001111",
+    "EXOTEL_API_KEY": "exo-key",
+    "EXOTEL_API_TOKEN": "exo-token",
+    "EXOTEL_ACCOUNT_SID": "fridayindia1",
+    "EXOTEL_CALLER_ID": "08012345678",
+    "EXOTEL_APP_ID": "123456",
+    "EXOTEL_STREAM_KEY": "exotel-stream-key-0123456789",
     "PUBLIC_URL": "https://friday.example.test",
     "TIMEZONE": "Asia/Kolkata",
 }

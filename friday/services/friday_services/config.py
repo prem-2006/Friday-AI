@@ -10,18 +10,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SERVICES_ROOT = Path(__file__).resolve().parents[1]
 
+# Friday's own calls through Exotel (an Indian number): the Pipecat pipeline
+# (calls/bot.py), with Exotel's Voicebot applet streaming the audio
+# (calls/exotel.py). Until these are set, Sarvam's agent carries the calls.
 CALL_SETTINGS = (
-    "GNANI_API_KEY",
-    "EVON_BASE_URL",
-    "EVON_MODEL",
-    "TWILIO_ACCOUNT_SID",
-    "TWILIO_AUTH_TOKEN",
-    "TWILIO_FROM_NUMBER",
-    "PUBLIC_URL",
-)
-# Friday's own calls through Exotel (an Indian number): the same Pipecat
-# pipeline, with Exotel's Voicebot applet streaming the audio (calls/exotel.py).
-EXOTEL_CALL_SETTINGS = (
     "GNANI_API_KEY",
     "EVON_BASE_URL",
     "EVON_MODEL",
@@ -82,17 +74,8 @@ class Settings:
         return self.get("PUBLIC_URL").rstrip("/")
 
     @property
-    def call_provider(self) -> str:
-        """Who carries Friday's own calls: exotel or twilio. FRIDAY_CALL_PROVIDER
-        picks; else Exotel once its API key is set."""
-        chosen = self.get("FRIDAY_CALL_PROVIDER").lower()
-        if chosen in ("exotel", "twilio"):
-            return chosen
-        return "exotel" if self.get("EXOTEL_API_KEY") else "twilio"
-
-    @property
     def call_settings(self) -> tuple[str, ...]:
-        return EXOTEL_CALL_SETTINGS if self.call_provider == "exotel" else CALL_SETTINGS
+        return CALL_SETTINGS
 
     @property
     def own_calls_ready(self) -> bool:

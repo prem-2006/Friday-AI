@@ -1,1 +1,1 @@
-"""Phone calls: Twilio Media Streams + Gnani speech + Evon, run by Pipecat."""
+"""Phone calls: Exotel's audio stream + Gnani speech + Evon, run by Pipecat."""

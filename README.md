@@ -41,7 +41,7 @@ flowchart LR
   Friday -- hands off --> Operator["Operator<br/>Windows apps"]
   Friday -- hands off --> Coder["Coder<br/>coding sites"]
   Friday -- after your yes --> WA["WhatsApp Desktop"]
-  Phone((Phone call)) -- Twilio --> Services["Friday services<br/>(Python)"]
+  Phone((Phone call)) -- Exotel --> Services["Friday services<br/>(Python)"]
   Services --> Friday
   Services -- live activity + screenshots --> Stage
 ```
@@ -96,7 +96,7 @@ Copy `.env.example` to `.env` and fill in at least:
 | `FRIDAY_SERVICES_TOKEN`                       | Any long random string shared by the app and services    |
 | `FRIDAY_WAKE_WORD`, `FRIDAY_LEARN`            | Optional: turn off "Hey Friday" or learned shortcuts     |
 | `FRIDAY_FALLBACK_*`, `FRIDAY_PRIMARY_*`       | Optional: backup model, and extra keys/models to rotate  |
-| `TWILIO_*`, `NGROK_*`                         | Optional: phone calls                                    |
+| `EXOTEL_*`, `NGROK_*`                         | Optional: phone calls                                    |
 
 ### Run
 
@@ -139,7 +139,7 @@ This adds Friday to the Start menu and the desktop.
 
 ## Phone calls
 
-Friday has its own phone line. With a Twilio number (or Exotel, for an Indian number) and a free ngrok static domain set in `.env`, Friday places and answers real calls itself, hearing with Prisma, thinking with Evon and speaking with Timbre:
+Friday has its own phone line. With an Exotel number (an Indian number) and a free ngrok static domain set in `.env`, Friday places and answers real calls itself, hearing with Prisma, thinking with Evon and speaking with Timbre:
 
 - **Friday calls for you:** "Call the clinic and book a check-up at 6 PM." Friday says it is your AI assistant, keeps to the goal, and reports the outcome with a transcript.
 - **Friday calls you** when you ask ("call me at 5") and before deadlines, and you can ask it to do things right there on the call.

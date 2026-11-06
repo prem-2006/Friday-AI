@@ -48,7 +48,7 @@ flowchart LR
   Chat -- search_web --> Parallel[Parallel research]
   Chat -- browser tools --> Computer["Dot computer<br/>(Docker)"]
   Chat -- MCP --> Services["friday-services<br/>(Python)"]
-  Services -- Twilio Media Streams --> Phone((Clinic))
+  Services -- Exotel Voicebot stream --> Phone((Clinic))
   Services -- calendar tools --> Demo
   Computer --> Demo["Demo calendar page"]
 ```
@@ -67,7 +67,7 @@ flowchart LR
 
 ### 3. Calling: a Python service, exposed to Friday over MCP
 
-- Pipecat pipeline per call: Twilio Media Streams (μ-law 8 kHz) → Gnani streaming STT at 8 kHz → Evon (thinking off) → Timbre (μ-law) → Twilio.
+- Pipecat pipeline per call: Exotel's Voicebot stream (16-bit PCM, 8 kHz) → Gnani streaming STT at 8 kHz → Evon (thinking off) → Timbre → Exotel.
 - **Change from the original spec:** OpenDots stops MCP calls after 60 s, and a phone call lasts minutes. So `make_call` becomes two tools:
   - `start_call(phone, goal, language, context)` returns a `call_id` straight away. It needs owner approval.
   - `get_call_result(call_id)` is read-only. It waits up to about 40 s, then returns `{ status: in_progress | answered | no_answer | failed, outcome, summary, transcript, latency_ms }`.
@@ -98,8 +98,8 @@ friday/ (repo root, fork of CopilotKit/OpenDots, MIT)
 │   │   ├── setup-friday-dot.mjs  creates Friday, browser permission, MCP connections
 │   │   └── check-services.mjs    lists the services' tools as OpenDots sees them
 │   └── services/                 Python 3.12 (uv)
-│       ├── friday_services/main.py           FastAPI: Twilio webhooks, call audio, MCP mounts
-│       ├── friday_services/calls/            Pipecat pipeline, prompts, store, Twilio helpers
+│       ├── friday_services/main.py           FastAPI: Exotel call audio, MCP mounts
+│       ├── friday_services/calls/            Pipecat pipeline, prompts, store, Exotel helpers
 │       ├── friday_services/calendar/         demo calendar page and store
 │       ├── friday_services/mcp_phone.py      start_call, get_call_result
 │       ├── friday_services/mcp_calendar.py   list_events, add_event

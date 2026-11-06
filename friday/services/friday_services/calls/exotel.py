@@ -3,8 +3,8 @@
 Friday places a call with the "Connect Number to Call Flow" API. The call
 flow made on my.exotel.com (EXOTEL_APP_ID) has two applets: a Voicebot whose
 URL is stream_url() below, then a Hangup. The Voicebot streams the call
-audio both ways to /exotel/stream, where the same Pipecat pipeline as the
-Twilio calls runs (calls/bot.py). When Friday ends the call it closes the
+audio both ways to /exotel/stream, where Friday's Pipecat pipeline runs
+(calls/bot.py). When Friday ends the call it closes the
 WebSocket, and the flow goes on to the Hangup.
 
 Calls to the ExoPhone run the same flow, so Friday answers them too: the

@@ -264,3 +264,15 @@ async def test_the_phone_token_is_accepted_however_the_agent_sends_it(phone_app)
         assert response.status_code == 200, headers or params
     for headers in ({}, {"Authorization": "Bearer nope"}, {"x-api-key": "nope"}):
         assert (await client.post("/phone/ask", headers=headers, json=body)).status_code == 401
+
+
+async def test_talking_over_the_wait_does_not_lose_the_request(settings):
+    app = FakeApp([[{"id": "r", "role": "assistant", "content": "Booked for 6 PM."}]], delay=0.3)
+    desk = desk_for(app, settings, reply_within=5)
+    waiting = asyncio.ensure_future(desk.ask("call-2", "book a table"))
+    await asyncio.sleep(0.05)
+    waiting.cancel()  # the call moved on while Friday waited
+    with pytest.raises(asyncio.CancelledError):
+        await waiting
+    await asyncio.sleep(0.4)
+    assert await desk.ask("call-2", "is it done?") == "Booked for 6 PM."

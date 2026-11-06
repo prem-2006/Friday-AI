@@ -12,6 +12,7 @@ from friday_services.calls.bot import build_call_pipeline, end_call_handler, evo
 from friday_services.calls.prompts import ask_friday_rules, phone_prompt
 from friday_services.calls.store import CallStore
 from friday_services.calls.stt import GNANI_FRAME_BYTES, FramedGnaniSTTService
+from friday_services.config import Settings
 
 
 class FakeGnaniSocket:
@@ -152,3 +153,19 @@ def test_friday_greets_at_once_in_the_calls_language():
 
 def test_unclear_speech_is_not_sent_to_friday_as_a_task():
     assert "do not call it" in ask_friday_rules("Prem")
+
+
+def test_tool_calls_sent_back_to_gemini_carry_a_signature(settings):
+    def sent(base_url):
+        llm = evon_llm(Settings.from_env({**settings.values, "EVON_BASE_URL": base_url}))
+        call = {
+            "id": "c1",
+            "type": "function",
+            "function": {"name": "ask_friday", "arguments": "{}"},
+        }
+        messages = [{"role": "user", "content": "hi"}, {"role": "assistant", "tool_calls": [call]}]
+        return llm.build_chat_completion_params({"messages": messages})["messages"][1]
+
+    gemini = sent("https://generativelanguage.googleapis.com/v1beta/openai/")
+    assert gemini["tool_calls"][0]["extra_content"]["google"]["thought_signature"]
+    assert "extra_content" not in sent("http://127.0.0.1:9/v1")["tool_calls"][0]

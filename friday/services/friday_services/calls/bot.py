@@ -128,11 +128,36 @@ class CallPipeline:
     ended_by_friday: asyncio.Event
 
 
+# Gemini wants each tool call it made sent back with its thought signature,
+# which this client does not keep; Google's documented stand-in passes.
+GEMINI_SIGNATURE = {"google": {"thought_signature": "skip_thought_signature_validator"}}
+
+
 class CallLLM(OpenAILLMService):
-    """Evon (or the model in its place) on a call. Gemini sometimes adds a
-    tool call with no name next to a real one; kept in the conversation it
-    makes every later request fail, and Friday goes silent for the rest of
-    the call. Such calls are dropped before anything records them."""
+    """Evon (or the model in its place) on a call. Gemini's thought signature
+    arrives as a tool call with no name next to the real one, and every tool
+    call sent back must carry a signature; otherwise every later request fails
+    and Friday goes silent for the rest of the call. The nameless calls are
+    dropped, and sent-back calls carry Google's stand-in signature."""
+
+    gemini = False
+
+    def build_chat_completion_params(self, params_from_context) -> dict:
+        params = super().build_chat_completion_params(params_from_context)
+        if self.gemini and params.get("messages"):
+            params["messages"] = [
+                {
+                    **message,
+                    "tool_calls": [
+                        {"extra_content": GEMINI_SIGNATURE, **call}
+                        for call in message["tool_calls"]
+                    ],
+                }
+                if isinstance(message, dict) and message.get("tool_calls")
+                else message
+                for message in params["messages"]
+            ]
+        return params
 
     async def run_function_calls(self, function_calls):
         named = [call for call in function_calls if call.function_name]
@@ -145,7 +170,7 @@ def evon_llm(settings: Settings, **extra_settings: Any) -> OpenAILLMService:
     extra: dict[str, Any] = {}
     if settings.evon_disable_thinking:
         extra["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
-    return CallLLM(
+    llm = CallLLM(
         api_key=settings.get("EVON_API_KEY") or "not-needed",
         base_url=settings.get("EVON_BASE_URL"),
         settings=OpenAILLMService.Settings(
@@ -156,6 +181,8 @@ def evon_llm(settings: Settings, **extra_settings: Any) -> OpenAILLMService:
             **extra_settings,
         ),
     )
+    llm.gemini = "googleapis.com" in settings.get("EVON_BASE_URL")
+    return llm
 
 
 # Said the moment the call connects, so nobody waits on the model to start.
@@ -326,11 +353,12 @@ def build_call_pipeline(
     ended_by_friday = asyncio.Event()
     llm.register_function("end_call", end_call_handler(store, record, ended_by_friday))
     if ASK_FRIDAY in tools:
-        # A "hmm" from the owner must not cancel a WhatsApp message half sent.
+        # Friday waits for the answer before it speaks. If the owner talks
+        # over it, the request still finishes (PhoneDesk keeps it running and
+        # tells them when they ask).
         llm.register_function(
             "ask_friday",
             ask_friday_handler(record, helpers.ask),
-            cancel_on_interruption=False,
             timeout_secs=ASK_FRIDAY_TIMEOUT_SECONDS,
         )
 

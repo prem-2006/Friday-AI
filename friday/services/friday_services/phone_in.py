@@ -286,6 +286,10 @@ class PhoneDesk:
         except TimeoutError:
             call.working = task
             return "I'm on it. This will take a little while; ask me if it's done in a minute."
+        except asyncio.CancelledError:
+            # The caller talked over the wait; the request keeps running.
+            call.working = task
+            raise
         except Exception as error:
             return f"Sorry, that did not work: {error}"
         earlier, call.waiting_reply = call.waiting_reply, ""

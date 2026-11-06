@@ -88,7 +88,13 @@ describe('ObsidianMemory notes and the graph', () => {
       assistantText: 'Sent.',
     });
     const written = await readFile(
-      join(folder, 'Friday', 'Conversations', '2026-10-27', 't1.md'),
+      join(
+        folder,
+        'Friday',
+        'Conversations',
+        '2026-10-27',
+        '1530 WhatsApp Priya that I am late.md',
+      ),
       'utf8',
     );
     expect(written).toContain(
@@ -96,7 +102,9 @@ describe('ObsidianMemory notes and the graph', () => {
     );
     const graph = await vault.graph();
     expect(graph.nodes.some((n) => n.id === 'person:priya')).toBe(true);
-    const note = await vault.readNote('Friday/Conversations/2026-10-27/t1.md');
+    const note = await vault.readNote(
+      'Friday/Conversations/2026-10-27/1530 WhatsApp Priya that I am late.md',
+    );
     expect(note?.content).toContain('**Owner:** WhatsApp Priya');
     expect(await vault.readNote('../outside.md')).toBeUndefined();
     expect(await vault.readNote('Friday/x.txt')).toBeUndefined();

@@ -2,6 +2,7 @@ import {
   mkdir,
   readFile,
   readdir,
+  rename,
   stat,
   unlink,
   writeFile,
@@ -38,6 +39,29 @@ const MAX_FILES_SCANNED = 20_000;
 const NOTE_LABELS = /^# Friday conversation · .*$|\*\*(?:Owner|Friday):\*\*/gmu;
 const escapeRegExp = (text: string) =>
   text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** A file name a person can read in Obsidian: the first few words, without
+ * the characters Windows or Obsidian links cannot have. */
+export function noteName(text: string, words = 8) {
+  return (
+    text
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\\/:*?"<>|#^[\]{}\u0000-\u001f]+/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .split(' ')
+      .slice(0, words)
+      .join(' ')
+      .slice(0, 60)
+      .replace(/[.,;! ]+$/u, '') || 'Note'
+  );
+}
+
+/** The value of one front-matter field ("id", "turn"), if the note has it. */
+const field = (markdown: string, name: string) =>
+  new RegExp(`^${name}: (.+)$`, 'mu')
+    .exec(/^---\s*[\s\S]*?\n---/u.exec(markdown)?.[0] ?? '')?.[1]
+    ?.trim();
 const MAX_NOTE_BYTES = 64_000;
 const NOTE_CACHE_MS = 10_000;
 const SKIP_DIRECTORIES = new Set([
@@ -206,7 +230,96 @@ export class ObsidianMemory {
   async prepareVault(pathOverride?: string) {
     const root = this.vaultPath(pathOverride);
     await mkdir(join(root, '.obsidian'), { recursive: true });
+    await this.renameIdNotes(root);
     return root;
+  }
+
+  /** Notes from before readable names were named by their id
+   * ("369bc293-….md"): renamed once, to what they say. */
+  private async renameIdNotes(root: string) {
+    const folders = [join(root, 'Friday', 'Memories')];
+    const days = join(root, 'Friday', 'Conversations');
+    try {
+      for (const day of await readdir(days, { withFileTypes: true }))
+        if (day.isDirectory()) folders.push(join(days, day.name));
+    } catch {
+      // no conversations yet
+    }
+    for (const folder of folders) {
+      let names: string[];
+      try {
+        names = await readdir(folder);
+      } catch {
+        continue;
+      }
+      for (const name of names) {
+        if (extname(name).toLocaleLowerCase() !== '.md') continue;
+        try {
+          const markdown = await readFile(join(folder, name), 'utf8');
+          const id = field(markdown, 'id') ?? field(markdown, 'turn');
+          if (!id || name !== `${id}.md`) continue;
+          const body = markdown.replace(/^---\s*[\s\S]*?\n---\s*/u, '');
+          const owner = /\*\*Owner:\*\*\s*(.+)/u.exec(body)?.[1];
+          const created = Date.parse(field(markdown, 'created') ?? '');
+          const title = owner
+            ? this.conversationName(Number.isNaN(created) ? 0 : created, owner)
+            : noteName(
+                body
+                  .split('\n')
+                  .find((line) => line.trim() && !line.startsWith('#')) ?? id,
+              );
+          const file = await this.freeName(folder, title, id);
+          if (file !== name)
+            await rename(join(folder, name), join(folder, file));
+        } catch {
+          // a locked note keeps its old name
+        }
+      }
+    }
+    this.cache = undefined;
+  }
+
+  /** "1150 alarm at 12": the time and the owner's first words. */
+  private conversationName(createdAt: number, userText: string) {
+    return `${this.localDateTime(createdAt).clock} ${noteName(userText, 6)}`;
+  }
+
+  /** `${title}.md`, or "title 2.md" when another note has that name. A note
+   * with the same id (field "id" or "turn") may be replaced. */
+  private async freeName(folder: string, title: string, id: string) {
+    for (let n = 1; ; n++) {
+      const file = `${title}${n > 1 ? ` ${n}` : ''}.md`;
+      let markdown: string;
+      try {
+        markdown = await readFile(join(folder, file), 'utf8');
+      } catch {
+        return file;
+      }
+      if ((field(markdown, 'id') ?? field(markdown, 'turn')) === id)
+        return file;
+    }
+  }
+
+  /** The files holding the memory with this id, whatever they are called. */
+  private async filesFor(folder: string, id: string) {
+    const found: string[] = [];
+    let names: string[];
+    try {
+      names = await readdir(folder);
+    } catch {
+      return found;
+    }
+    for (const name of names) {
+      if (extname(name).toLocaleLowerCase() !== '.md') continue;
+      try {
+        const markdown = await readFile(join(folder, name), 'utf8');
+        if (name === `${id}.md` || field(markdown, 'id') === id)
+          found.push(name);
+      } catch {
+        // a locked note is left alone
+      }
+    }
+    return found;
   }
 
   async saveMemory(memory: Memory, pathOverride?: string) {
@@ -229,7 +342,12 @@ export class ObsidianMemory {
       ...this.related(memory.text),
       '',
     ].join('\n');
-    await writeFile(join(folder, `${id}.md`), note, 'utf8');
+    // Named by what it says; an older copy (an edited text, or the id-named
+    // file of an older Friday) goes.
+    const file = await this.freeName(folder, noteName(memory.text), id);
+    await writeFile(join(folder, file), note, 'utf8');
+    for (const old of await this.filesFor(folder, id))
+      if (old !== file) await unlink(join(folder, old)).catch(() => {});
     this.cache = undefined;
   }
 
@@ -264,13 +382,15 @@ export class ObsidianMemory {
   async deleteMemory(id: string) {
     const safeId = id.replace(/[^a-zA-Z0-9_-]/g, '');
     if (!safeId) return;
-    const file = join(this.vaultPath(), 'Friday', 'Memories', `${safeId}.md`);
-    try {
-      await unlink(file);
-      this.cache = undefined;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    const folder = join(this.vaultPath(), 'Friday', 'Memories');
+    for (const file of await this.filesFor(folder, safeId)) {
+      try {
+        await unlink(join(folder, file));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
     }
+    this.cache = undefined;
   }
 
   async saveConversation(input: {
@@ -302,7 +422,12 @@ export class ObsidianMemory {
       ...this.related(`${input.userText}\n${input.assistantText}`, [date]),
       '',
     ].join('\n');
-    await writeFile(join(folder, `${safeId}.md`), note, 'utf8');
+    const file = await this.freeName(
+      folder,
+      this.conversationName(input.createdAt, input.userText),
+      safeId,
+    );
+    await writeFile(join(folder, file), note, 'utf8');
     this.cache = undefined;
   }
 
@@ -391,9 +516,24 @@ export class ObsidianMemory {
         minute: '2-digit',
       }).format(date);
     }
+    // "1150": the 24-hour time, for file names that sort by time.
+    const clockIn = (zone: string) =>
+      new Intl.DateTimeFormat('en-GB', {
+        timeZone: zone,
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+      }).format(date);
+    let clock: string;
+    try {
+      clock = clockIn(timeZone);
+    } catch {
+      clock = clockIn('UTC');
+    }
     return {
       date: `${value('year')}-${value('month')}-${value('day')}`,
       time,
+      clock: clock.replace(':', ''),
     };
   }
 

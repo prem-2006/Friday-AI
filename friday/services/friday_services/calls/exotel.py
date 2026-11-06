@@ -84,8 +84,6 @@ class ExotelDialer:
             "StatusCallback": (
                 f"{public}/exotel/status/{record.id}?key={get('EXOTEL_STREAM_KEY')}"
             ),
-            "StatusCallbackEvents[0]": "terminal",
-            "StatusCallbackEvents[1]": "answered",
             "CustomField": record.id,
         }
         client = self._client or httpx.AsyncClient(timeout=15)

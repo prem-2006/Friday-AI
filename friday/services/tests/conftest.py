@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import socket
 import threading
 import time
@@ -11,6 +12,7 @@ from types import SimpleNamespace
 import pytest
 import uvicorn
 
+from friday_services.calls.bot import run_call
 from friday_services.calls.store import CallRecord, CallStore
 from friday_services.config import Settings
 from friday_services.desktop import DesktopApps
@@ -58,6 +60,8 @@ class FakeCall:
         self.runs: list[dict] = []
 
     async def __call__(self, websocket, *, record, store: CallStore, **kwargs):
+        # The real pipeline must accept exactly what the routes pass it.
+        inspect.signature(run_call).bind(websocket, record=record, store=store, **kwargs)
         self.runs.append({"record": record, **kwargs})
         record.stream_started = True
         store.add_turn(record.id, "friday", "Hello, this is Friday.")

@@ -938,7 +938,6 @@ def create_app(
             record=record,
             store=store,
             settings=settings,
-            provider="exotel",
             helpers=call_helpers,
         )
 

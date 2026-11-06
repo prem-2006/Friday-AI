@@ -14,11 +14,13 @@ PIN or OTP: the owner does those.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -50,6 +52,7 @@ STEPS = {
     "scroll": "scroll(args['direction']); wait_stable(); out(texts=[o['text'] for o in screen()][:80])",
 }
 PRELUDE = """
+import importlib.util
 import json
 args = json.loads(FRIDAY_ARGS)
 def out(**values):
@@ -61,12 +64,14 @@ class PhoneError(Exception):
     """The message is said to the owner."""
 
 
-# uv's phone-harness.exe launcher fails when started from Friday's services, so
-# its own Python runs the harness directly.
+# phone-harness is one of Friday's own packages, so the services' Python runs it
+# (uv's phone-harness.exe launcher fails when started from the services).
 RUN_HARNESS = "import sys; from phone_harness.run import main; sys.exit(main())"
 
 
 def harness_command() -> list[str] | None:
+    if importlib.util.find_spec("phone_harness") is not None:
+        return [sys.executable, "-c", RUN_HARNESS]
     tools = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "uv" / "tools"
     python = tools / "phone-harness" / "Scripts" / "python.exe"
     if python.exists():
@@ -130,7 +135,9 @@ class Phone:
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         except FileNotFoundError as error:
-            raise PhoneError("phone-harness is not installed on this PC.") from error
+            raise PhoneError(
+                f"phone-harness is not installed on this PC (looked for {self._command[0]})."
+            ) from error
         except subprocess.TimeoutExpired as error:
             raise PhoneError("The phone took too long on that step.") from error
         if done.returncode != 0:

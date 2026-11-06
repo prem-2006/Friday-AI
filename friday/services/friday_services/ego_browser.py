@@ -234,4 +234,4 @@ class EgoBrowser:
         raise BrowserError("The code editor tools work in Friday's Chrome only.")
 
     def cdp_url(self) -> str:
-        raise BrowserError("Navigator works step by step in ego lite.")
+        return ""  # EgoAgent drives ego lite itself; it needs no debugging port

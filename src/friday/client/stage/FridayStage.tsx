@@ -191,14 +191,14 @@ type Phase =
 // hands-free, and after Caps Lock is let go (its 1 s silence tail + network).
 const HEARD_PAUSE_MS = 700;
 
-/** Always-on conversation on the notch: off for now, the notch hears only
- * while Caps Lock is held (localStorage friday-always-on = "on" brings it
- * back). */
+/** Always-on conversation on the notch: on unless turned off
+ * (localStorage friday-always-on = "off"). "Stop" puts it to sleep until
+ * "Friday" or "Hey Friday"; Caps Lock works either way. */
 function alwaysListening() {
   try {
-    return localStorage.getItem('friday-always-on') === 'on';
+    return localStorage.getItem('friday-always-on') !== 'off';
   } catch {
-    return false;
+    return true;
   }
 }
 const RELEASE_WAIT_MS = 1800;

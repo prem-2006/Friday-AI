@@ -23,7 +23,7 @@ export function rememberTool(
     defineTool({
       name: 'remember',
       description:
-        'Save something the owner asks you to remember (a preference, a fact about them or a standing instruction), or something lasting they tell you about themselves (a taste, opinion, habit, goal or who someone is to them). Not passing moods, and nothing about health or money unless they ask. It is saved in Friday and as a Markdown note in the Obsidian vault. Never save passwords, OTPs or card numbers.',
+        'Save something the owner asks you to remember (a preference, a fact about them or a standing instruction), something lasting they tell you about themselves (a taste, opinion, habit, goal or who someone is to them), where they put or left something ("I kept my keys in the drawer"), or what they plan to do on a day. Not passing moods, and nothing about health or money unless they ask. It is saved in Friday and as a Markdown note in the Obsidian vault. Never save passwords, OTPs or card numbers.',
       parameters: z.object({
         fact: z
           .string()
@@ -31,7 +31,7 @@ export function rememberTool(
           .min(3)
           .max(400)
           .describe(
-            'One short sentence, written about the owner, e.g. "The owner prefers morning meetings."',
+            'One short sentence, written about the owner, e.g. "The owner prefers morning meetings." For where something is or a plan, add the day: "On Thursday 6 Nov the owner left the headphones on the study table."',
           ),
       }),
       execute: async ({ fact }) => {

@@ -76,6 +76,10 @@ Try saying:
 - "WhatsApp Priya that I'm running ten minutes late." Friday reads the message back; you say yes.
 - "Call Rahul on WhatsApp." Friday starts the call after your yes, and you talk.
 
+## Navigator in ego lite
+
+With [ego lite](https://github.com/citrolabs/ego-lite) installed, Navigator and Mail work in its own Space, with the logins you chose to bring from Chrome, while you keep using your browser; Friday's model plans each step (`friday_services/ego_agent.py`). Install it from https://lite.ego.app, finish its first-run setup (so `ego-browser` is on the PATH), then restart Friday and run `npm run friday:setup`. Without it, or with `FRIDAY_NAVIGATOR_BROWSER=chrome`, Navigator uses Friday's Chrome as before. YouTube and music always use your Chrome, and Coder stays in Chrome for code editors.
+
 ## Background research
 
 Say "research electric scooters in India". Friday's `research_topic` tool reads public pages with [Obscura](https://github.com/h4ckf0r0day/obscura), a headless browser, while you keep working; Friday's model writes the report, it is saved with its sources in the vault under `Friday/Research`, and Friday says when it is ready. Chrome stays for anything signed in or meant to be seen.

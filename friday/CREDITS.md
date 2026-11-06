@@ -18,6 +18,7 @@ Friday is built on one open-source project, took ideas from two more, and uses a
 
 | Project | What it does for Friday | Where in Friday | License |
 | ------- | ----------------------- | --------------- | ------- |
+| [ego lite](https://github.com/citrolabs/ego-lite) by citrolabs | Navigator's and Mail's browser when installed: a Space of their own with the owner's chosen logins. Friday runs its `ego-browser` command; the browser is ego lite's own free download. | `friday_services/ego_browser.py`, `ego_agent.py` | MIT (repository) |
 | [Obscura](https://github.com/h4ckf0r0day/obscura) | Reads public pages for background research reports, with no window on screen. Stealth mode is not used. | `friday/obscura` (downloaded, not in git), `friday_services/research.py` | Apache-2.0 |
 | [Hermes Agent](https://github.com/NousResearch/hermes-agent) by Nous Research | Navigator's engine for multi-step browser jobs: it works Friday's Chrome over CDP with Friday's model, and keeps its own memory and skills. Installed as a package, not copied. | `friday/hermes-agent/` (`run_task.py`), chosen in `friday/services/friday_services/browser_agent.py` | MIT |
 

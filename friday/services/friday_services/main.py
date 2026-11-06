@@ -40,6 +40,8 @@ from friday_services.calls.twilio import (
 from friday_services.config import REPO_ROOT, Settings
 from friday_services.desktop import DesktopApps, press_media_key
 from friday_services.dictate import dictate
+from friday_services.ego_agent import EgoAgent
+from friday_services.ego_browser import EgoBrowser, navigator_uses_ego
 from friday_services.files import owner_folders
 from friday_services.instant import Instant
 from friday_services.mail_map import MailMap, composio_reader
@@ -69,7 +71,7 @@ from friday_services.phone_in import (
     caller_name,
     same_caller,
 )
-from friday_services.research import Researcher, find_obscura
+from friday_services.research import Researcher, ask_model, find_obscura
 from friday_services.screen import capture_screen, describe_screen, snap_window
 from friday_services.tunnel import NgrokTunnel, QuickTunnel, TunnelGuard
 from friday_services.usage import timed, usage
@@ -124,6 +126,17 @@ def create_app(
         settings.get("FRIDAY_BROWSER_AGENT", "auto").lower(),
     )
     browser_worker = Worker("friday-browser")
+    if owner_media is not None and navigator_uses_ego(
+        settings.get("FRIDAY_NAVIGATOR_BROWSER", "auto")
+    ):
+        navigator_browser: Any = EgoBrowser()
+        navigator_agent: Any = EgoAgent(
+            navigator_browser,
+            lambda system, user, tokens: ask_model(settings, system, user, tokens),
+            browser_worker.run,
+        )
+    else:
+        navigator_browser, navigator_agent = browser, browser_agent
     desktop_worker = Worker("friday-desktop", initializer=com_thread)
     desktop = desktop or DesktopApps()
     dialer = dialer or (
@@ -150,7 +163,12 @@ def create_app(
     # The "Hey Friday" listener, once started (for /wake/ready).
     wake_ref: dict[str, Any] = {}
     servers = {
-        "/browser": build_browser_server(browser, browser_worker, feed, browser_agent),
+        # Navigator and Mail: ego lite when it is installed, else Friday's Chrome.
+        "/browser": build_browser_server(
+            navigator_browser, browser_worker, feed, navigator_agent
+        ),
+        # Coder edits LeetCode-style editors, which only Friday's Chrome can do.
+        "/chrome": build_browser_server(browser, browser_worker, feed, browser_agent),
         "/desktop": build_desktop_server(desktop, desktop_worker, feed),
         "/whatsapp": build_whatsapp_server(whatsapp, desktop_worker, feed),
         "/quick": build_quick_server(

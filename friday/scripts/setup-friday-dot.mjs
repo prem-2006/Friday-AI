@@ -54,7 +54,8 @@ const DOTS = [
     connections: ['desktop'],
   },
   // Coding practice (LeetCode and similar) in Friday's Chrome window.
-  { name: 'Coder', persona: '../dots/coder.md', connections: ['browser'] },
+  // Its code editor tools need Chrome even when Navigator works in ego lite.
+  { name: 'Coder', persona: '../dots/coder.md', connections: ['chrome'] },
   // Gmail in Friday's Chrome window: summaries, what is pending, drafts.
   { name: 'Mail', persona: '../dots/mail.md', connections: ['browser'] },
   {

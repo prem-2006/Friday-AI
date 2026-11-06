@@ -114,6 +114,19 @@ export const ABILITIES: Ability[] = [
     ],
   },
   {
+    id: 'mobile',
+    title: 'Use my Android phone',
+    detail:
+      'Open apps, read the screen and tap through tasks on your phone over USB debugging. Sending, paying and passwords stay with you.',
+    tools: [
+      {
+        dot: 'Friday',
+        connection: 'quick',
+        names: ['phone_task', 'phone_open_app', 'phone_screen'],
+      },
+    ],
+  },
+  {
     id: 'meetings-notes',
     title: 'Take meeting notes',
     detail:

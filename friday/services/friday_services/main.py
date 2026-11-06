@@ -53,6 +53,7 @@ from friday_services.mcp_phone import Dialer, build_phone_server, place_own_call
 from friday_services.mcp_quick import build_quick_server
 from friday_services.media import OwnerMedia
 from friday_services.meeting import Meeting
+from friday_services.mobile import Phone, PhoneJobs
 from friday_services.organizer import (
     Notes,
     OrganizerError,
@@ -164,9 +165,7 @@ def create_app(
     wake_ref: dict[str, Any] = {}
     servers = {
         # Navigator and Mail: ego lite when it is installed, else Friday's Chrome.
-        "/browser": build_browser_server(
-            navigator_browser, browser_worker, feed, navigator_agent
-        ),
+        "/browser": build_browser_server(navigator_browser, browser_worker, feed, navigator_agent),
         # Coder edits LeetCode-style editors, which only Friday's Chrome can do.
         "/chrome": build_browser_server(browser, browser_worker, feed, browser_agent),
         "/desktop": build_desktop_server(desktop, desktop_worker, feed),
@@ -216,6 +215,18 @@ def create_app(
             people=People(saved_people) if owner_media is not None else None,
             overlay=overlay if owner_media is not None else None,
             meeting=Meeting(settings) if owner_media is not None else None,
+            # The owner's Android phone, through phone-harness and adb (not in tests).
+            phone_jobs=(
+                PhoneJobs(
+                    Phone(),
+                    lambda system, user, tokens: ask_model(settings, system, user, tokens),
+                    announce=lambda text: announce(text),
+                    progress=lambda detail: feed.emit("friday", "phone_task", detail),
+                    stopped=lambda: feed.stopped,
+                )
+                if owner_media is not None
+                else None
+            ),
             # Background research needs Obscura (friday/obscura; not in tests).
             research=(
                 Researcher(

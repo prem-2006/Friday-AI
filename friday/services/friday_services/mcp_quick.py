@@ -33,6 +33,7 @@ from friday_services.files import FilesError, find_files, open_file
 from friday_services.media import MediaError, OwnerMedia, youtube_window
 from friday_services.meeting import MeetingNotesError
 from friday_services.meetings import MeetingError, calendar_event_url
+from friday_services.mobile import PhoneError
 from friday_services.organizer import (
     Notes,
     OrganizerError,
@@ -59,6 +60,7 @@ ACT = ToolAnnotations(read_only_hint=False, destructive_hint=False)
 SENDS = ToolAnnotations(read_only_hint=False, destructive_hint=True)
 LOOK = ToolAnnotations(read_only_hint=True)
 FAILURES = (
+    PhoneError,
     MeetingNotesError,
     PeopleError,
     BrowserError,
@@ -183,6 +185,7 @@ def build_quick_server(
     people: Any = None,
     overlay: Any = None,
     meeting: Any = None,
+    phone_jobs: Any = None,
 ) -> MCPServer:
     volume = volume or Volume()
     server = MCPServer(
@@ -1219,6 +1222,70 @@ def build_quick_server(
         on = f" on the {screen}" if screen != "current" else ""
         name = placed.get("app") or placed.get("window") or window
         return {**placed, "friday_say": f"{_short(name, 40)} is {where}{on}."}
+
+    if phone_jobs is not None:
+
+        @server.tool(
+            name="phone_task",
+            description=(
+                "Do something on the owner's Android phone, in the background: 'phone pe "
+                "WhatsApp kholo aur Ravi ki last message padho', 'check my phone's battery "
+                "saver', 'open Swiggy on my phone and show me what is in my cart'. Friday says "
+                "the result when it is done. It never sends, pays, buys or types passwords: the "
+                "owner does those. hinglish: true when the owner spoke Hindi or Hinglish."
+            ),
+            annotations=ACT,
+        )
+        async def phone_task(
+            goal: Annotated[str, Field(min_length=3, max_length=400)],
+            hinglish: bool = False,
+        ) -> dict:
+            async def begin() -> bool:
+                return phone_jobs.start(goal, hinglish)
+
+            started = await act("phone_task", f"On your phone: {goal[:80]}", begin)
+            if not started:
+                return {
+                    "started": False,
+                    "friday_say": "I am still busy on your phone. Ask me again in a moment.",
+                }
+            return {
+                "started": True,
+                "friday_say": (
+                    "Theek hai, phone pe kar rahi hoon, ho jaane par bataungi."
+                    if hinglish
+                    else "Okay, doing it on your phone. I will tell you when it is done."
+                ),
+            }
+
+        @server.tool(
+            name="phone_open_app",
+            description="Open an app on the owner's Android phone: 'phone pe YouTube kholo'.",
+            annotations=ACT,
+        )
+        async def phone_open_app(name: Annotated[str, Field(min_length=2, max_length=60)]) -> dict:
+            async def open_it() -> list[str]:
+                await asyncio.to_thread(phone_jobs.phone.ready)
+                return await asyncio.to_thread(phone_jobs.phone.open_app, name)
+
+            await act("phone_open_app", f"Opening {name} on your phone.", open_it)
+            return {"friday_say": f"{name} is open on your phone."}
+
+        @server.tool(
+            name="phone_screen",
+            description=(
+                "Read the text on the owner's phone screen right now, to answer about it: "
+                "'phone pe kya dikh raha hai'. Answer in one or two spoken sentences."
+            ),
+            annotations=LOOK,
+        )
+        async def phone_screen() -> dict:
+            async def read() -> list[str]:
+                await asyncio.to_thread(phone_jobs.phone.ready)
+                return await asyncio.to_thread(phone_jobs.phone.screen)
+
+            texts = await act("phone_screen", "Reading your phone screen.", read)
+            return {"screen": texts}
 
     if meeting is not None:
 

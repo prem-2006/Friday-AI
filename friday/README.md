@@ -76,6 +76,10 @@ Try saying:
 - "WhatsApp Priya that I'm running ten minutes late." Friday reads the message back; you say yes.
 - "Call Rahul on WhatsApp." Friday starts the call after your yes, and you talk.
 
+## Your Android phone
+
+"Phone pe WhatsApp kholo aur Ravi ki last message padho" runs on your phone through [phone-harness](https://github.com/phone-harness/phone-harness), in the background, and Friday says the result. Friday never taps Send, Pay or Buy there and never types passwords, PINs or OTPs. Set up once: `winget install Google.PlatformTools` (adb), `uv tool install phone-harness`, then on the phone turn on Developer options and USB debugging, plug it in and tap Allow. `phone-harness doctor android` checks it.
+
 ## Navigator in ego lite
 
 With [ego lite](https://github.com/citrolabs/ego-lite) installed, Navigator and Mail work in its own Space, with the logins you chose to bring from Chrome, while you keep using your browser; Friday's model plans each step (`friday_services/ego_agent.py`). Install it from https://lite.ego.app, finish its first-run setup (so `ego-browser` is on the PATH), then restart Friday and run `npm run friday:setup`. Without it, or with `FRIDAY_NAVIGATOR_BROWSER=chrome`, Navigator uses Friday's Chrome as before. YouTube and music always use your Chrome, and Coder stays in Chrome for code editors.

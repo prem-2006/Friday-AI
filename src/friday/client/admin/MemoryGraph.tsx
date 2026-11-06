@@ -56,7 +56,9 @@ export function MemoryGraph() {
   const [graph, setGraph] = useState<Graph | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [hidden, setHidden] = useState<Set<Kind>>(new Set());
+  // Every voice turn is a conversation note, hundreds of them: shown, they bury
+  // the memories, people and topics in lines. A tick in the legend shows them.
+  const [hidden, setHidden] = useState<Set<Kind>>(new Set(['conversation']));
   const [query, setQuery] = useState('');
   const [note, setNote] = useState<Note | null>(null);
   const [hub, setHub] = useState<GraphNode | null>(null);

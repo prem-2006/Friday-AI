@@ -103,13 +103,49 @@ def one_voice_lock() -> asyncio.Lock:
     return _ONE_VOICE.setdefault(loop, asyncio.Lock())
 
 
+# Timbre sends the first 0.08 s of a sentence, then nothing for about 0.3 s,
+# then the rest faster than it plays: played as it comes, Friday says a
+# sliver, stalls and goes on. Holding back the start until this much audio is
+# in makes it play smoothly, for about 0.3 s more before the first word.
+STEADY_START_SECS = 0.4
+
+
+async def steady_start(frames, seconds: float = STEADY_START_SECS):
+    """The frames, with the audio at the start held back until `seconds` of it
+    (or the whole sentence) is in, so playback never runs dry right away."""
+    held: list[Any] = []
+    buffered = 0.0
+    released = False
+    async for frame in frames:
+        if released:
+            yield frame
+            continue
+        audio = getattr(frame, "audio", None)
+        rate = getattr(frame, "sample_rate", 0)
+        if not (isinstance(audio, bytes | bytearray) and rate):
+            if held:
+                held.append(frame)  # keeps its place after the audio held back
+            else:
+                yield frame  # nothing held back yet: no reason to wait
+            continue
+        held.append(frame)
+        buffered += len(audio) / (2 * rate * (getattr(frame, "num_channels", 1) or 1))
+        if buffered >= seconds:
+            for kept in held:
+                yield kept
+            held, released = [], True
+    for kept in held:  # a sentence shorter than that: all of it at the end
+        yield kept
+
+
 def one_at_a_time(service_class):
-    """A TTS service class whose requests wait for each other."""
+    """A TTS service class whose requests wait for each other, and whose
+    sentences start playing only once enough audio is in."""
 
     class OneAtATime(service_class):
         async def run_tts(self, text: str, context_id: str):
             async with one_voice_lock():
-                async for frame in super().run_tts(text, context_id):
+                async for frame in steady_start(super().run_tts(text, context_id)):
                     yield frame
 
     return OneAtATime

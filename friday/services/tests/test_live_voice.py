@@ -224,3 +224,38 @@ async def test_a_hey_friday_hold_starts_with_the_words_said_just_before():
     gate.push_to_talk(True)
     await gate.process_frame(now, FrameDirection.DOWNSTREAM)
     assert [chunk[0] for chunk in passed] == [9]
+
+
+async def test_a_sentence_starts_playing_only_once_enough_audio_is_in():
+    import asyncio
+
+    from pipecat.frames.frames import TTSAudioRawFrame, TTSStartedFrame
+
+    from friday_services.live_voice import steady_start
+
+    out: list[tuple[str, float]] = []
+    start = asyncio.get_running_loop().time()
+
+    def chunk(seconds):
+        return TTSAudioRawFrame(
+            audio=bytes(int(48000 * seconds)), sample_rate=24000, num_channels=1
+        )
+
+    async def timbre():
+        yield TTSStartedFrame()
+        yield chunk(0.08)  # Timbre's first sliver, then a pause
+        await asyncio.sleep(0.05)
+        for _ in range(5):
+            yield chunk(0.09)
+
+    async for frame in steady_start(timbre()):
+        out.append((type(frame).__name__, asyncio.get_running_loop().time() - start))
+    names = [name for name, _ in out]
+    assert names == ["TTSStartedFrame"] + ["TTSAudioRawFrame"] * 6
+    # The sliver comes out together with the audio after the pause.
+    assert out[1][1] >= 0.04  # Windows timers wake a little early
+
+    async def short():
+        yield chunk(0.1)
+
+    assert len([f async for f in steady_start(short())]) == 1

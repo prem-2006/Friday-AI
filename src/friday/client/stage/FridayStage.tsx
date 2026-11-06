@@ -202,8 +202,10 @@ function alwaysListening() {
   }
 }
 const RELEASE_WAIT_MS = 1800;
-// No reply text by then: Friday says a short "one second".
-const HOLD_ON_MS = 1500;
+// Only a really slow reply gets a short "one second", and at most once in a
+// while: said on every turn it becomes noise.
+const HOLD_ON_MS = 4000;
+const HOLD_ON_EVERY_MS = 5 * 60_000;
 
 const lastUserText = (history: { role: string; content?: unknown }[]) => {
   const asked = history.findLast((item) => item.role === 'user')?.content;
@@ -526,6 +528,8 @@ function StageSession({
   const stopSent = useRef<Promise<void>>(Promise.resolve());
   const spokenApproval = useRef('');
   const languageRef = useRef(language);
+  // When Friday last said "one second" (HOLD_ON_EVERY_MS).
+  const heldOnAt = useRef(0);
   languageRef.current = language;
   // How long each step took for the last thing you said, in ms.
   const timing = useRef<{
@@ -788,8 +792,10 @@ function StageSession({
     // The model has said nothing for a while: a short "one second", once.
     const askedText = lastUserText(history);
     const holdOn = setTimeout(() => {
-      if (!spokenText && !written && !controller.signal.aborted)
-        say(holdOnLine(askedText, languageRef.current));
+      if (spokenText || written || controller.signal.aborted) return;
+      if (Date.now() - heldOnAt.current < HOLD_ON_EVERY_MS) return;
+      heldOnAt.current = Date.now();
+      say(holdOnLine(askedText, languageRef.current));
     }, HOLD_ON_MS);
     try {
       const asked = performance.now();
@@ -805,6 +811,7 @@ function StageSession({
       clearTimeout(holdOn);
       timing.current.reply = performance.now() - asked;
       threadId.current = result.threadId;
+      if (result.quiet) return; // teach mode is watching: say nothing
       const next = [...history, ...result.newMessages];
       setHistory(next);
       if (pendingApprovalOf(next)) return;

@@ -7,6 +7,7 @@ import asyncio
 import itertools
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 
 from mcp.server.mcpserver.exceptions import ToolError
@@ -43,6 +44,8 @@ class ActivityFeed:
         self._holder: asyncio.Queue[Activity] | None = None
         self._ids = itertools.count(1)
         self._stopped_at: float | None = None
+        # Background jobs that must end when the owner says stop or cancel.
+        self._on_stop: list[Callable[[], None]] = []
 
     def windows(self) -> dict[str, int]:
         """How many voice windows and notches are connected (for Caps Lock)."""
@@ -113,7 +116,16 @@ class ActivityFeed:
 
     def stop(self) -> None:
         self._stopped_at = time.monotonic()
+        for cancel in list(self._on_stop):
+            try:
+                cancel()
+            except Exception:
+                pass  # one job failing to stop must not keep the others going
         self.emit("friday", "stop", "You stopped all on-screen actions.", state="done")
+
+    def on_stop(self, cancel: Callable[[], None]) -> None:
+        """Calls cancel whenever the owner stops everything."""
+        self._on_stop.append(cancel)
 
     def resume(self) -> None:
         self._stopped_at = None

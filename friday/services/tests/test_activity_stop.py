@@ -19,3 +19,20 @@ def test_a_stop_clears_itself_when_the_resume_is_lost(monkeypatch):
     feed.stop()
     feed.resume()
     assert not feed.stopped
+
+
+"""The owner's stop switch also ends background jobs."""
+
+
+
+def test_stop_calls_every_job_even_if_one_fails():
+    feed = ActivityFeed()
+    called: list[str] = []
+
+    def broken():
+        raise RuntimeError("no")
+
+    feed.on_stop(broken)
+    feed.on_stop(lambda: called.append("phone"))
+    feed.stop()
+    assert called == ["phone"] and feed.stopped

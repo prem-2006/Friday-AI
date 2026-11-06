@@ -156,3 +156,35 @@ def test_adb_is_found_where_winget_put_it(tmp_path):
     env = with_adb({"PATH": str(tmp_path / "nothing"), "LOCALAPPDATA": str(tmp_path)})
     assert env["PATH"].startswith(str(tools))
     assert with_adb({"PATH": "", "LOCALAPPDATA": str(tmp_path / "none")})["PATH"] == ""
+
+
+def test_calls_are_left_to_the_owner_and_a_stuck_step_stops_the_job():
+    with pytest.raises(PhoneError, match="owner"):
+        Phone(["x"], run=harness({})).tap_text("Call")
+
+    async def ask(system, user, tokens):
+        return '{"do": "open_app", "name": "Phone"}'
+
+    jobs = PhoneJobs(Pretend(), ask, lambda _: None)
+    said = asyncio.run(jobs.work("call Aarohi"))
+    assert said.startswith("I kept trying the same step")
+
+
+def test_stop_cancels_a_running_job_at_once():
+    stops: list = []
+    said: list[str] = []
+
+    async def ask(system, user, tokens):
+        await asyncio.sleep(10)
+
+    jobs = PhoneJobs(Pretend(), ask, said.append, on_stop=stops.append)
+
+    async def run():
+        jobs.start("anything")
+        await asyncio.sleep(0.05)
+        stops[0]()  # the owner said stop
+        with pytest.raises(asyncio.CancelledError):
+            await jobs._task
+
+    asyncio.run(run())
+    assert said == [] and not jobs.busy

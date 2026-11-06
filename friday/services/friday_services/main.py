@@ -223,6 +223,7 @@ def create_app(
                     announce=lambda text: announce(text),
                     progress=lambda detail: feed.emit("friday", "phone_task", detail),
                     stopped=lambda: feed.stopped,
+                    on_stop=feed.on_stop,
                 )
                 if owner_media is not None
                 else None
@@ -234,6 +235,7 @@ def create_app(
                     announce=lambda text: announce(text),
                     progress=lambda detail: feed.emit("friday", "research", detail),
                     stopped=lambda: feed.stopped,
+                    on_stop=feed.on_stop,
                 )
                 if owner_media is not None and find_obscura(settings).exists()
                 else None

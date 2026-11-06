@@ -227,7 +227,10 @@ class Researcher:
         fetch: Callable[[str, str], Awaitable[str]] | None = None,
         ask: Callable[[str, str, int], Awaitable[str | None]] | None = None,
         folder: Path | None = None,
+        on_stop: Callable[[Callable[[], None]], None] | None = None,
     ) -> None:
+        if on_stop:
+            on_stop(self.cancel)
         exe = find_obscura(settings)
         self._fetch = fetch or (lambda url, dump: obscura_fetch(exe, url, dump))
         self._ask = ask or (lambda system, user, tokens: ask_model(settings, system, user, tokens))
@@ -251,6 +254,11 @@ class Researcher:
         self.topic = topic
         self._task = asyncio.get_running_loop().create_task(self._run(topic, hinglish))
         return True
+
+    def cancel(self) -> None:
+        """Stop and cancel end the research at once, without a word."""
+        if self.busy:
+            self._task.cancel()
 
     def latest(self) -> Path | None:
         """The newest report saved, from this run or an earlier one."""

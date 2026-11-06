@@ -1232,7 +1232,9 @@ def build_quick_server(
                 "WhatsApp kholo aur Ravi ki last message padho', 'check my phone's battery "
                 "saver', 'open Swiggy on my phone and show me what is in my cart'. Friday says "
                 "the result when it is done. It never sends, pays, buys or types passwords: the "
-                "owner does those. hinglish: true when the owner spoke Hindi or Hinglish."
+                "owner does those. Always call it, even if a phone tool failed earlier in this "
+                "conversation: the owner may have fixed the connection since. hinglish: true when "
+                "the owner spoke Hindi or Hinglish."
             ),
             annotations=ACT,
         )
@@ -1260,7 +1262,11 @@ def build_quick_server(
 
         @server.tool(
             name="phone_open_app",
-            description="Open an app on the owner's Android phone: 'phone pe YouTube kholo'.",
+            description=(
+                "Open an app on the owner's Android phone: 'phone pe YouTube kholo'. Always call "
+                "it, even if it failed earlier in this conversation: the owner may have fixed "
+                "the connection since."
+            ),
             annotations=ACT,
         )
         async def phone_open_app(name: Annotated[str, Field(min_length=2, max_length=60)]) -> dict:
@@ -1275,7 +1281,8 @@ def build_quick_server(
             name="phone_screen",
             description=(
                 "Read the text on the owner's phone screen right now, to answer about it: "
-                "'phone pe kya dikh raha hai'. Answer in one or two spoken sentences."
+                "'phone pe kya dikh raha hai'. Answer in one or two spoken sentences. Always "
+                "call it, even if it failed earlier in this conversation."
             ),
             annotations=LOOK,
         )

@@ -198,10 +198,26 @@ export async function runFriday(
 }
 
 /** Cuts finished sentences off the front of text being written: returns
- * [sentences ready to speak, the rest still being written]. */
-export function readySentences(text: string): [string[], string] {
+ * [sentences ready to speak, the rest still being written]. For the reply's
+ * first piece (first), a pause such as a comma is enough once a few words are
+ * in, so Friday starts talking sooner. */
+export function readySentences(
+  text: string,
+  first = false,
+): [string[], string] {
   const out: string[] = [];
   let rest = text;
+  if (first) {
+    const pause = /^(\S+\s+){2,}?\S*?[,;:—–-](?=\s)|^(\S+\s+){6}/u.exec(
+      rest.trimStart(),
+    );
+    if (pause) {
+      const lead = rest.length - rest.trimStart().length;
+      const end = lead + pause[0].length;
+      out.push(rest.slice(0, end).trim());
+      rest = rest.slice(end).trimStart();
+    }
+  }
   for (;;) {
     // A sentence end (also the Hindi danda), then a space; short pieces wait
     // for more so the voice does not sound choppy.
@@ -215,6 +231,28 @@ export function readySentences(text: string): [string[], string] {
 }
 
 /** Runs the stored request the owner just approved; returns its result. */
+// Said when the model has written nothing yet, so the owner knows Friday heard.
+const HOLD_ON = {
+  hinglish: ['Haan, ek second.', 'Haan, dekhti hoon.', 'Ek minute.'],
+  english: ['One second.', 'Let me see.', 'Just a moment.'],
+};
+const HINGLISH_WORDS =
+  /\b(kya|hai|hain|karo|kar|ho|mujhe|mera|kaise|kaisi|batao|bata|chalao|kholo|kaun|kab|kahan|aaj|abhi|yaar|bhai|na|nahi)\b/iu;
+
+/** A short "one second" in the language the owner just used. */
+export function holdOnLine(
+  asked: string,
+  language: string,
+  pick = Math.random(),
+) {
+  const hinglish =
+    language.startsWith('hi') ||
+    /[\u0900-\u097F]/u.test(asked) ||
+    HINGLISH_WORDS.test(asked);
+  const lines = hinglish ? HOLD_ON.hinglish : HOLD_ON.english;
+  return lines[Math.min(lines.length - 1, Math.floor(pick * lines.length))];
+}
+
 export function runApprovedAction(threadId: string, pending: PendingApproval) {
   return post<{ isError: boolean; text: string }>(
     `/conversations/${encodeURIComponent(threadId)}/connection-actions`,

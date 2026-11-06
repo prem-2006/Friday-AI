@@ -95,6 +95,14 @@ export function fridayRunRoutes(
       );
     const thread = localThread(platform, friday.id, threadTitle);
     const started = performance.now();
+    // When the first reply text came, to see where a slow turn spends its time.
+    let firstTextMs: number | undefined;
+    const timedText =
+      onText &&
+      ((delta: string) => {
+        firstTextMs ??= Math.round(performance.now() - started);
+        onText(delta);
+      });
     const userTurn = messages.findLast((item) => item.role === 'user');
     const userText =
       typeof userTurn?.content === 'string' ? userTurn.content.trim() : '';
@@ -120,7 +128,7 @@ export function fridayRunRoutes(
               conversational(messages) as unknown as HistoryItem[],
             ) as unknown as Message[],
             // Only the owner can approve an action; Reception has no tools.
-            { approvals: owner, signal: c.req.raw.signal, onText },
+            { approvals: owner, signal: c.req.raw.signal, onText: timedText },
           );
       // The screen keeps only the conversation itself, not a model's notes.
       const newMessages = conversational(ran);
@@ -168,6 +176,7 @@ export function fridayRunRoutes(
         dot: dotName,
         instant: Boolean(quick),
         ms: Math.round(performance.now() - started),
+        firstTextMs,
         tools: newMessages.flatMap((item) =>
           item.role === 'assistant'
             ? (item.toolCalls ?? []).map((call) => call.function.name)

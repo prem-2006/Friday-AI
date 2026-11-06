@@ -21,6 +21,7 @@ import { followActivity, ownerHeaders, setStopped } from './activity';
 import {
   loadHistory,
   pendingApprovalOf,
+  holdOnLine,
   readySentences,
   runApprovedAction,
   runFriday,
@@ -201,6 +202,13 @@ function alwaysListening() {
   }
 }
 const RELEASE_WAIT_MS = 1800;
+// No reply text by then: Friday says a short "one second".
+const HOLD_ON_MS = 1500;
+
+const lastUserText = (history: { role: string; content?: unknown }[]) => {
+  const asked = history.findLast((item) => item.role === 'user')?.content;
+  return typeof asked === 'string' ? asked : '';
+};
 
 interface Caption {
   who: 'you' | 'friday';
@@ -777,16 +785,24 @@ function StageSession({
         await speak(sentence, true, performance.now());
       });
     };
+    // The model has said nothing for a while: a short "one second", once.
+    const askedText = lastUserText(history);
+    const holdOn = setTimeout(() => {
+      if (!spokenText && !written && !controller.signal.aborted)
+        say(holdOnLine(askedText, languageRef.current));
+    }, HOLD_ON_MS);
     try {
       const asked = performance.now();
       const result = await runFriday(history, controller.signal, (delta) => {
         progressAt.current = Date.now();
+        clearTimeout(holdOn);
         written += delta;
         setSubtitle(written);
-        const [ready, rest] = readySentences(pending + delta);
+        const [ready, rest] = readySentences(pending + delta, !spokenText);
         pending = rest;
         ready.forEach(say);
       });
+      clearTimeout(holdOn);
       timing.current.reply = performance.now() - asked;
       threadId.current = result.threadId;
       const next = [...history, ...result.newMessages];
@@ -809,6 +825,7 @@ function StageSession({
       if (!controller.signal.aborted)
         setError(friendlyError(e, 'That did not work. Try again.'));
     } finally {
+      clearTimeout(holdOn);
       clearInterval(watchdog);
       replying.current = false;
       turn.current = null;

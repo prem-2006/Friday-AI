@@ -1,6 +1,9 @@
 import type { Message } from '@ag-ui/core';
 import { expect, it, vi } from 'vitest';
-import { readySentences } from '../../src/friday/client/stage/conversation.js';
+import {
+  holdOnLine,
+  readySentences,
+} from '../../src/friday/client/stage/conversation.js';
 import { fridayRunRoutes } from '../../src/friday/server/run-routes.js';
 
 it('cuts finished sentences off text that is still being written', () => {
@@ -16,6 +19,29 @@ it('cuts finished sentences off text that is still being written', () => {
     ['Haan. Main abhi call laga deti hoon।'],
     'Phir',
   ]);
+});
+
+it('starts talking at the first pause once a few words are in', () => {
+  expect(readySentences('Haan Prem, main abhi', true)).toEqual([
+    ['Haan Prem,'],
+    'main abhi',
+  ]);
+  expect(readySentences('Okay, the', true)).toEqual([[], 'Okay, the']);
+  expect(
+    readySentences('Main abhi YouTube pe gaana laga rahi hoon', true),
+  ).toEqual([['Main abhi YouTube pe gaana laga'], 'rahi hoon']);
+  // After the first piece, whole sentences, as before.
+  expect(readySentences('Haan Prem, main abhi', false)).toEqual([
+    [],
+    'Haan Prem, main abhi',
+  ]);
+});
+
+it('says one second in the language the owner used', () => {
+  expect(holdOnLine('kaisi ho friday', 'en-IN', 0)).toBe('Haan, ek second.');
+  expect(holdOnLine('what is the weather', 'en-IN', 0)).toBe('One second.');
+  expect(holdOnLine('weather', 'hi-IN', 0.99)).toBe('Ek minute.');
+  expect(holdOnLine('मौसम कैसा है', 'en-IN', 0)).toBe('Haan, ek second.');
 });
 
 it('streams reply text as it is written, then the whole turn', async () => {

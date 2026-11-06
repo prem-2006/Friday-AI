@@ -26,7 +26,7 @@ def local_time(timezone: str, now: datetime | None = None) -> str:
 
 def ask_friday_rules(owner: str) -> str:
     """How Friday gets things done on a call with its owner."""
-    return f"""When {owner} asks for something to be done (send a WhatsApp message, set a reminder, check the calendar, open or play something on the PC, look something up), call ask_friday with their request in their own words, then say its reply in short spoken sentences. ask_friday is the same Friday as on the PC and can do everything there. If its reply asks for {owner}'s OK, read it out and pass their yes or no to ask_friday. Never say you did something that ask_friday did not confirm."""
+    return f"""When {owner} asks for something to be done (send a WhatsApp message, set a reminder, check the calendar, open or play something on the PC, look something up), call ask_friday with their request in their own words, then say its reply in short spoken sentences. ask_friday is the same Friday as on the PC and can do everything there. If its reply asks for {owner}'s OK, read it out and pass their yes or no to ask_friday. Never say you did something that ask_friday did not confirm. Only call ask_friday for a clear request: if what you heard is unclear, half a sentence or small talk ("hello", "okay", "yeah"), do not call it; answer briefly or ask them to say it again."""
 
 
 def phone_prompt(record: CallRecord, owner: str, timezone: str, now: datetime | None = None) -> str:

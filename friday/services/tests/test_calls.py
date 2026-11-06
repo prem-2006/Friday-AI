@@ -6,8 +6,10 @@ import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from friday_services.calls.bot import build_call_pipeline, end_call_handler
-from friday_services.calls.prompts import phone_prompt
+from pipecat.services.openai.llm import OpenAILLMService
+
+from friday_services.calls.bot import build_call_pipeline, end_call_handler, evon_llm, first_words
+from friday_services.calls.prompts import ask_friday_rules, phone_prompt
 from friday_services.calls.store import CallStore
 from friday_services.calls.stt import GNANI_FRAME_BYTES, FramedGnaniSTTService
 
@@ -108,10 +110,45 @@ async def test_call_pipeline_builds_with_gnani_and_evon(settings):
         "FastAPIWebsocketInputTransport",
         "FramedGnaniSTTService",
         "LLMUserAggregator",
-        "OpenAILLMService",
+        "CallLLM",
         "GnaniTTSService",
         "FastAPIWebsocketOutputTransport",
         "LLMAssistantAggregator",
     ]
     start = names.index(expected[0])
     assert names[start : start + len(expected)] == expected
+
+
+async def test_a_tool_call_with_no_name_never_reaches_the_conversation(settings, monkeypatch):
+    ran: list[list[str]] = []
+
+    async def run(self, function_calls):
+        ran.append([call.function_name for call in function_calls])
+
+    monkeypatch.setattr(OpenAILLMService, "run_function_calls", run)
+    calls = [
+        SimpleNamespace(function_name="", tool_call_id="a"),
+        SimpleNamespace(function_name="ask_friday", tool_call_id="b"),
+    ]
+    await evon_llm(settings).run_function_calls(calls)
+    assert ran == [["ask_friday"]]
+
+
+def test_friday_greets_at_once_in_the_calls_language():
+    store = CallStore()
+
+    def greeting(kind, language="en-IN", opening=""):
+        record = store.create(
+            phone="+91", goal="g", language=language, context="", kind=kind, opening=opening
+        )
+        return first_words(record, "Prem")
+
+    assert greeting("owner") == "Hi Prem, it's Friday."
+    assert greeting("reception") == "Hello, this is Friday, Prem's AI assistant. How can I help?"
+    assert greeting("business", "hi-IN").startswith("नमस्ते, मैं फ्राइडे हूँ")
+    assert greeting("owner", opening="Hi Prem, time for lunch!") == "Hi Prem, time for lunch!"
+    assert greeting("owner", "ta-IN") == ""  # the model opens in languages with no greeting
+
+
+def test_unclear_speech_is_not_sent_to_friday_as_a_task():
+    assert "do not call it" in ask_friday_rules("Prem")

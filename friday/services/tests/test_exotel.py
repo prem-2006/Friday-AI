@@ -177,7 +177,7 @@ def test_the_owner_calling_gets_friday_and_others_get_reception(server):
 
 
 def tools_of(call) -> set[str]:
-    llm = next(p for p in call.pipeline.processors if type(p).__name__ == "OpenAILLMService")
+    llm = next(p for p in call.pipeline.processors if type(p).__name__ == "CallLLM")
     return set(llm._functions)
 
 

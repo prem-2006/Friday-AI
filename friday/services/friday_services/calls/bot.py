@@ -128,11 +128,24 @@ class CallPipeline:
     ended_by_friday: asyncio.Event
 
 
+class CallLLM(OpenAILLMService):
+    """Evon (or the model in its place) on a call. Gemini sometimes adds a
+    tool call with no name next to a real one; kept in the conversation it
+    makes every later request fail, and Friday goes silent for the rest of
+    the call. Such calls are dropped before anything records them."""
+
+    async def run_function_calls(self, function_calls):
+        named = [call for call in function_calls if call.function_name]
+        if len(named) < len(function_calls):
+            logger.warning(f"Dropped {len(function_calls) - len(named)} tool call(s) with no name")
+        await super().run_function_calls(named)
+
+
 def evon_llm(settings: Settings, **extra_settings: Any) -> OpenAILLMService:
     extra: dict[str, Any] = {}
     if settings.evon_disable_thinking:
         extra["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
-    return OpenAILLMService(
+    return CallLLM(
         api_key=settings.get("EVON_API_KEY") or "not-needed",
         base_url=settings.get("EVON_BASE_URL"),
         settings=OpenAILLMService.Settings(
@@ -143,6 +156,35 @@ def evon_llm(settings: Settings, **extra_settings: Any) -> OpenAILLMService:
             **extra_settings,
         ),
     )
+
+
+# Said the moment the call connects, so nobody waits on the model to start.
+GREETINGS = {
+    "en-IN": {
+        "owner": "Hi {owner}, it's Friday.",
+        "owner_in": "Hi {owner}, Friday here.",
+        "reception": "Hello, this is Friday, {owner}'s AI assistant. How can I help?",
+        "business": "Hello, this is Friday, an AI assistant calling for {owner}.",
+    },
+    "hi-IN": {
+        "owner": "हाय {owner}, मैं फ्राइडे।",
+        "owner_in": "हाँ {owner}, फ्राइडे बोल रही हूँ।",
+        "reception": "नमस्ते, मैं फ्राइडे हूँ, {owner} की AI असिस्टेंट। बताइए, क्या मदद करूँ?",
+        "business": "नमस्ते, मैं फ्राइडे हूँ, {owner} की तरफ़ से कॉल कर रही AI असिस्टेंट।",
+    },
+}
+# A greeting that is a whole turn: Friday then waits for the caller.
+COMPLETE_GREETINGS = ("reception",)
+
+
+def first_words(record: CallRecord, owner: str) -> str:
+    """What Friday says as soon as the call connects; empty when only the
+    model knows (a language with no ready greeting)."""
+    if record.opening:
+        return record.opening
+    lines = GREETINGS.get(record.language) or {}
+    line = lines.get(record.kind) or lines.get("business", "")
+    return line.format(owner=owner)
 
 
 def end_call_handler(store: CallStore, record: CallRecord, ended: asyncio.Event):
@@ -238,6 +280,13 @@ def build_call_pipeline(
         sample_rate=TELEPHONY_SAMPLE_RATE,
         settings=GnaniTTSService.Settings(voice=voice.voice, language=Language(record.language)),
     )
+    greeting = first_words(record, settings.owner_name)
+    start = (
+        f'[The call has just been answered and you have already said: "{greeting}". '
+        "Do not greet or introduce yourself again; go straight on.]"
+        if greeting
+        else "[The call has just been answered. Speak first.]"
+    )
     context = LLMContext(
         messages=[
             {
@@ -246,7 +295,7 @@ def build_call_pipeline(
                     record, settings.owner_name, settings.timezone
                 ),
             },
-            {"role": "user", "content": "[The call has just been answered. Speak first.]"},
+            {"role": "user", "content": start},
         ],
         tools=ToolsSchema(standard_tools=tools),
     )
@@ -297,7 +346,12 @@ def build_call_pipeline(
     @transport.event_handler("on_client_connected")
     async def on_connected(_transport, _client):
         store.set_stage(record.id, "in_progress")
-        await worker.queue_frames([LLMRunFrame()])
+        frames = [TTSSpeakFrame(greeting)] if greeting else []
+        if not (greeting and record.opening == "" and record.kind in COMPLETE_GREETINGS):
+            # The model goes on (why Friday called, the updates) while the
+            # greeting plays.
+            frames.append(LLMRunFrame())
+        await worker.queue_frames(frames)
 
     @transport.event_handler("on_client_disconnected")
     async def on_disconnected(_transport, _client):

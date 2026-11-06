@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import shutil
 import subprocess
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -60,12 +61,37 @@ class PhoneError(Exception):
     """The message is said to the owner."""
 
 
-def harness_command() -> str | None:
+# uv's phone-harness.exe launcher fails when started from Friday's services, so
+# its own Python runs the harness directly.
+RUN_HARNESS = "import sys; from phone_harness.run import main; sys.exit(main())"
+
+
+def harness_command() -> list[str] | None:
+    tools = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "uv" / "tools"
+    python = tools / "phone-harness" / "Scripts" / "python.exe"
+    if python.exists():
+        return [str(python), "-c", RUN_HARNESS]
     found = shutil.which("phone-harness")
-    if found:
-        return found
-    local = Path.home() / ".local" / "bin" / "phone-harness.exe"
-    return str(local) if local.exists() else None
+    return [found] if found else None
+
+
+def with_adb(env: Mapping[str, str]) -> dict[str, str]:
+    """The environment with adb on its PATH: winget puts it where a Friday started
+    before the install cannot see it."""
+    env = dict(env)
+    if shutil.which("adb", path=env.get("PATH")):
+        return env
+    local = (
+        Path(env.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "Microsoft" / "WinGet"
+    )
+    found = [
+        local / "Links" / "adb.exe",
+        *local.glob("Packages/Google.PlatformTools*/platform-tools/adb.exe"),
+    ]
+    adb = next((path for path in found if path.exists()), None)
+    if adb:
+        env["PATH"] = f"{adb.parent}{os.pathsep}{env.get('PATH', '')}"
+    return env
 
 
 def parse_result(output: str) -> dict[str, Any]:
@@ -85,16 +111,17 @@ def explain(error_text: str) -> str:
 
 
 class Phone:
-    def __init__(self, command: str | None = None, run=None) -> None:
-        self._command = command or harness_command() or "phone-harness"
+    def __init__(self, command: list[str] | None = None, run=None) -> None:
+        self._command = command or harness_command() or ["phone-harness"]
         self._run = run or subprocess.run
 
     def _step(self, step: str, **values: Any) -> dict[str, Any]:
         script = PRELUDE.replace("FRIDAY_ARGS", json.dumps(json.dumps(values)), 1) + STEPS[step]
         try:
             done = self._run(
-                [self._command],
+                self._command,
                 input=script,
+                env=with_adb(os.environ),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",

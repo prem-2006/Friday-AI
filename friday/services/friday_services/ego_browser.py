@@ -76,8 +76,13 @@ console.log(`MARKER${JSON.stringify({ url: await page.url(), title: await page.t
 
 
 def ego_command() -> str | None:
-    """The ego-browser command, which ego lite's onboarding puts on the PATH."""
-    return shutil.which("ego-browser")
+    """The ego-browser command, which ego lite's onboarding puts on the PATH. Friday
+    may have started before that, so its usual place counts too."""
+    found = shutil.which("ego-browser")
+    if found:
+        return found
+    usual = Path.home() / ".local" / "share" / "ego" / "active_version_dir" / "ego-browser.exe"
+    return str(usual) if usual.exists() else None
 
 
 def navigator_uses_ego(setting: str, command: str | None = None) -> bool:

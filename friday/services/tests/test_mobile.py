@@ -30,7 +30,7 @@ def harness(replies: dict[str, dict], seen: list | None = None, code: int = 0, e
 def test_values_reach_the_script_as_json_and_the_screen_comes_back():
     seen: list = []
     phone = Phone(
-        "phone-harness", run=harness({"open_app": {"app": "x", "texts": ["Chats"]}}, seen)
+        ["phone-harness"], run=harness({"open_app": {"app": "x", "texts": ["Chats"]}}, seen)
     )
     assert phone.open_app("Whats\"App'); import os") == ["Chats"]
     command, args, script = seen[0]
@@ -40,14 +40,14 @@ def test_values_reach_the_script_as_json_and_the_screen_comes_back():
 
 def test_not_ready_says_what_the_owner_must_do():
     for state, words in [("no-adb", "adb"), ("no-device", "USB"), ("locked", "Unlock")]:
-        phone = Phone("x", run=harness({"connection_state": {"state": state}}))
+        phone = Phone(["x"], run=harness({"connection_state": {"state": state}}))
         with pytest.raises(PhoneError, match=words):
             phone.ready()
-    Phone("x", run=harness({"connection_state": {"state": "ready"}})).ready()
+    Phone(["x"], run=harness({"connection_state": {"state": "ready"}})).ready()
 
 
 def test_sending_paying_and_secrets_are_left_to_the_owner():
-    phone = Phone("x", run=harness({}))
+    phone = Phone(["x"], run=harness({}))
     for text in ("Send", "Pay ₹500", "Place order", "Delete chat"):
         with pytest.raises(PhoneError, match="owner"):
             phone.tap_text(text)
@@ -64,10 +64,10 @@ def test_missing_slow_and_failing_steps_are_plain_errors():
         raise subprocess.TimeoutExpired("phone-harness", 45)
 
     with pytest.raises(PhoneError, match="not installed"):
-        Phone("x", run=missing).screen()
+        Phone(["x"], run=missing).screen()
     with pytest.raises(PhoneError, match="too long"):
-        Phone("x", run=slow).screen()
-    broken = Phone("x", run=harness({}, code=1, error="Traceback\nRuntimeError: no visible text"))
+        Phone(["x"], run=slow).screen()
+    broken = Phone(["x"], run=harness({}, code=1, error="Traceback\nRuntimeError: no visible text"))
     with pytest.raises(PhoneError, match="no visible text"):
         broken.screen()
     assert explain("") == "The phone could not do that: no detail"
@@ -143,3 +143,16 @@ def test_a_stopped_job_says_nothing_and_a_broken_phone_says_why():
     asyncio.run(run(broken))
     assert said == ["No phone is connected."]
     assert parse_step("plain words") == {"do": "done", "answer": "plain words"}
+
+
+def test_adb_is_found_where_winget_put_it(tmp_path):
+    from friday_services.mobile import with_adb
+
+    tools = (
+        tmp_path / "Microsoft" / "WinGet" / "Packages" / "Google.PlatformTools_x" / "platform-tools"
+    )
+    tools.mkdir(parents=True)
+    (tools / "adb.exe").write_text("")
+    env = with_adb({"PATH": str(tmp_path / "nothing"), "LOCALAPPDATA": str(tmp_path)})
+    assert env["PATH"].startswith(str(tools))
+    assert with_adb({"PATH": "", "LOCALAPPDATA": str(tmp_path / "none")})["PATH"] == ""

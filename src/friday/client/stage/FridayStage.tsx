@@ -811,7 +811,6 @@ function StageSession({
       clearTimeout(holdOn);
       timing.current.reply = performance.now() - asked;
       threadId.current = result.threadId;
-      if (result.quiet) return; // teach mode is watching: say nothing
       const next = [...history, ...result.newMessages];
       setHistory(next);
       if (pendingApprovalOf(next)) return;

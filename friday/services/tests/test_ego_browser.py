@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,7 +20,8 @@ def runner(reply: dict | None = None, code: int = 0, error: str = "", seen: list
     def run(command, **options):
         script = Path(command[3].split("'")[1].replace("file:///", "")).read_text(encoding="utf-8")
         if seen is not None:
-            seen.append((command, json.loads(options["env"]["FRIDAY_EGO_ARGS"]), script))
+            literal = re.search(r"const args = JSON\.parse\((\".*?(?<!\\)\")\);", script).group(1)
+            seen.append((command, json.loads(json.loads(literal)), script))
         out = f"log line\n{MARKER}{json.dumps(reply or {'url': 'u', 'title': 't', 'page': 'p'})}\n"
         return SimpleNamespace(returncode=code, stdout=out if code == 0 else "", stderr=error)
 
@@ -34,7 +36,8 @@ def test_each_step_runs_a_script_in_the_named_space_with_json_values():
     assert command[:3] == ["ego-browser", "nodejs", "-e"]
     assert args["space"] == "Navigator" and args["text"] == 'he said "hi"; rm -rf'
     assert args["ref"] == 21 and args["enter"] is True
-    assert "rm -rf" not in script  # values travel as JSON, never as code
+    # Values travel inside one JSON string literal, never as code.
+    assert script.count("rm -rf") == 1
     assert "page.fill(`@${args.ref}`, args.text)" in script
 
 
@@ -163,3 +166,22 @@ def test_the_agent_stops_when_told_and_when_out_of_steps():
     )
     assert not asyncio.run(agent.run("x", 2, on_step, lambda: False))["ok"]
     assert parse_step("Just text") == {"do": "done", "answer": "Just text"}
+
+
+def test_a_space_kept_for_the_owner_is_left_alone():
+    seen: list = []
+    taken = 'Error: taskSpace: A task space named "Friday Navigator" already exists and belongs to the user (id 1).'
+    calls = iter([1, 0])
+
+    def run(command, **options):
+        code = next(calls)
+        result = runner(seen=seen, code=code, error=taken)(command, **options)
+        return result
+
+    browser = EgoBrowser(command="x", run=run)
+    browser.snapshot()
+    assert [args["space"] for _, args, _ in seen] == ["Friday Navigator", "Friday Navigator 2"]
+    browser.snapshot  # the new name stays for later steps
+    assert explain(f"stack\n{taken}\nego's nodejs process exited with code 1.").startswith(
+        "ego lite could not do that: taskSpace: A task space named"
+    )

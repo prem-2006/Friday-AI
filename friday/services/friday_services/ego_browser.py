@@ -12,7 +12,6 @@ OK and no typing into password, card or OTP fields.
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -31,11 +30,11 @@ SEND = re.compile(r"""(?:^|["'\s])send\b""", re.I)
 
 # Runs before each step: the Space, its first Page, and helpers for the step.
 PRELUDE = """
-const args = JSON.parse(process.env.FRIDAY_EGO_ARGS || "{}");
+const args = JSON.parse(FRIDAY_ARGS);
 const task = await taskSpace(args.space);
 const page = (await task.pages())[0] ?? (await task.newPage());
 const lineOf = (snapshot, ref) =>
-  String(snapshot).split("\\n").find((line) => new RegExp(`@${ref}(?!\\\\d)`).test(line)) || "";
+  String(snapshot).split("\\n").find((line) => new RegExp(`(?:@|ref=)${ref}(?!\\\\d)`).test(line)) || "";
 const done = async (extra = {}) => {
   const snapshot = String(await page.snapshot());
   console.log(`MARKER${JSON.stringify({ url: await page.url(), title: await page.title(),
@@ -107,8 +106,14 @@ def explain(error_text: str, ref: int | None = None) -> str:
         )
     if "SEND" in error_text:
         return SENDING_NEEDS_OK
-    last = [line for line in error_text.strip().splitlines() if line.strip()]
-    return f"ego lite could not do that: {last[-1][:200] if last else 'no detail'}"
+    lines = [line.strip() for line in error_text.strip().splitlines() if line.strip()]
+    said = next((line for line in lines if line.startswith("Error:")), lines[-1] if lines else "")
+    return f"ego lite could not do that: {said.removeprefix('Error:').strip()[:200] or 'no detail'}"
+
+
+def owned_by_someone_else(error_text: str) -> bool:
+    """ego lite keeps a Space that is the owner's (or another agent's) for them."""
+    return "already exists and belongs to" in error_text
 
 
 def search_url(site: str, query: str) -> str:
@@ -117,15 +122,29 @@ def search_url(site: str, query: str) -> str:
     return f"https://www.google.com/search?q={quote_plus(query)}"
 
 
+class _TakenSpace(Exception):
+    pass
+
+
 class EgoBrowser:
     """The same steps as Friday's Chrome (browser.OnScreenBrowser), in ego lite."""
 
     def __init__(self, space: str = "Friday Navigator", command: str | None = None, run=None):
+        self._name = space
         self._space = space
         self._command = command or ego_command() or "ego-browser"
         self._run_process = run or subprocess.run
 
     def _step(self, name: str, ref: int | None = None, **values: Any) -> dict[str, Any]:
+        """One step; a Space name ego lite keeps for someone else gets a new one."""
+        for number in range(2, 6):
+            try:
+                return self._step_in_space(name, ref, **values)
+            except _TakenSpace:
+                self._space = f"{self._name} {number}"
+        raise BrowserError("ego lite has no free Space name for Friday; close some Spaces.")
+
+    def _step_in_space(self, name: str, ref: int | None = None, **values: Any) -> dict[str, Any]:
         args = {
             "space": self._space,
             "limit": SNAPSHOT_CHARS,
@@ -137,7 +156,11 @@ class EgoBrowser:
         with tempfile.NamedTemporaryFile(
             "w", suffix=".mjs", delete=False, encoding="utf-8"
         ) as script:
-            script.write(PRELUDE + STEPS[name])
+            # ego lite runs the script inside the browser, which sees no environment
+            # variables: the values go in as one JSON string literal, never as code.
+            script.write(
+                PRELUDE.replace("FRIDAY_ARGS", json.dumps(json.dumps(args)), 1) + STEPS[name]
+            )
         try:
             done = self._run_process(
                 [self._command, "nodejs", "-e", f"await import('{Path(script.name).as_uri()}')"],
@@ -146,7 +169,6 @@ class EgoBrowser:
                 encoding="utf-8",
                 errors="replace",
                 timeout=STEP_SECONDS,
-                env={**os.environ, "FRIDAY_EGO_ARGS": json.dumps(args)},
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         except FileNotFoundError as error:
@@ -158,8 +180,12 @@ class EgoBrowser:
         finally:
             Path(script.name).unlink(missing_ok=True)
         if done.returncode != 0:
-            raise BrowserError(explain(f"{done.stdout}\n{done.stderr}", ref))
-        return parse_result(done.stdout)
+            said = f"{done.stdout}\n{done.stderr}"
+            if owned_by_someone_else(said):
+                raise _TakenSpace
+            raise BrowserError(explain(said, ref))
+        # ego lite prints a script's console.log on stderr.
+        return parse_result(f"{done.stdout}\n{done.stderr}")
 
     def open(self, url: str) -> dict:
         return self._step("open", url=_check_url(url))

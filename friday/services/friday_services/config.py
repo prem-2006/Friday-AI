@@ -120,11 +120,6 @@ class Settings:
         return Path(self.get("FRIDAY_WAKE_MODEL_DIR") or self.data_dir / "wake-word")
 
     @property
-    def stage_url(self) -> str:
-        # Opened by a double clap when no voice screen is open.
-        return self.get("FRIDAY_STAGE_URL", "http://localhost:5173/#/friday")
-
-    @property
     def browser_prewarm(self) -> bool:
         # Off: Friday's own Chrome opens only when a web task needs it, not at
         # every start (FRIDAY_BROWSER_PREWARM=true opens it at start again).

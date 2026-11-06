@@ -964,7 +964,6 @@ def start_wake(
     """Caps Lock push-to-talk, double-clap wake and "Hey Friday"; returns how to stop them."""
     import logging
     import threading
-    import webbrowser
 
     from friday_services.greeting import screen_greeting
     from friday_services.wake import (
@@ -994,11 +993,11 @@ def start_wake(
         listener.wake()
 
     def greet() -> bool:
-        """On waking: no voice screen yet, so bring it up and listen at once;
-        else Friday says hello about what is on screen, and the screen asks
-        for listening (/wake/ready) once the greeting is spoken."""
+        """On waking, Friday says hello about what is on screen, and the
+        screen asks for listening (/wake/ready) once the greeting is spoken.
+        No voice screen yet (the notch is still starting): listen at once,
+        without opening a browser."""
         if not feed.watched:
-            webbrowser.open(settings.stage_url)
             return False
         try:
             from friday_services import winctl
@@ -1026,8 +1025,6 @@ def start_wake(
             for gate in list(wake_ref.get("gates", ()) if wake_ref is not None else ()):
                 gate.preroll_next()
             action = "ptt_down"
-        if action == "ptt_down" and not feed.watched:
-            webbrowser.open(settings.stage_url)  # no voice screen yet: bring it up
         signal(action)
 
     # One listener for "Hey Friday" and the double clap: either one starts a

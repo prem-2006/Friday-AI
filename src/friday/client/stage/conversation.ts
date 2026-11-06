@@ -208,7 +208,7 @@ export function readySentences(
   const out: string[] = [];
   let rest = text;
   if (first) {
-    const pause = /^(\S+\s+){2,}?\S*?[,;:—–-](?=\s)|^(\S+\s+){6}/u.exec(
+    const pause = /^(\S+\s+){1,}?\S*?[,;:—–-](?=\s)|^(\S+\s+){6}/u.exec(
       rest.trimStart(),
     );
     if (pause) {

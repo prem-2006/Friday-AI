@@ -231,6 +231,23 @@ def _key(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
+def says_task(words: str, calls: list[dict[str, Any]]) -> bool:
+    """Whether the words alone ask for what the calls do. "yes" or "hi
+    friday" after Friday offered a song got their meaning from the talk
+    before, so said again later they must not play that song; nor may a
+    search or song be replayed for words that name none of it."""
+    g = gist(words)
+    if not g or ANSWER.fullmatch(plain(words)):
+        return False
+    said = {w[:3] for w in g if len(w) >= 3}
+    for call in calls:
+        query = (call.get("args") or {}).get("query")
+        if isinstance(query, str) and not query.startswith("http"):
+            if not said & {w[:3] for w in re.findall(r"[a-z0-9]{3,}", query.lower())}:
+                return False
+    return True
+
+
 class Instant:
     def __init__(
         self,
@@ -267,6 +284,8 @@ class Instant:
                 and isinstance(c.get("args"), dict)
                 for c in entry["calls"]
             )
+            # Learned before this check: dropped, and gone at the next save.
+            and (entry.get("mine") or says_task(task, entry["calls"]))
         }
 
     def _save(self, skills: dict[str, dict[str, Any]]) -> None:
@@ -323,6 +342,7 @@ class Instant:
             or (MAIL_ASK.search(k) and not mine)  # the mail rule answers these, in the background
             or FAILED.search(reply or "")
             or any(c["tool"] not in REPLAYABLE for c in calls)
+            or not (mine or says_task(k, calls))
         ):
             return None
         skills = self.skills()

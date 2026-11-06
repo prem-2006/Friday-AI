@@ -393,3 +393,15 @@ def test_a_number_on_the_page_plays_that_video_there(friday):
     for said in ["third", "volume 3", "play 3 idiots trailer"]:
         done = ask(friday, said)
         assert not done or done["calls"][0]["tool"] != "play_shown_video", said
+
+
+def test_a_reply_that_needed_the_talk_before_never_plays_a_song_later(friday):
+    song = [{"tool": "play_youtube", "args": {"query": "Lambiyan Judaiyan Bilal Saeed"}}]
+    # "Hi Friday" or "yes" after Friday offered the song: not shortcuts.
+    for words in ("hi friday", "yes", "music chalao yaar"):
+        assert friday.learn(words, song, "Playing Lambiyan Judaiyan.") is None
+    assert friday.learn("lambia judaya song bajao", song, "Playing it.") is True
+    # Ones an older Friday learned are dropped instead of replayed.
+    friday._save({"friday": {"calls": song, "reply": "Playing it.", "at": "2099-01-01"}})
+    assert ask(friday, "hi friday") is None
+    assert friday.ran == []

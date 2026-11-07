@@ -60,7 +60,14 @@ TAIL_SECONDS = 1.0
 PREROLL_SECONDS = 1.5  # audio kept from before a "Hey Friday" hold began  # silence after Caps Lock is let go, so Gnani ends the turn
 # Gnani's voice model and, optionally, one voice for every language (Timbre
 # v3.0 voices speak all ten): FRIDAY_TTS_MODEL and FRIDAY_VOICE in .env.
-TTS_MODEL = os.environ.get("FRIDAY_TTS_MODEL") or "timbre-v2.5"
+TTS_MODEL = "timbre-v2.5"
+
+
+def tts_model() -> str:
+    """Read when a voice starts, not at import: this module is imported before
+    main.py loads .env, and a v2.5 model with a v3.0 voice (Shivani) stops the
+    whole live voice."""
+    return os.environ.get("FRIDAY_TTS_MODEL") or TTS_MODEL
 
 
 def allow_newer_timbre(tts: Any) -> None:
@@ -378,7 +385,7 @@ class LiveVoiceSession:
         )
         http = aiohttp.ClientSession()
         tts = one_at_a_time(GnaniSSETTSService)(
-            api_key=self._api_key, aiohttp_session=http, voice_id=self._voice, model=TTS_MODEL
+            api_key=self._api_key, aiohttp_session=http, voice_id=self._voice, model=tts_model()
         )
         vad = VADProcessor(
             vad_analyzer=SileroVADAnalyzer(params=VADParams(start_secs=0.25, stop_secs=0.5))

@@ -259,3 +259,13 @@ async def test_a_sentence_starts_playing_only_once_enough_audio_is_in():
         yield chunk(0.1)
 
     assert len([f async for f in steady_start(short())]) == 1
+
+
+def test_the_voice_model_is_read_after_dotenv_loads(monkeypatch):
+    # live_voice is imported (through calls/bot.py) before main.py loads .env.
+    from friday_services.live_voice import tts_model
+
+    monkeypatch.delenv("FRIDAY_TTS_MODEL", raising=False)
+    assert tts_model() == "timbre-v2.5"
+    monkeypatch.setenv("FRIDAY_TTS_MODEL", "timbre-v3.0")
+    assert tts_model() == "timbre-v3.0"

@@ -112,12 +112,18 @@ async def test_call_pipeline_builds_with_gnani_and_evon(settings):
         "FramedGnaniSTTService",
         "LLMUserAggregator",
         "CallLLM",
-        "GnaniTTSService",
+        "CallVoice",
         "FastAPIWebsocketOutputTransport",
         "LLMAssistantAggregator",
     ]
     start = names.index(expected[0])
     assert names[start : start + len(expected)] == expected
+    # Prisma finds the caller's language; Timbre v3.0 speaks every one.
+    stt = call.pipeline.processors[start + 1]
+    tts = call.pipeline.processors[start + 4]
+    assert stt._settings.language == "indic-auto" and stt.heard == "ta-IN"
+    assert tts._settings.model == "timbre-v3.0" and tts.sample_rate in (0, 8000)
+    await call.http.close()
 
 
 async def test_a_tool_call_with_no_name_never_reaches_the_conversation(settings, monkeypatch):

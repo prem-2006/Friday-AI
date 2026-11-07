@@ -23,6 +23,13 @@ from friday_services.activity import ActivityFeed
 from friday_services.auth import BearerAuth
 from friday_services.browser import BrowserError, OnScreenBrowser
 from friday_services.browser_agent import BrowserAgent, agent_from_settings
+from friday_services.business import (
+    Leads,
+    business_enabled,
+    client_context,
+    lead_line,
+    slot_taken,
+)
 from friday_services.calendar.page import add_calendar_page
 from friday_services.calendar.store import CalendarStore
 from friday_services.calls.bot import CallHelpers, run_call
@@ -48,6 +55,7 @@ from friday_services.mcp_quick import build_quick_server
 from friday_services.media import OwnerMedia
 from friday_services.meeting import Meeting
 from friday_services.mobile import Phone, PhoneJobs
+from friday_services.once import guard_repeats
 from friday_services.organizer import (
     Notes,
     OrganizerError,
@@ -115,6 +123,8 @@ def create_app(
         )
     store = CallStore(settings.data_dir)
     calendar = CalendarStore(settings.data_dir / "calendar.json")
+    # Who client calls talked to (business.py).
+    leads = Leads(settings.data_dir / "friday-leads.json")
     feed = ActivityFeed()
     if owner_media is None and browser is None:
         # The owner's own browser and players (not with a pretend browser in tests).
@@ -245,7 +255,13 @@ def create_app(
         ),
         "/calendar": build_calendar_server(calendar, settings.calendar_url),
         "/phone": build_phone_server(
-            store, dialer, settings, sarvam=SarvamDialer(settings), reminders=reminders
+            store,
+            dialer,
+            settings,
+            sarvam=SarvamDialer(settings),
+            reminders=reminders,
+            calendar=calendar,
+            leads=leads,
         ),
     }
     mcp_apps = {
@@ -260,6 +276,10 @@ def create_app(
 
     # Instant commands and learned shortcuts (instant.py): Friday's own quick
     # tools, called here with no model in between.
+    # The same action asked for twice within seconds (a sentence heard in
+    # two pieces, a replaced turn) runs once (once.py).
+    for path in ("/quick", "/phone", "/whatsapp"):
+        guard_repeats(servers[path])
     quick_server = servers["/quick"]
 
     async def run_quick(tool: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -810,7 +830,36 @@ def create_app(
         await asyncio.to_thread(notes.add, f"Phone message from {who}: {message}")
         feed.emit("friday", "call_in", f"{who} on the phone: {message}", state="done")
 
-    call_helpers = CallHelpers(ask=ask_on_call, take_message=take_message)
+    # Client calls for the owner's business: meetings go into the calendar
+    # (never over something booked), and every caller is saved as a lead.
+    async def book_meeting(
+        record: CallRecord, date: str, time_: str, name: str, topic: str
+    ) -> dict:
+        if await asyncio.to_thread(slot_taken, calendar, date, time_):
+            raise ValueError(f"{time_} on {date} is already booked.")
+        title = f"Meeting with {name or record.phone}" + (f": {topic}" if topic else "")
+        event = await asyncio.to_thread(
+            calendar.add,
+            title,
+            date,
+            time_,
+            f"Booked on a call with {record.phone}.",
+            source="call",
+        )
+        feed.emit(
+            "friday", "call_in", f"Booked on the phone: {title}, {date} {time_}", state="done"
+        )
+        return event
+
+    async def save_lead(record: CallRecord, fields: dict[str, str]) -> None:
+        fields = {k: v for k, v in fields.items() if k not in ("phone", "call_id")}
+        lead = await asyncio.to_thread(leads.add, phone=record.phone, call_id=record.id, **fields)
+        await asyncio.to_thread(notes.add, f"Lead from a call: {lead_line(lead)}")
+        feed.emit("friday", "call_in", f"New lead: {lead_line(lead)}", state="done")
+
+    call_helpers = CallHelpers(
+        ask=ask_on_call, take_message=take_message, book_meeting=book_meeting, save_lead=save_lead
+    )
 
     def answer_incoming(caller: str) -> CallRecord | None:
         """A call to Friday's number: the owner gets Friday, anyone else
@@ -829,6 +878,19 @@ def create_app(
             )
         who = caller_name(caller, load_contacts())
         feed.emit("friday", "call_in", f"{who} phoned Friday.", state="done")
+        if business_enabled(settings):
+            # A client: questions, sales, a meeting and a lead, in their language.
+            return store.create(
+                phone=caller,
+                goal=(
+                    f"Someone phoned {settings.owner_name}'s business. Answer their "
+                    "questions, help them choose, book a meeting if they want one, and "
+                    "save them as a lead."
+                ),
+                language=language,
+                context=client_context(settings, calendar, who),
+                kind="client_in",
+            )
         return store.create(
             phone=caller,
             goal=f"Take a message for {settings.owner_name}.",

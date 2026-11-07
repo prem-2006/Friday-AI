@@ -22,7 +22,9 @@ class CallRecord:
     # The exact first words, when the caller of Friday's tools chose them.
     opening: str = ""
     # business: Friday calls someone for the owner; owner: Friday calls the owner;
-    # owner_in: the owner calls Friday; reception: anyone else calls Friday.
+    # owner_in: the owner calls Friday; reception: anyone else calls Friday;
+    # client / client_in: a client call for the owner's business (business.py),
+    # Friday calling them or them calling Friday.
     kind: str = "business"
     id: str = field(default_factory=lambda: f"call_{uuid.uuid4().hex[:12]}")
     # queued -> ringing -> in_progress -> answered | no_answer | failed
@@ -109,7 +111,9 @@ class CallStore:
         waiting = [
             call
             for call in self._calls.values()
-            if not call.final and not call.stream_started and call.kind in ("business", "owner")
+            if not call.final
+            and not call.stream_started
+            and call.kind in ("business", "owner", "client")
         ]
         by_sid = next((call for call in waiting if call_sid and call.call_sid == call_sid), None)
         return by_sid or (waiting[0] if len(waiting) == 1 else None)

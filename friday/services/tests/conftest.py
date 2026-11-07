@@ -22,6 +22,8 @@ TOKEN = "test-token-0123456789abcdef"
 FAKE_ENV = {
     "FRIDAY_SERVICES_TOKEN": TOKEN,
     "FRIDAY_OWNER_NAME": "Asha",
+    # Tests never read the owner's real business profile (friday/business.md).
+    "FRIDAY_BUSINESS_PROFILE": "no-business-profile-in-tests.md",
     "GNANI_API_KEY": "fake-gnani",
     "EVON_BASE_URL": "http://127.0.0.1:9/v1",
     "EVON_MODEL": "gnani-evon-v3.3",

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from friday_services.calls.language import LANGUAGE_RULE
 from friday_services.calls.store import CallRecord
 from friday_services.voices import voice_for
 
@@ -24,12 +25,25 @@ def local_time(timezone: str, now: datetime | None = None) -> str:
     return moment.strftime("%A %d %B %Y, %I:%M %p") + f" ({timezone})"
 
 
+def language_line(fixed: str, auto_language: bool) -> str:
+    """The call's language rule: follow the caller in any Indian language
+    (Prisma finds it), or the one language the call was placed in."""
+    return LANGUAGE_RULE if auto_language else fixed
+
+
 def ask_friday_rules(owner: str) -> str:
     """How Friday gets things done on a call with its owner."""
     return f"""When {owner} asks for something to be done (send a WhatsApp message, set a reminder, check the calendar, open or play something on the PC, look something up), call ask_friday with their request in their own words, then say its reply in short spoken sentences. ask_friday is the same Friday as on the PC and can do everything there. If its reply asks for {owner}'s OK, read it out and pass their yes or no to ask_friday. Never say you did something that ask_friday did not confirm. Only call ask_friday for a clear request: if what you heard is unclear, half a sentence or small talk ("hello", "okay", "yeah"), do not call it; answer briefly or ask them to say it again."""
 
 
-def phone_prompt(record: CallRecord, owner: str, timezone: str, now: datetime | None = None) -> str:
+def phone_prompt(
+    record: CallRecord,
+    owner: str,
+    timezone: str,
+    now: datetime | None = None,
+    *,
+    auto_language: bool = False,
+) -> str:
     language = voice_for(record.language).name
     context = record.context.strip() or "Nothing beyond the goal."
     start = (
@@ -41,7 +55,7 @@ def phone_prompt(record: CallRecord, owner: str, timezone: str, now: datetime | 
     )
     return f"""You are Friday, an AI assistant making a phone call on behalf of {owner}.
 
-Language: speak {language}. If the other person mixes Hindi and English or switches language, follow them.
+{language_line(f"Language: speak {language}. If the other person mixes Hindi and English or switches language, follow them.", auto_language)}
 
 Start: {start}
 
@@ -63,7 +77,14 @@ Ending: when the goal is done or cannot be done, thank them and say goodbye in o
 Current local time: {local_time(timezone, now)}."""
 
 
-def owner_prompt(record: CallRecord, owner: str, timezone: str, now: datetime | None = None) -> str:
+def owner_prompt(
+    record: CallRecord,
+    owner: str,
+    timezone: str,
+    now: datetime | None = None,
+    *,
+    auto_language: bool = False,
+) -> str:
     """Friday phoning its own owner, e.g. for a deadline."""
     language = voice_for(record.language).name
     known = record.context.strip()
@@ -79,7 +100,7 @@ def owner_prompt(record: CallRecord, owner: str, timezone: str, now: datetime | 
     )
     return f"""You are Friday, {owner}'s personal AI assistant, phoning {owner} on their mobile.
 
-Language: speak {language}; if {owner} answers in Hindi or Hinglish, follow them.
+{language_line(f"Language: speak {language}; if {owner} answers in Hindi or Hinglish, follow them.", auto_language)}
 
 Why you are calling (Friday's note, not words to read out): {record.goal}
 {updates}
@@ -93,14 +114,19 @@ Current local time: {local_time(timezone, now)}."""
 
 
 def owner_inbound_prompt(
-    record: CallRecord, owner: str, timezone: str, now: datetime | None = None
+    record: CallRecord,
+    owner: str,
+    timezone: str,
+    now: datetime | None = None,
+    *,
+    auto_language: bool = False,
 ) -> str:
     """The owner phoned Friday, e.g. for an update."""
     language = voice_for(record.language).name
     updates = record.context.strip() or "Nothing is coming up and nothing happened yet today."
     return f"""You are Friday, {owner}'s personal AI assistant. {owner} has phoned you from their mobile.
 
-Language: speak {language}; if {owner} speaks Hindi or Hinglish, follow them.
+{language_line(f"Language: speak {language}; if {owner} speaks Hindi or Hinglish, follow them.", auto_language)}
 
 Start: say "Hi {owner}, Friday here. Want your updates?" or, if they already asked something, answer it.
 
@@ -116,14 +142,19 @@ Current local time: {local_time(timezone, now)}."""
 
 
 def reception_prompt(
-    record: CallRecord, owner: str, timezone: str, now: datetime | None = None
+    record: CallRecord,
+    owner: str,
+    timezone: str,
+    now: datetime | None = None,
+    *,
+    auto_language: bool = False,
 ) -> str:
     """Someone other than the owner phoned Friday's number."""
     language = voice_for(record.language).name
     caller = record.context.strip() or "an unknown caller"
     return f"""You are Friday, {owner}'s AI assistant, answering a call to {owner}'s assistant line. The caller is {caller}; they are not {owner}.
 
-Language: speak {language}; if the caller speaks Hindi or Hinglish, follow them.
+{language_line(f"Language: speak {language}; if the caller speaks Hindi or Hinglish, follow them.", auto_language)}
 
 Start: say "Hello, this is Friday, {owner}'s AI assistant. How can I help?"
 
@@ -134,6 +165,61 @@ Your job is reception only:
 - Never pretend to be a human. Short sentences, at most two per turn.
 
 Ending: when they are done, say a short goodbye and call end_call with outcome "completed" (or "wrong_number") and a one-sentence summary for {owner}.
+
+Current local time: {local_time(timezone, now)}."""
+
+
+def client_prompt(
+    record: CallRecord,
+    owner: str,
+    timezone: str,
+    now: datetime | None = None,
+    *,
+    auto_language: bool = True,
+) -> str:
+    """A client call for the owner's business, either way: questions, sales,
+    meetings and leads. record.context holds the business profile."""
+    language = voice_for(record.language).name
+    calling = record.kind == "client"
+    start = (
+        (
+            f'say "{record.opening}"'
+            if record.opening
+            else "say who you are (Friday, an AI assistant for the business in About "
+            "the business) and why you are calling, in one sentence"
+        )
+        + ", then ask if it is a good time to talk."
+        if calling
+        else 'say "Hello, this is Friday, the AI assistant. How can I help you today?"'
+    )
+    return f"""You are Friday, an AI assistant {"calling a client for" if calling else "answering calls for"} {owner}'s business.
+
+{language_line(f"Language: speak {language}; follow the caller if they switch.", auto_language)}
+
+Start: {start}
+
+Goal for this call: {record.goal}
+
+About the business (the only facts you may give; never invent a price, an offer, a date or a promise):
+{record.context.strip() or "Nothing written yet: take a message and a callback number."}
+
+How to talk:
+- Warm and professional, like a good front desk. Short sentences, at most two per turn, one question at a time.
+- If they interrupt, stop and listen. Never pretend to be a human; if asked, say you are an AI assistant.
+- If they ask something About the business does not answer, say you will check with the team and get back to them, and put the question in save_lead.
+
+Selling:
+- First find out what they need. Then suggest what fits from About the business, with its price if listed, and one clear next step: a meeting, a callback, or details on WhatsApp.
+- If they are not interested, thank them politely and do not push.
+- Never agree to a discount or terms that are not written there, and never take card, UPI, OTP or bank details.
+
+Meetings:
+- Offer times only inside the meeting hours, and not at the times already booked.
+- When they agree to a time, call book_meeting with the date (YYYY-MM-DD), the time (24-hour HH:MM), their name and the topic. If it says the time is taken, offer the next free time. Then confirm the day and time back in words, like "Thursday at 4 PM".
+
+Leads: before the call ends, call save_lead once with their name, what they want, budget or quantity if they said it, and the agreed next step.
+
+Ending: thank them and say goodbye in one short sentence, then call end_call with the outcome, a one or two sentence summary for {owner}, and details such as the meeting time.
 
 Current local time: {local_time(timezone, now)}."""
 

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+import aiohttp
 from loguru import logger
 from openai import AsyncOpenAI
 from pipecat.adapters.schemas.function_schema import FunctionSchema
@@ -32,40 +35,55 @@ from pipecat.transports.websocket.fastapi import (
     FastAPIWebsocketTransport,
 )
 from pipecat.workers.runner import WorkerRunner
-from pipecat_gnani import GnaniTTSService
+from pipecat_gnani import GnaniSSETTSService
 
+from friday_services.calls.language import reply_language, working_line
 from friday_services.calls.prompts import (
     OUTCOMES,
     SUMMARY_PROMPT,
+    client_prompt,
     owner_inbound_prompt,
     owner_prompt,
     phone_prompt,
     reception_prompt,
 )
 from friday_services.calls.store import CallRecord, CallStore
-from friday_services.calls.stt import FramedGnaniSTTService
+from friday_services.calls.stt import FramedGnaniSTTService, auto_language_settings
 from friday_services.config import Settings
-from friday_services.voices import voice_for
+from friday_services.live_voice import allow_newer_timbre, one_voice_lock, steady_start
+from friday_services.voices import LANGUAGES, voice_for
 
 # Who Friday is talking to: someone for the owner, or the owner (either way).
-PROMPTS = {"owner": owner_prompt, "owner_in": owner_inbound_prompt, "reception": reception_prompt}
+PROMPTS = {
+    "owner": owner_prompt,
+    "owner_in": owner_inbound_prompt,
+    "reception": reception_prompt,
+    "client": client_prompt,
+    "client_in": client_prompt,
+}
 # Calls with the owner, where Friday may do anything it can on the PC.
 OWNER_KINDS = ("owner", "owner_in")
+# Client calls for the owner's business: Friday calling them, or them calling.
+CLIENT_KINDS = ("client", "client_in")
 
 TELEPHONY_SAMPLE_RATE = 8000
-# The pinned Gnani SDK defaults to timbre-v2.0; Friday speaks with Timbre v2.5.
-TIMBRE_MODEL = "timbre-v2.5"
+# Timbre v3.0 sounds the most human and one voice speaks every Indian
+# language, each reply in the language it is written in (FRIDAY_TTS_MODEL and
+# FRIDAY_VOICE in .env change them). v2.5 has one voice per language.
+TIMBRE_MODEL = "timbre-v3.0"
+V3_VOICE = "Shivani"
 MAX_CALL_SECONDS = 5 * 60
 MAX_SILENCE_SECONDS = 45
 # Exotel wants audio in chunks of at least 3.2 KB: 200 ms at 8 kHz.
 EXOTEL_OUT_10MS_CHUNKS = 20
 # ask_friday runs the request through the Friday Dot; PhoneDesk answers within 22 s.
 ASK_FRIDAY_TIMEOUT_SECONDS = 30
-# Said while ask_friday works, so the line is not silent.
-WORKING = {
-    "hi-IN": "Ek second, dekh rahi hoon.",
-    "en-IN": "One second, I'm on it.",
-}
+# "One second" while ask_friday works, at most this often, so a request
+# heard twice is not answered with "one second" twice.
+WORKING_EVERY_SECS = 10.0
+# The same request asked again this soon (a sentence heard in two turns) is
+# the same request: it gets the first one's answer instead of running again.
+SAME_ASK_SECS = 20.0
 
 END_CALL = FunctionSchema(
     name="end_call",
@@ -118,6 +136,42 @@ class CallHelpers:
     ask: Callable[[CallRecord, str], Awaitable[str]] | None = None
     # (record, name, message): a caller's message, saved for the owner.
     take_message: Callable[[CallRecord, str, str], Awaitable[None]] | None = None
+    # (record, date, time, name, topic) -> the booked event; raises when the
+    # time is taken. Client calls only.
+    book_meeting: Callable[[CallRecord, str, str, str, str], Awaitable[dict]] | None = None
+    # (record, fields): a client call's lead, saved for the owner.
+    save_lead: Callable[[CallRecord, dict[str, str]], Awaitable[None]] | None = None
+
+
+BOOK_MEETING = FunctionSchema(
+    name="book_meeting",
+    description=(
+        "Book a meeting the client agreed to into the owner's calendar. Fails if "
+        "the time is already taken: then offer another time."
+    ),
+    properties={
+        "date": {"type": "string", "description": "YYYY-MM-DD"},
+        "time": {"type": "string", "description": "24-hour HH:MM, e.g. 16:00"},
+        "name": {"type": "string", "description": "The client's name."},
+        "topic": {"type": "string", "description": "What the meeting is about."},
+    },
+    required=["date", "time", "name"],
+)
+SAVE_LEAD = FunctionSchema(
+    name="save_lead",
+    description="Save who the client is and what they want, once per call.",
+    properties={
+        "name": {"type": "string"},
+        "interest": {"type": "string", "description": "What they want or asked about."},
+        "budget": {"type": "string", "description": "Budget or quantity, if they said."},
+        "next_step": {
+            "type": "string",
+            "description": "What was agreed: a meeting, a callback, details on WhatsApp.",
+        },
+        "notes": {"type": "string", "description": "Questions to check with the team."},
+    },
+    required=["interest"],
+)
 
 
 @dataclass
@@ -126,6 +180,7 @@ class CallPipeline:
     worker: PipelineWorker
     transport: FastAPIWebsocketTransport
     ended_by_friday: asyncio.Event
+    http: aiohttp.ClientSession | None = None
 
 
 # Gemini wants each tool call it made sent back with its thought signature,
@@ -192,16 +247,18 @@ GREETINGS = {
         "owner_in": "Hi {owner}, Friday here.",
         "reception": "Hello, this is Friday, {owner}'s AI assistant. How can I help?",
         "business": "Hello, this is Friday, an AI assistant calling for {owner}.",
+        "client_in": "Hello, this is Friday, the AI assistant. How can I help you today?",
     },
     "hi-IN": {
         "owner": "हाय {owner}, मैं फ्राइडे।",
         "owner_in": "हाँ {owner}, फ्राइडे बोल रही हूँ।",
         "reception": "नमस्ते, मैं फ्राइडे हूँ, {owner} की AI असिस्टेंट। बताइए, क्या मदद करूँ?",
         "business": "नमस्ते, मैं फ्राइडे हूँ, {owner} की तरफ़ से कॉल कर रही AI असिस्टेंट।",
+        "client_in": "नमस्ते, मैं फ्राइडे हूँ, AI असिस्टेंट। बताइए, मैं आपकी क्या मदद करूँ?",
     },
 }
 # A greeting that is a whole turn: Friday then waits for the caller.
-COMPLETE_GREETINGS = ("reception",)
+COMPLETE_GREETINGS = ("reception", "client_in")
 
 
 def first_words(record: CallRecord, owner: str) -> str:
@@ -210,6 +267,8 @@ def first_words(record: CallRecord, owner: str) -> str:
     if record.opening:
         return record.opening
     lines = GREETINGS.get(record.language) or {}
+    if record.kind == "client":
+        return ""  # the model says who it is and why, from the business profile
     line = lines.get(record.kind) or lines.get("business", "")
     return line.format(owner=owner)
 
@@ -234,17 +293,117 @@ def end_call_handler(store: CallStore, record: CallRecord, ended: asyncio.Event)
     return end_call
 
 
-def ask_friday_handler(record: CallRecord, ask: Callable[[CallRecord, str], Awaitable[str]]):
-    async def ask_friday(params: FunctionCallParams):
-        request = str(params.arguments.get("request") or "")
+def _same_ask(text: str) -> str:
+    return " ".join(re.findall(r"\w+", text.lower()))
+
+
+def ask_friday_handler(
+    record: CallRecord,
+    ask: Callable[[CallRecord, str], Awaitable[str]],
+    clock: Callable[[], float] = time.monotonic,
+):
+    """Runs the owner's request through Friday. The same request asked again
+    soon after (the model calling it twice, a sentence heard in two turns) is
+    answered from the first run instead of doing the task twice."""
+    recent: dict[str, tuple[float, asyncio.Task]] = {}
+
+    async def run(request: str) -> str:
         try:
-            reply = await ask(record, request)
+            return await ask(record, request)
         except Exception as error:
             logger.warning(f"[{record.id}] ask_friday failed: {error}")
-            reply = f"Sorry, that did not work: {error}"
+            return f"Sorry, that did not work: {error}"
+
+    async def ask_friday(params: FunctionCallParams):
+        request = str(params.arguments.get("request") or "")
+        key, now = _same_ask(request), clock()
+        earlier = recent.get(key)
+        if earlier and now - earlier[0] < SAME_ASK_SECS:
+            task = earlier[1]
+        else:
+            task = asyncio.ensure_future(run(request))
+            recent[key] = (now, task)
+        reply = await asyncio.shield(task)
         await params.result_callback({"reply": reply})
 
     return ask_friday
+
+
+def book_meeting_handler(
+    record: CallRecord, book: Callable[[CallRecord, str, str, str, str], Awaitable[dict]]
+):
+    async def book_meeting(params: FunctionCallParams):
+        args = dict(params.arguments)
+        try:
+            event = await book(
+                record,
+                str(args.get("date") or ""),
+                str(args.get("time") or ""),
+                str(args.get("name") or ""),
+                str(args.get("topic") or ""),
+            )
+            record.details["meeting"] = f"{event.get('date')} {event.get('time')}"
+            result = {"booked": True, "date": event.get("date"), "time": event.get("time")}
+        except Exception as error:
+            result = {"booked": False, "error": str(error)}
+        await params.result_callback(result)
+
+    return book_meeting
+
+
+def save_lead_handler(
+    record: CallRecord, save: Callable[[CallRecord, dict[str, str]], Awaitable[None]]
+):
+    saved: list[bool] = []
+
+    async def save_lead(params: FunctionCallParams):
+        if saved:  # once per call: a second call only repeats it
+            await params.result_callback({"saved": True})
+            return
+        fields = {str(k): str(v) for k, v in dict(params.arguments).items() if v}
+        await save(record, fields)
+        saved.append(True)
+        await params.result_callback({"saved": True})
+
+    return save_lead
+
+
+def call_voice(settings: Settings, record: CallRecord, http: aiohttp.ClientSession, heard):
+    """Timbre for a call, at the phone line's 8 kHz: each reply in the language
+    it is written in (heard() is the caller's language, for replies in Latin
+    letters), started only once enough audio is in so it never stutters."""
+    import pipecat_gnani.tts
+
+    allow_newer_timbre(pipecat_gnani.tts)
+    model = settings.get("FRIDAY_TTS_MODEL") or TIMBRE_MODEL
+    v3 = model.startswith("timbre-v3")
+    fixed_voice = settings.get("FRIDAY_VOICE") or (V3_VOICE if v3 else "")
+
+    class CallVoice(GnaniSSETTSService):
+        async def run_tts(self, text: str, context_id: str):
+            code = reply_language(text, heard())
+            try:
+                self._settings.language = Language(code)
+            except ValueError:
+                pass
+            if not v3 and not settings.get("FRIDAY_VOICE") and code in LANGUAGES:
+                self._settings.voice = LANGUAGES[code].voice
+            async with one_voice_lock():
+                async for frame in steady_start(super().run_tts(text, context_id)):
+                    yield frame
+
+    return CallVoice(
+        api_key=settings.get("GNANI_API_KEY"),
+        aiohttp_session=http,
+        voice_id=fixed_voice or voice_for(record.language).voice,
+        model=model,
+        sample_rate=TELEPHONY_SAMPLE_RATE,
+    )
+
+
+def auto_language_on(settings: Settings) -> bool:
+    """Calls follow the caller's language unless FRIDAY_CALL_AUTO_LANGUAGE=false."""
+    return settings.get("FRIDAY_CALL_AUTO_LANGUAGE", "true").lower() != "false"
 
 
 def take_message_handler(
@@ -284,29 +443,34 @@ def build_call_pipeline(
     helpers: CallHelpers | None = None,
 ) -> CallPipeline:
     """Wire the pipeline for one call. Nothing connects until it runs."""
-    voice = voice_for(record.language)
     gnani_key = settings.get("GNANI_API_KEY")
     helpers = helpers or CallHelpers()
     transport = call_transport(websocket, stream_sid, call_sid)
     tools = [END_CALL]
     if record.kind in OWNER_KINDS and helpers.ask:
         tools.append(ASK_FRIDAY)
-    if record.kind == "reception" and helpers.take_message:
+    if record.kind in ("reception", *CLIENT_KINDS) and helpers.take_message:
         tools.append(TAKE_MESSAGE)
+    if record.kind in CLIENT_KINDS and helpers.book_meeting:
+        tools.append(BOOK_MEETING)
+    if record.kind in CLIENT_KINDS and helpers.save_lead:
+        tools.append(SAVE_LEAD)
+    auto = auto_language_on(settings)
+    # Prisma finds the caller's language itself (indic-auto), turn by turn.
     stt = FramedGnaniSTTService(
         api_key=gnani_key,
         sample_rate=TELEPHONY_SAMPLE_RATE,
-        settings=FramedGnaniSTTService.Settings(
+        settings=auto_language_settings(format="transcribe")
+        if auto
+        else FramedGnaniSTTService.Settings(
             language=Language(record.language), format="transcribe"
         ),
     )
+    if auto:
+        stt.heard = record.language  # until the caller first speaks
     llm = evon_llm(settings)
-    tts = GnaniTTSService(
-        api_key=gnani_key,
-        model=TIMBRE_MODEL,
-        sample_rate=TELEPHONY_SAMPLE_RATE,
-        settings=GnaniTTSService.Settings(voice=voice.voice, language=Language(record.language)),
-    )
+    http = aiohttp.ClientSession()
+    tts = call_voice(settings, record, http, lambda: stt.heard)
     greeting = first_words(record, settings.owner_name)
     start = (
         f'[The call has just been answered and you have already said: "{greeting}". '
@@ -319,7 +483,7 @@ def build_call_pipeline(
             {
                 "role": "system",
                 "content": PROMPTS.get(record.kind, phone_prompt)(
-                    record, settings.owner_name, settings.timezone
+                    record, settings.owner_name, settings.timezone, auto_language=auto
                 ),
             },
             {"role": "user", "content": start},
@@ -362,14 +526,23 @@ def build_call_pipeline(
             timeout_secs=ASK_FRIDAY_TIMEOUT_SECONDS,
         )
 
+        said_working = [0.0]
+
         @llm.event_handler("on_function_calls_started")
         async def on_working(service, function_calls):
-            if any(call.function_name == "ask_friday" for call in function_calls):
-                working = WORKING.get(record.language, WORKING["en-IN"])
-                await service.push_frame(TTSSpeakFrame(working))
+            if not any(call.function_name == "ask_friday" for call in function_calls):
+                return
+            if time.monotonic() - said_working[0] < WORKING_EVERY_SECS:
+                return
+            said_working[0] = time.monotonic()
+            await service.push_frame(TTSSpeakFrame(working_line(stt.heard)))
 
     if TAKE_MESSAGE in tools:
         llm.register_function("take_message", take_message_handler(record, helpers.take_message))
+    if BOOK_MEETING in tools:
+        llm.register_function("book_meeting", book_meeting_handler(record, helpers.book_meeting))
+    if SAVE_LEAD in tools:
+        llm.register_function("save_lead", save_lead_handler(record, helpers.save_lead))
 
     @transport.event_handler("on_client_connected")
     async def on_connected(_transport, _client):
@@ -394,7 +567,11 @@ def build_call_pipeline(
         store.add_turn(record.id, "friday", message.content or "")
 
     return CallPipeline(
-        pipeline=pipeline, worker=worker, transport=transport, ended_by_friday=ended_by_friday
+        pipeline=pipeline,
+        worker=worker,
+        transport=transport,
+        ended_by_friday=ended_by_friday,
+        http=http,
     )
 
 
@@ -473,5 +650,8 @@ async def run_call(
     except Exception as error:
         logger.exception(f"[{record.id}] call pipeline failed")
         store.finish(record.id, "failed", error=f"Call audio failed: {error}")
+    finally:
+        if call.http is not None:
+            await call.http.close()
     if not store.get(record.id).final:
         store.finish(record.id, "answered", **await summarize(settings, record))

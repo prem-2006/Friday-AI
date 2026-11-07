@@ -190,6 +190,9 @@ type Phase =
 // Waiting for more of a sentence from Gnani's stream: after a pause while
 // hands-free, and after Caps Lock is let go (its 1 s silence tail + network).
 const HEARD_PAUSE_MS = 700;
+// The rest of a sentence heard this soon after Friday started on its first
+// part: the two are one request, sent again together.
+const SAME_REQUEST_MS = 4000;
 
 /** Always-on conversation on the notch: on unless turned off
  * (localStorage friday-always-on = "off"). "Stop" puts it to sleep until
@@ -1182,14 +1185,25 @@ function StageSession({
       if (intent === 'yes' || intent === 'no') return decide(intent === 'yes');
       return speak('Please say yes or no first.', true);
     }
+    // The second half of a sentence ("aur agar main poochhun" ... "Friday,
+    // aaj kya karna tha?") joins the first, so Friday answers the whole of it
+    // instead of guessing from half; an action the first part already did is
+    // not done again (the services run the same action once).
+    const earlier = lastAsk.current;
+    const asked =
+      runningRef.current && earlier && Date.now() - earlier.at < SAME_REQUEST_MS
+        ? `${earlier.text} ${text}`
+        : text;
     if (runningRef.current) {
       // A new request replaces the one still running (which may be stuck):
       // Friday never answers "still busy".
       await cancelRunning();
     }
-    await send(text);
+    lastAsk.current = { text: asked, at: Date.now() };
+    await send(asked);
   };
   const heardRef = useRef(heard);
+  const lastAsk = useRef<{ text: string; at: number } | null>(null);
   heardRef.current = heard;
 
   // Opens the mic. auto: turns start by voice (hands-free); otherwise only

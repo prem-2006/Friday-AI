@@ -27,9 +27,17 @@ def test_phone_tools_and_approval_hints(server):
     client = phone(server)
     assert client.initialize()["serverInfo"]["name"] == "friday-phone"
     tools = client.tools()
-    assert set(tools) == {"start_call", "get_call_result", "schedule_call"}
+    assert set(tools) == {
+        "start_call",
+        "get_call_result",
+        "schedule_call",
+        "call_client",
+        "recent_leads",
+    }
     # OpenDots runs read-only tools directly and asks the owner before the rest.
     assert tools["start_call"]["annotations"]["readOnlyHint"] is False
+    assert tools["call_client"]["annotations"]["readOnlyHint"] is False
+    assert tools["recent_leads"]["annotations"]["readOnlyHint"] is True
     assert tools["get_call_result"]["annotations"]["readOnlyHint"] is True
     schema = tools["start_call"]["inputSchema"]
     assert set(schema["required"]) == {"phone", "goal"}
@@ -63,3 +71,10 @@ def test_a_call_nobody_answers(server):
     assert httpx.post(status, params={"key": key}, data={"Status": "no-answer"}).status_code == 204
     result = client.call("get_call_result", {"call_id": call_id, "wait_seconds": 1})["data"]
     assert result["status"] == "no_answer" and result["summary"] == "Nobody answered."
+
+
+def test_client_calls_wait_for_the_business_profile(server):
+    client = phone(server)
+    refused = client.call("call_client", {"phone": "+919812345678", "purpose": "sales"})
+    assert refused["isError"] and "business profile" in refused["text"]
+    assert client.call("recent_leads", {})["data"]["friday_say"] == "No leads from calls yet."

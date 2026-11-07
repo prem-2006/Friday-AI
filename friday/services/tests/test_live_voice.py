@@ -269,3 +269,63 @@ def test_the_voice_model_is_read_after_dotenv_loads(monkeypatch):
     assert tts_model() == "timbre-v2.5"
     monkeypatch.setenv("FRIDAY_TTS_MODEL", "timbre-v3.0")
     assert tts_model() == "timbre-v3.0"
+
+
+def test_hindi_heard_in_devanagari_reaches_friday_as_hinglish():
+    from friday_services.calls.language import romanize
+
+    assert romanize("Chrome खोलो") == "Chrome kholo"
+    assert romanize("YouTube पर गाने चलाओ और volume चालीस कर दो।") == (
+        "YouTube par gane chalao aur volume chalis kar do."
+    )
+    assert romanize("नहीं, लगा दो") == "nahin, laga do"
+
+
+async def test_the_notch_hears_marathi_as_marathi_and_hindi_as_hinglish():
+    from pipecat.frames.frames import TranscriptionFrame
+    from pipecat.processors.frame_processor import FrameDirection
+    from pipecat.transcriptions.language import Language
+
+    from friday_services.live_voice import AudioGate, HeardRelay
+
+    sent: list[dict] = []
+    relay = HeardRelay(sent.append, AudioGate())
+
+    async def push(*_):
+        pass
+
+    relay.push_frame = push
+    for text, language in (
+        ("उद्या सकाळी दहा वाजता मीटिंग आहे का", Language.MR_IN),
+        ("Chrome खोलो", Language.HI_IN),
+    ):
+        frame = TranscriptionFrame(text, "", "now", language)
+        await relay.process_frame(frame, FrameDirection.DOWNSTREAM)
+    assert [(m["text"], m["language"]) for m in sent] == [
+        ("उद्या सकाळी दहा वाजता मीटिंग आहे का", "mr-IN"),
+        ("Chrome kholo", "hi-IN"),
+    ]
+
+
+async def test_friday_speaks_each_piece_in_the_language_it_is_in():
+    from types import SimpleNamespace
+
+    from friday_services.live_voice import spoken_in
+
+    used: list[str] = []
+
+    class FakeTTS:
+        def __init__(self):
+            self._settings = SimpleNamespace(model="timbre-v3.0", language=None)
+
+        async def run_tts(self, text, context_id):
+            used.append(self._settings.language.value)
+            yield text
+
+    heard = {"now": "mr-IN"}
+    tts = spoken_in(FakeTTS, lambda: heard["now"])()
+    for text in ("हो, उद्या भेटू", "Haan, kal milte hain"):
+        _ = [f async for f in tts.run_tts(text, "c")]
+    heard["now"] = "hi-IN"
+    _ = [f async for f in tts.run_tts("Haan, kal milte hain", "c")]
+    assert used == ["mr-IN", "en-IN", "hi-IN"]

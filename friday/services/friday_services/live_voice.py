@@ -278,7 +278,18 @@ class HeardRelay(FrameProcessor):
         await super().process_frame(frame, direction)
         if isinstance(frame, TranscriptionFrame) and frame.text.strip():
             usage.record("Speech to text", "Gnani Prisma", "live voice (Caps Lock)", ok=True)
-            self._send(live_event("heard", text=frame.text.strip()))
+            # The language Prisma heard ("mr-IN"), so Friday answers in it.
+            # Hindi comes in Roman letters, as Hinglish is typed, so instant
+            # commands ("chrome kholo") still match; other languages keep
+            # their own script.
+            from friday_services.calls.language import romanize
+
+            language = getattr(frame.language, "value", frame.language)
+            text = frame.text.strip()
+            if language == "hi-IN":
+                text = romanize(text)
+            heard = {"language": str(language)} if language else {}
+            self._send(live_event("heard", text=text, **heard))
         elif isinstance(frame, VADUserStartedSpeakingFrame) and self._gate.hands_free:
             self._send(live_event("speech_start"))
         elif isinstance(frame, ErrorFrame):
@@ -314,6 +325,33 @@ class SpeakingRelay(FrameProcessor):
         elif isinstance(frame, BotStoppedSpeakingFrame):
             self._send(live_event("speaking", on=False))
         await self.push_frame(frame, direction)
+
+
+def auto_language_on() -> bool:
+    """The live voice hears any Indian language (Prisma's indic-auto) unless
+    FRIDAY_LIVE_AUTO_LANGUAGE=false; then only the screen's language."""
+    return os.environ.get("FRIDAY_LIVE_AUTO_LANGUAGE", "true").lower() != "false"
+
+
+def spoken_in(service_class, heard: Callable[[], str | None]):
+    """A Timbre v3.0 class that says each piece in its own language: Marathi
+    after the owner spoke Marathi, Tamil letters as Tamil, Hinglish as Hindi.
+    v2.5 voices speak one language each, so it leaves those as they are."""
+    from pipecat.transcriptions.language import Language
+
+    from friday_services.calls.language import reply_language
+
+    class SpokenIn(service_class):
+        async def run_tts(self, text: str, context_id: str):
+            if str(self._settings.model).startswith("timbre-v3"):
+                try:
+                    self._settings.language = Language(reply_language(text, heard()))
+                except ValueError:
+                    pass
+            async for frame in super().run_tts(text, context_id):
+                yield frame
+
+    return SpokenIn
 
 
 def language_of(code: str):
@@ -379,12 +417,20 @@ class LiveVoiceSession:
             webrtc_connection=self._connection,
             params=TransportParams(audio_in_enabled=True, audio_out_enabled=True),
         )
-        stt = GnaniSTTService(
+        from friday_services.calls.stt import HeardLanguageSTT, auto_language_settings
+
+        # Any Indian language the owner speaks (Marathi, Tamil, ...), found by
+        # Prisma itself; otherwise the screen's language only.
+        stt = HeardLanguageSTT(
             api_key=self._api_key,
-            settings=GnaniSTTService.Settings(language=language_of(self._language)),
+            settings=auto_language_settings()
+            if auto_language_on()
+            else GnaniSTTService.Settings(language=language_of(self._language)),
         )
+        if stt.heard is None:
+            stt.heard = self._language
         http = aiohttp.ClientSession()
-        tts = one_at_a_time(GnaniSSETTSService)(
+        tts = spoken_in(one_at_a_time(GnaniSSETTSService), lambda: stt.heard)(
             api_key=self._api_key, aiohttp_session=http, voice_id=self._voice, model=tts_model()
         )
         vad = VADProcessor(

@@ -18,24 +18,14 @@ from friday_services.calls.language import AUTO
 GNANI_FRAME_BYTES = 1024
 
 
-class FramedGnaniSTTService(GnaniSTTService):
+class HeardLanguageSTT(GnaniSTTService):
+    """Gnani STT that remembers which language it heard last ("mr-IN"): with
+    indic-auto it follows the speaker from turn to turn."""
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._pending = bytearray()
-        # The language Prisma heard last ("ta-IN"); with indic-auto it follows
-        # the caller from turn to turn.
         language = getattr(self._settings, "language", None)
         self.heard: str | None = language.value if isinstance(language, Language) else None
-
-    async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame | None, None]:  # type: ignore[override]
-        self._pending.extend(audio)
-        while len(self._pending) >= GNANI_FRAME_BYTES:
-            frame = bytes(self._pending[:GNANI_FRAME_BYTES])
-            del self._pending[:GNANI_FRAME_BYTES]
-            async for result in super().run_stt(frame):
-                if result is not None:
-                    yield result
-        yield None
 
     async def _push_transcript(
         self,
@@ -57,9 +47,25 @@ class FramedGnaniSTTService(GnaniSTTService):
         await super()._push_transcript(text, is_final=is_final, language=language, result=result)
 
 
+class FramedGnaniSTTService(HeardLanguageSTT):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._pending = bytearray()
+
+    async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame | None, None]:  # type: ignore[override]
+        self._pending.extend(audio)
+        while len(self._pending) >= GNANI_FRAME_BYTES:
+            frame = bytes(self._pending[:GNANI_FRAME_BYTES])
+            del self._pending[:GNANI_FRAME_BYTES]
+            async for result in super().run_stt(frame):
+                if result is not None:
+                    yield result
+        yield None
+
+
 def auto_language_settings(**kwargs: Any) -> Any:
     """Prisma settings that find the language: indic-auto is not one of
     pipecat's Language values, and Gnani takes it as the language code."""
-    settings = FramedGnaniSTTService.Settings(**kwargs)
+    settings = GnaniSTTService.Settings(**kwargs)
     settings.language = AUTO  # type: ignore[assignment]
     return settings

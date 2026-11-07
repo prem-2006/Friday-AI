@@ -89,3 +89,66 @@ LANGUAGE_RULE = (
     "script: Hindi and Marathi in Devanagari, Tamil in Tamil letters, and so on; Hinglish "
     "in Roman letters; English in English. Keep names, numbers and times easy to say."
 )
+
+
+# Devanagari in Roman letters the way people type Hinglish ("चलाओ" ->
+# "chalao", "कर दो" -> "kar do"), so a Hindi request the notch heard in
+# Devanagari still matches Friday's instant commands, which are in Roman.
+_CONSONANTS = {
+    "क": "k", "ख": "kh", "ग": "g", "घ": "gh", "ङ": "n",
+    "च": "ch", "छ": "chh", "ज": "j", "झ": "jh", "ञ": "n",
+    "ट": "t", "ठ": "th", "ड": "d", "ढ": "dh", "ण": "n",
+    "त": "t", "थ": "th", "द": "d", "ध": "dh", "न": "n",
+    "प": "p", "फ": "ph", "ब": "b", "भ": "bh", "म": "m",
+    "य": "y", "र": "r", "ल": "l", "व": "v", "श": "sh", "ष": "sh",
+    "स": "s", "ह": "h", "ळ": "l",
+    "क़": "q", "ख़": "kh", "ग़": "g", "ज़": "z", "ड़": "r", "ढ़": "rh", "फ़": "f",
+}  # fmt: skip
+_VOWELS = {
+    "अ": "a", "आ": "a", "इ": "i", "ई": "i", "उ": "u", "ऊ": "u", "ऋ": "ri",
+    "ए": "e", "ऐ": "ai", "ओ": "o", "औ": "au", "ऑ": "o", "ऍ": "e",
+}  # fmt: skip
+_SIGNS = {
+    "ा": "a", "ि": "i", "ी": "i", "ु": "u", "ू": "u", "ृ": "ri",
+    "े": "e", "ै": "ai", "ो": "o", "ौ": "au", "ॉ": "o", "ॅ": "e",
+}  # fmt: skip
+_MARKS = {"ं": "n", "ँ": "n", "ः": "h", "।": ".", "॥": "."}
+_VIRAMA, _NUKTA = "्", "़"
+
+
+def _roman_word(word: str) -> str:
+    out: list[str] = []
+    i, inherent = 0, False  # inherent: the last consonant still carries its "a"
+    while i < len(word):
+        ch = word[i]
+        if i + 1 < len(word) and word[i + 1] == _NUKTA:
+            ch, i = ch + _NUKTA, i + 1
+        if ch in _CONSONANTS:
+            if inherent:
+                out.append("a")
+            out.append(_CONSONANTS[ch])
+            inherent = True
+        elif ch in _SIGNS:
+            out.append(_SIGNS[ch])
+            inherent = False
+        elif ch == _VIRAMA:
+            inherent = False
+        else:
+            if inherent:
+                out.append("a")
+            inherent = False
+            if "०" <= ch <= "९":
+                out.append(str(ord(ch) - ord("०")))
+            else:
+                out.append(_VOWELS.get(ch) or _MARKS.get(ch) or ch)
+        i += 1
+    # The last consonant's "a" is not said ("kar", not "kara"), except in a
+    # one-letter word ("na").
+    if inherent and len(out) == 1:
+        out.append("a")
+    return "".join(out)
+
+
+def romanize(text: str) -> str:
+    """Devanagari words in Roman letters; everything else as it is."""
+    return re.sub(r"[ऀ-ॿ]+", lambda m: _roman_word(m.group(0)), text)

@@ -329,3 +329,10 @@ async def test_friday_speaks_each_piece_in_the_language_it_is_in():
     heard["now"] = "hi-IN"
     _ = [f async for f in tts.run_tts("Haan, kal milte hain", "c")]
     assert used == ["mr-IN", "en-IN", "hi-IN"]
+
+
+def test_the_notch_keeps_english_words_in_latin_inside_hindi():
+    from friday_services.calls.stt import HeardLanguageSTT, auto_language_settings, use_codemix
+
+    stt = use_codemix(HeardLanguageSTT(api_key="x", settings=auto_language_settings()))
+    assert (stt._settings.language, stt._settings.format) == ("indic-auto", "codemix")

@@ -417,7 +417,11 @@ class LiveVoiceSession:
             webrtc_connection=self._connection,
             params=TransportParams(audio_in_enabled=True, audio_out_enabled=True),
         )
-        from friday_services.calls.stt import HeardLanguageSTT, auto_language_settings
+        from friday_services.calls.stt import (
+            HeardLanguageSTT,
+            auto_language_settings,
+            use_codemix,
+        )
 
         # Any Indian language the owner speaks (Marathi, Tamil, ...), found by
         # Prisma itself; otherwise the screen's language only.
@@ -427,6 +431,8 @@ class LiveVoiceSession:
             if auto_language_on()
             else GnaniSTTService.Settings(language=language_of(self._language)),
         )
+        if auto_language_on():
+            use_codemix(stt)
         if stt.heard is None:
             stt.heard = self._language
         http = aiohttp.ClientSession()

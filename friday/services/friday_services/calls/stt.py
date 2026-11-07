@@ -69,3 +69,12 @@ def auto_language_settings(**kwargs: Any) -> Any:
     settings = GnaniSTTService.Settings(**kwargs)
     settings.language = AUTO  # type: ignore[assignment]
     return settings
+
+
+def use_codemix(stt: Any) -> Any:
+    """English words stay in Latin letters inside Hindi ("notepad open करो",
+    not "नोटपैड ओपन करो"). Gnani's codemix format; pipecat-gnani checks the
+    format when the service is made and does not list it yet, so it is set
+    after."""
+    stt._settings.format = "codemix"
+    return stt

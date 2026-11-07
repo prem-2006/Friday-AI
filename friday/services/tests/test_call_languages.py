@@ -185,3 +185,10 @@ async def test_a_client_call_has_its_business_tools(settings):
     assert {"book_meeting", "save_lead", "end_call", "take_message"} <= set(llm._functions)
     assert first_words(record, "Prem") == ""  # the model says who it is and why
     await call.http.close()
+
+
+def test_a_reply_mixed_with_english_is_said_in_the_owners_language():
+    assert reply_language("Sure! உங்க meeting tomorrow 4 PM at Google Meet", "ta-IN") == "ta-IN"
+    assert reply_language("ನಾಳೆ ನಿಮ್ಮ meeting 4 PM ಗೆ ಇದೆ", "kn-IN") == "kn-IN"
+    assert reply_language("రేపు మీ meeting ఉంది", "te-IN") == "te-IN"
+    assert reply_language("Sure, see you tomorrow", "te-IN") == "en-IN"

@@ -66,8 +66,21 @@ def script_language(text: str) -> str | None:
     return code if count and count >= letters else None
 
 
+def _has_script_of(text: str, code: str | None) -> bool:
+    if code == "mr-IN":
+        code = "hi-IN"  # Devanagari
+    if code == "as-IN":
+        code = "bn-IN"
+    block = next((b for b, c in SCRIPTS if c == code), None)
+    return bool(block and re.search(f"[{block}]", text))
+
+
 def reply_language(text: str, heard: str | None) -> str:
-    """The language to voice a reply in."""
+    """The language to voice a reply in. A reply that mixes the owner's
+    language with English ("நாளைக்கு உங்க meeting 4 PM") is said in that
+    language, as they speak it, not by an English voice."""
+    if heard not in (None, "en-IN", "hi-IN") and _has_script_of(text, heard):
+        return heard  # type: ignore[return-value]
     written = script_language(text)
     if written == "hi-IN" and heard == "mr-IN":
         return "mr-IN"  # Marathi is written in Devanagari too
@@ -87,7 +100,10 @@ LANGUAGE_RULE = (
     "(Tamil, Telugu, Kannada, Malayalam, Marathi, Bengali, Gujarati, Punjabi, Odia), and "
     "may switch. Always answer in the language of their last turn, written in its own "
     "script: Hindi and Marathi in Devanagari, Tamil in Tamil letters, and so on; Hinglish "
-    "in Roman letters; English in English. Keep names, numbers and times easy to say."
+    "in Roman letters; English in English. If they mix their language with English "
+    "(Tamil and English, Telugu and English, Kannada and English), answer in the same mix, "
+    "the English words in English and the rest in its own script. Keep names, numbers "
+    "and times easy to say."
 )
 
 

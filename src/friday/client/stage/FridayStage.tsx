@@ -206,8 +206,9 @@ function alwaysListening() {
 }
 const RELEASE_WAIT_MS = 1800;
 // Only a really slow reply gets a short "one second", and at most once in a
-// while: said on every turn it becomes noise.
-const HOLD_ON_MS = 4000;
+// while: said on every turn it becomes noise. Most replies start within 3 to
+// 5 seconds, and small talk is answered at once.
+const HOLD_ON_MS = 7000;
 const HOLD_ON_EVERY_MS = 5 * 60_000;
 
 const lastUserText = (history: { role: string; content?: unknown }[]) => {

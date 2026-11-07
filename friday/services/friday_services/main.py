@@ -78,6 +78,7 @@ from friday_services.phone_in import (
 from friday_services.research import Researcher, ask_model, find_obscura
 from friday_services.screen import capture_screen, describe_screen, snap_window
 from friday_services.scripted import reply as scripted_reply
+from friday_services.smalltalk import SmallTalk
 from friday_services.tunnel import NgrokTunnel, TunnelGuard
 from friday_services.usage import timed, usage
 from friday_services.watch import Watches
@@ -663,6 +664,11 @@ def create_app(
 
     # Instant commands: the app server asks here first; "handled": false sends
     # the ask to the Friday Dot as usual.
+    small_talk = SmallTalk(
+        owner=lambda: settings.owner_name,
+        gender=lambda: settings.get("FRIDAY_OWNER_GENDER", ""),
+    )
+
     @app.post("/instant", dependencies=[Depends(owner)])
     async def instant_run(request: Request) -> dict[str, Any]:
         body = await request.json()
@@ -675,6 +681,10 @@ def create_app(
             if line:
                 feed.emit("friday", "instant", line, state="done")
                 return {"handled": True, "say": line, "calls": []}
+        # "Hi", "how are you": answered at once, no model and no "one second".
+        chat = small_talk.reply(text)
+        if chat:
+            return {"handled": True, "say": chat, "calls": []}
         last = (feed.recent(1) or [{"id": 0}])[-1]["id"]
         try:
             done = await instant.handle(text)

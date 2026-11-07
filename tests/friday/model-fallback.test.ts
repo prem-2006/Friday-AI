@@ -106,3 +106,47 @@ it('rests a model that was only busy (503) for a minute', async () => {
   await wrapped(`${PRIMARY}chat/completions`, request); // main again
   expect(host()).toBe('main.test');
 });
+
+it('asks the next model too when the first has not started after a while', async () => {
+  const asked: string[] = [];
+  const stopped: string[] = [];
+  const fake = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const model = JSON.parse(String(init?.body)).model as string;
+    asked.push(model);
+    if (model !== 'gemini')
+      return new Response('{"from":"second"}', { status: 200 });
+    // The main model hangs before its first byte, until it is stopped.
+    return new Promise<Response>((_resolve, reject) =>
+      init?.signal?.addEventListener('abort', () => {
+        stopped.push(model);
+        reject(new Error('aborted'));
+      }),
+    );
+  }) as typeof fetch;
+  const wrapped = fridayFallbackFetch(
+    PRIMARY,
+    { FRIDAY_PRIMARY_MODELS: 'gemini-fast', FRIDAY_MODEL_HEDGE_MS: '20' },
+    fake,
+  )!;
+  const response = await wrapped(`${PRIMARY}chat/completions`, request);
+  expect(await response.json()).toEqual({ from: 'second' });
+  expect(asked).toEqual(['gemini', 'gemini-fast']);
+  expect(stopped).toEqual(['gemini']);
+});
+
+it('keeps the first model when it answers before the wait is over', async () => {
+  const asked: string[] = [];
+  const fake = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    asked.push(JSON.parse(String(init?.body)).model as string);
+    return new Response('{}', { status: 200 });
+  }) as typeof fetch;
+  const wrapped = fridayFallbackFetch(
+    PRIMARY,
+    { FRIDAY_PRIMARY_MODELS: 'gemini-fast', FRIDAY_MODEL_HEDGE_MS: '5000' },
+    fake,
+  )!;
+  expect((await wrapped(`${PRIMARY}chat/completions`, request)).status).toBe(
+    200,
+  );
+  expect(asked).toEqual(['gemini']);
+});

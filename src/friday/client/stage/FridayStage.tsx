@@ -205,6 +205,9 @@ function alwaysListening() {
   }
 }
 const RELEASE_WAIT_MS = 1800;
+// A piece heard after Caps Lock was let go is the end of what was said:
+// sent almost at once instead of waiting a pause for more.
+const AFTER_RELEASE_MS = 150;
 // Only a really slow reply gets a short "one second", and at most once in a
 // while: said on every turn it becomes noise. Most replies start within 3 to
 // 5 seconds, and small talk is answered at once.
@@ -1283,6 +1286,7 @@ function StageSession({
   // Caps Lock is held and shortly after, or within a short pause hands-free.
   const heardTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const heardSoFar = useRef<string[]>([]);
+  const releasedAt = useRef(0);
   const finishHearing = () => {
     clearTimeout(heardTimer.current);
     const text = heardSoFar.current.join(' ').trim();
@@ -1299,7 +1303,12 @@ function StageSession({
     if (event.event === 'heard') {
       heardSoFar.current.push(event.text);
       // While Caps Lock is held, wait for the release; otherwise for a pause.
-      if (!holding.current) finishHearingIn(HEARD_PAUSE_MS);
+      if (!holding.current)
+        finishHearingIn(
+          Date.now() - releasedAt.current < RELEASE_WAIT_MS
+            ? AFTER_RELEASE_MS
+            : HEARD_PAUSE_MS,
+        );
     } else if (event.event === 'speech_start') {
       // Hands-free: the owner talking over Friday interrupts it at once.
       overFriday.current = fridayTalking();
@@ -1341,6 +1350,7 @@ function StageSession({
         live.current.pushToTalk(false);
         setPhase('transcribing');
         // Gnani sends the last piece after the trailing second of silence.
+        releasedAt.current = Date.now();
         finishHearingIn(RELEASE_WAIT_MS);
       } else if (handsFree.current?.active) handsFree.current.release();
       // Let go before the voice connected: nothing was heard, so the notch

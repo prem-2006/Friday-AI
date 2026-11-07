@@ -23,6 +23,8 @@ const list = (value?: string) =>
     .filter(Boolean);
 const COOL_DOWN_MS = 60_000;
 const OUT_OF_QUOTA_MS = 10 * 60_000;
+// A voice reply normally starts within 1 to 3 s; past this, ask another model.
+const HEDGE_MS = 5000;
 
 export function fallbackFromEnv(env: Record<string, string | undefined>) {
   const baseUrl = env.FRIDAY_FALLBACK_BASE_URL?.trim();
@@ -120,6 +122,10 @@ export function fridayFallbackFetch(
   if (!primaryBaseUrl || (!backup && !extraModels.length && !extraKeys.length))
     return undefined;
   const primary = trim(primaryBaseUrl);
+  // FRIDAY_MODEL_HEDGE_MS: how long a model may take to start answering
+  // before the next one is asked as well (0: never).
+  const hedge = Number(env.FRIDAY_MODEL_HEDGE_MS ?? HEDGE_MS);
+  const hedgeMs = Number.isFinite(hedge) && hedge >= 0 ? hedge : HEDGE_MS;
   // When each model and key may be tried again.
   const resting = new Map<string, number>();
   return async (input, init) => {
@@ -144,60 +150,118 @@ export function fridayFallbackFetch(
     const ownModel = String(body.model ?? '');
     const keys = [...new Set([ownKey, ...extraKeys])];
     const models = [...new Set([ownModel, ...extraModels])];
+    const tries = keys
+      .flatMap((key) => models.map((model) => ({ key, model })))
+      .filter(
+        ({ key, model }) =>
+          (resting.get(`${key.slice(-8)}:${model}`) ?? 0) <= now(),
+      );
     let refused: Response | undefined;
-    for (const key of keys)
-      for (const model of models) {
-        const id = `${key.slice(-8)}:${model}`;
-        if ((resting.get(id) ?? 0) > now()) continue;
-        const own = key === ownKey && model === ownModel;
-        const headers = new Headers(init?.headers);
-        headers.set('authorization', `Bearer ${key}`);
-        // Options tuned for the main model may be rejected by another one
-        // (gemini-flash-lite-latest refuses reasoning_effort "none").
-        const plain = { ...body };
-        delete plain.reasoning_effort;
-        const response = await counted(
-          baseFetch,
-          input,
-          own
-            ? init
-            : {
-                ...init,
-                headers,
-                body: JSON.stringify(
-                  model === ownModel ? { ...body, model } : { ...plain, model },
-                ),
-              },
-          url,
-          model,
-          key,
-        );
-        // Another model or key that refuses the request, or does not offer
-        // that model (404: new projects lack the older ones), is skipped.
-        const refusedHere = [400, 403, 404].includes(response.status);
-        if (!limited(response) && (own || !refusedHere)) return response;
-        if (refusedHere)
-          voiceLog('model_refused', {
-            model,
-            error: (
-              await response
-                .clone()
-                .text()
-                .catch(() => '')
-            ).slice(0, 300),
-          });
-        const until =
-          now() + (response.status === 429 ? OUT_OF_QUOTA_MS : COOL_DOWN_MS);
-        resting.set(id, until);
-        usage.rest(
-          'Language models',
-          modelProvider(url),
-          [model, keyTail(key)].filter(Boolean).join(' · '),
-          until,
-        );
-        void refused?.body?.cancel().catch(() => {});
-        refused = response;
+    // A model that has not started answering after hedgeMs (Gemini sometimes
+    // hangs for 20 s or more before its first byte) gets company: the next
+    // model is asked too, the first good answer wins, the other is stopped.
+    const outer = init?.signal ?? undefined;
+    type Outcome = {
+      id: number;
+      own: boolean;
+      key: string;
+      model: string;
+      stop: AbortController;
+      response?: Response;
+      error?: unknown;
+    };
+    const running = new Map<number, Promise<Outcome>>();
+    const stops: AbortController[] = [];
+    let next = 0;
+    const start = () => {
+      const id = next++;
+      const { key, model } = tries[id];
+      const own = key === ownKey && model === ownModel;
+      const headers = new Headers(init?.headers);
+      headers.set('authorization', `Bearer ${key}`);
+      // Options tuned for the main model may be rejected by another one
+      // (gemini-flash-lite-latest refuses reasoning_effort "none").
+      const plain = { ...body };
+      delete plain.reasoning_effort;
+      const stop = new AbortController();
+      stops.push(stop);
+      const signal = outer
+        ? AbortSignal.any([outer, stop.signal])
+        : stop.signal;
+      const sent: RequestInit = own
+        ? { ...init, signal }
+        : {
+            ...init,
+            signal,
+            headers,
+            body: JSON.stringify(
+              model === ownModel ? { ...body, model } : { ...plain, model },
+            ),
+          };
+      const base = { id, own, key, model, stop };
+      running.set(
+        id,
+        counted(baseFetch, input, sent, url, model, key).then(
+          (response): Outcome => ({ ...base, response }),
+          (error: unknown): Outcome => ({ ...base, error }),
+        ),
+      );
+    };
+    while (next < tries.length || running.size) {
+      if (!running.size) start();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const slow =
+        hedgeMs > 0 && next < tries.length
+          ? new Promise<'slow'>((resolve) => {
+              timer = setTimeout(() => resolve('slow'), hedgeMs);
+            })
+          : undefined;
+      const first = await Promise.race([
+        ...running.values(),
+        ...(slow ? [slow] : []),
+      ]);
+      clearTimeout(timer);
+      if (first === 'slow') {
+        voiceLog('model_slow', { waited_ms: hedgeMs, also: tries[next].model });
+        start();
+        continue;
       }
+      running.delete(first.id);
+      if (!first.response) {
+        if (outer?.aborted || !running.size) throw first.error;
+        continue; // the other request may still answer
+      }
+      const { response, own, key, model } = first;
+      const id = `${key.slice(-8)}:${model}`;
+      // Another model or key that refuses the request, or does not offer
+      // that model (404: new projects lack the older ones), is skipped.
+      const refusedHere = [400, 403, 404].includes(response.status);
+      if (!limited(response) && (own || !refusedHere)) {
+        for (const stop of stops) if (stop !== first.stop) stop.abort();
+        return response;
+      }
+      if (refusedHere)
+        voiceLog('model_refused', {
+          model,
+          error: (
+            await response
+              .clone()
+              .text()
+              .catch(() => '')
+          ).slice(0, 300),
+        });
+      const until =
+        now() + (response.status === 429 ? OUT_OF_QUOTA_MS : COOL_DOWN_MS);
+      resting.set(id, until);
+      usage.rest(
+        'Language models',
+        modelProvider(url),
+        [model, keyTail(key)].filter(Boolean).join(' · '),
+        until,
+      );
+      void refused?.body?.cancel().catch(() => {});
+      refused = response;
+    }
     if (!backup) return refused ?? new Response(null, { status: 429 });
     // Options meant for the main provider may be rejected by the backup.
     delete body.reasoning_effort;

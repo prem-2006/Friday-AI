@@ -72,6 +72,12 @@
   background-size: 380px 380px;
   opacity: 0.55;
 }
+/* Friday's see-through windows (notch, task toast, screen overlay) float over
+   other apps: no star dust there, or the window shows as a dark box. */
+:root:is(.friday-notch-page, .friday-toast-page, .friday-overlay-page)
+  body::before {
+  display: none;
+}
 :root[data-theme='dark'] body #root {
   position: relative;
   z-index: 1;

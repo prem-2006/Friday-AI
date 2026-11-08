@@ -1,0 +1,454 @@
+/* Friday: the business dashboard, in the main page's console look (home.css):
+   regions of client cards on the left, the live call and results on the
+   right. Colours come from home.css tokens, so dark mode follows. */
+.biz-title {
+  margin-left: 6px;
+  font: 600 11px/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.biz-main {
+  position: relative;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 12px 16px 56px;
+  display: grid;
+  gap: 18px;
+}
+
+.biz-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px 32px;
+  align-items: end;
+  padding: 22px 24px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+.biz-eyebrow {
+  margin: 0 0 6px;
+  font: 600 11px/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+.biz-hero h1 {
+  margin: 0;
+  font-size: clamp(22px, 3vw, 30px);
+  line-height: 1.15;
+  text-wrap: balance;
+}
+.biz-lede {
+  margin: 8px 0 0;
+  max-width: 62ch;
+  color: var(--muted);
+}
+.biz-stats {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  flex-wrap: wrap;
+}
+.biz-stats div {
+  min-width: 78px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+}
+.biz-stats dt {
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.biz-stats dd {
+  margin: 6px 0 0;
+  font: 600 22px/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.biz-banner {
+  margin: 0;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(220, 38, 38, 0.35);
+  background: var(--panel);
+  color: var(--red);
+}
+.biz-banner.soft {
+  border-color: rgba(217, 119, 6, 0.35);
+  color: var(--amber);
+}
+
+.biz-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  gap: 18px;
+  align-items: start;
+}
+.biz-regions {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+.biz-region h2,
+.biz-panel h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  font: 600 12px/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.biz-region h2 span {
+  font: 500 13px/1 inherit;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+.biz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 10px;
+}
+
+.biz-client {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  min-width: 0;
+}
+.biz-client.example {
+  border-style: dashed;
+}
+.biz-client header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.biz-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: var(--cyan);
+  border: 1px solid var(--line);
+}
+.biz-who {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+.biz-who strong,
+.biz-who span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.biz-who span,
+.biz-note,
+.biz-hint,
+.biz-meta,
+.biz-empty {
+  font-size: 13px;
+  color: var(--muted);
+}
+.biz-lang {
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--cyan);
+  border: 1px solid var(--line);
+}
+.biz-note,
+.biz-hint,
+.biz-summary {
+  margin: 0;
+}
+.biz-summary {
+  font-size: 13px;
+}
+.biz-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font: 500 13px/1.2 var(--mono);
+}
+.biz-tag {
+  padding: 2px 6px;
+  border-radius: 6px;
+  font: 600 10px/1.2 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+.biz-client footer {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.biz-client select,
+.biz-form input,
+.biz-form select {
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+.biz-client footer select {
+  flex: 1;
+}
+.friday-business button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.biz-client button.call,
+.biz-form button[type='submit'] {
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 0;
+  color: #fff;
+  background: var(--green);
+}
+.biz-client button.call:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.biz-client button.icon {
+  padding: 6px;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+}
+.biz-client button.icon:hover {
+  color: var(--ink);
+}
+button.link {
+  padding: 0;
+  border: 0;
+  color: var(--cyan);
+  background: none;
+  text-decoration: underline;
+}
+.friday-business button:focus-visible,
+.friday-business input:focus-visible,
+.friday-business select:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.biz-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font: 600 11px/1.4 var(--mono);
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+.biz-pill.live {
+  color: var(--green);
+  border-color: currentColor;
+}
+.biz-pill.live i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: biz-pulse 1.2s ease-in-out infinite;
+}
+.biz-pill.outcome-completed {
+  color: var(--green);
+}
+.biz-pill.outcome-alternative_offered,
+.biz-pill.outcome-needs_owner {
+  color: var(--amber);
+}
+.biz-pill.outcome-declined,
+.biz-pill.outcome-wrong_number {
+  color: var(--red);
+}
+@keyframes biz-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .biz-pill.live i {
+    animation: none;
+  }
+}
+
+.biz-side {
+  display: grid;
+  gap: 12px;
+  position: sticky;
+  top: 12px;
+  min-width: 0;
+}
+.biz-panel {
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  min-width: 0;
+}
+.biz-panel h2 .biz-pill {
+  margin-left: auto;
+}
+.biz-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  color: var(--ink);
+}
+.biz-meta > span:last-child {
+  color: var(--muted);
+}
+.biz-transcript {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.biz-transcript li {
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 14px;
+  border: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.biz-transcript li span {
+  display: block;
+  margin-bottom: 2px;
+  font: 600 10px/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.biz-transcript li.friday {
+  margin-right: 24px;
+}
+.biz-transcript li.friday span {
+  color: var(--cyan);
+}
+.biz-transcript li.client {
+  margin-left: 24px;
+}
+.biz-meeting {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--green);
+}
+.biz-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.biz-list li {
+  display: grid;
+  gap: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.biz-list li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.biz-list strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.biz-list em {
+  color: var(--muted);
+}
+.biz-empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.biz-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--cyan);
+}
+.biz-form label {
+  display: grid;
+  gap: 4px;
+  font: 600 10px/1.2 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.biz-form .wide {
+  grid-column: 1 / -1;
+}
+.biz-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.biz-form button.ghost {
+  padding: 7px 12px;
+  border-radius: 8px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+}
+.biz-error {
+  margin: 0;
+  color: var(--red);
+  font-size: 13px;
+}
+
+@media (max-width: 920px) {
+  .biz-layout,
+  .biz-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .biz-side {
+    position: static;
+  }
+}

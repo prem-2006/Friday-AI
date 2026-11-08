@@ -11,6 +11,10 @@ import {
 import { StageLink } from '../friday/client/StageLink';
 import { FridayHome, HOME_HASH } from '../friday/client/home/FridayHome';
 import { ADMIN_HASH, AdminPage } from '../friday/client/admin/AdminPage';
+import {
+  BUSINESS_HASH,
+  BusinessPage,
+} from '../friday/client/business/BusinessPage';
 import { NOTCH_DEMO_HASH, NotchDemo } from '../friday/client/stage/Notch';
 import {
   ActivityToast,
@@ -97,7 +101,9 @@ export function App() {
           ? 'notch'
           : location.hash === ADMIN_HASH
             ? 'admin'
-            : null;
+            : location.hash === BUSINESS_HASH
+              ? 'business'
+              : null;
   const [fridayScreen, setFridayScreen] = useState(fridayScreenOf);
   useEffect(() => {
     const follow = () => setFridayScreen(fridayScreenOf());
@@ -1008,6 +1014,12 @@ export function App() {
   const screen =
     fridayScreen === 'admin' ? (
       <AdminPage
+        onBack={() => {
+          location.hash = HOME_HASH;
+        }}
+      />
+    ) : fridayScreen === 'business' ? (
+      <BusinessPage
         onBack={() => {
           location.hash = HOME_HASH;
         }}

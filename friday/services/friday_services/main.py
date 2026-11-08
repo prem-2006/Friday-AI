@@ -30,6 +30,7 @@ from friday_services.business import (
     lead_line,
     slot_taken,
 )
+from friday_services.business_page import ClientBook, add_business_page
 from friday_services.calendar.page import add_calendar_page
 from friday_services.calendar.store import CalendarStore
 from friday_services.calls.bot import CallHelpers, run_call
@@ -869,6 +870,23 @@ def create_app(
 
     call_helpers = CallHelpers(
         ask=ask_on_call, take_message=take_message, book_meeting=book_meeting, save_lead=save_lead
+    )
+
+    # The business dashboard (#/business): clients across India, each called
+    # in their own language with one click (business_page.py).
+    async def place_client_call(phone: str, goal: str, language: str, context: str):
+        return await place_own_call(store, dialer, phone, goal, language, context, kind="client")
+
+    add_business_page(
+        app,
+        owner,
+        settings=settings,
+        store=store,
+        dialer=dialer,
+        calendar=calendar,
+        leads=leads,
+        clients=ClientBook(settings.data_dir / "friday-clients.json"),
+        place_call=place_client_call,
     )
 
     def answer_incoming(caller: str) -> CallRecord | None:

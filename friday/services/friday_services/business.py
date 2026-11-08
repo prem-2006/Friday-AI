@@ -39,7 +39,10 @@ def profile_text(path: Path | None = None) -> str:
 
 def business_profile(settings: Any) -> str:
     custom = settings.get("FRIDAY_BUSINESS_PROFILE")
-    return profile_text(Path(custom) if custom else None)
+    path = Path(custom) if custom else None
+    if path is not None and not path.is_absolute():
+        path = REPO_ROOT / path  # "friday/business.demo.md", from the repo
+    return profile_text(path)
 
 
 def business_enabled(settings: Any) -> bool:

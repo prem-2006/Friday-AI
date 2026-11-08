@@ -194,7 +194,7 @@ def client_prompt(
     )
     return f"""You are Friday, an AI assistant {"calling a client for" if calling else "answering calls for"} {owner}'s business.
 
-{language_line(f"Language: speak {language}; follow the caller if they switch.", auto_language)}
+{language_line(f"Language: speak {language}; follow the caller if they switch.", auto_language)}{f" Begin in {language}, the client's language, then follow them." if calling and auto_language else ""}
 
 Start: {start}
 

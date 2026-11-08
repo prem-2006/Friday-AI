@@ -561,6 +561,8 @@ def build_call_pipeline(
     @user.event_handler("on_user_turn_stopped")
     async def on_their_turn(_aggregator, _strategy, message):
         store.add_turn(record.id, "them", message.content or "")
+        if stt.heard:  # the language they spoke, for the business dashboard
+            record.details["heard_language"] = stt.heard
 
     @assistant.event_handler("on_assistant_turn_stopped")
     async def on_friday_turn(_aggregator, message):

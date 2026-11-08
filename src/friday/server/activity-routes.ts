@@ -101,6 +101,27 @@ export function fridayActivityRoutes({
   );
   // The main page's Calls card: Friday's phone calls and what was said.
   app.get('/friday/calls', () => relay('/calls/recent'));
+  // The business dashboard (#/business): clients, client calls, leads.
+  app.get('/friday/business', () => relay('/business'));
+  app.post('/friday/business/clients', async (c) =>
+    relay('/business/clients', 'POST', undefined, await c.req.text()),
+  );
+  const clientPath = (id: string) =>
+    `/business/clients/${encodeURIComponent(id)}`;
+  app.put('/friday/business/clients/:id', async (c) =>
+    relay(clientPath(c.req.param('id')), 'PUT', undefined, await c.req.text()),
+  );
+  app.delete('/friday/business/clients/:id', (c) =>
+    relay(clientPath(c.req.param('id')), 'DELETE'),
+  );
+  app.post('/friday/business/clients/:id/call', async (c) =>
+    relay(
+      `${clientPath(c.req.param('id'))}/call`,
+      'POST',
+      undefined,
+      (await c.req.text()) || '{}',
+    ),
+  );
   // The main page's reminders panel (timers, reminders, deadlines).
   app.get('/friday/reminders', () => relay('/reminders'));
   app.post('/friday/reminders', async (c) =>

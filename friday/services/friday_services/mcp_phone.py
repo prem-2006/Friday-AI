@@ -12,6 +12,7 @@ from mcp_types import ToolAnnotations
 from pydantic import Field
 
 from friday_services.business import business_profile, client_context, lead_line
+from friday_services.business_page import PURPOSES
 from friday_services.calls.sarvam import SarvamDialer
 from friday_services.calls.store import CallRecord, CallStore
 from friday_services.config import Settings
@@ -242,12 +243,6 @@ def build_phone_server(
         return record.result()
 
     # Client calls for the owner's business (business.py): Friday's own line.
-    purposes = {
-        "sales": "Introduce what fits them from the business profile and try to make a sale "
-        "or book a meeting.",
-        "follow_up": "Follow up on their interest, answer questions and agree a next step.",
-        "meeting": "Book a meeting with them at a time that suits both sides.",
-    }
 
     @server.tool(
         name="call_client",
@@ -290,7 +285,7 @@ def build_phone_server(
         missing = settings.missing(settings.call_settings)
         if missing:
             raise ToolError(f"Phone calls are not set up. Missing in .env: {', '.join(missing)}.")
-        goal = purposes[purpose] + (f" The client: {name}." if name else "")
+        goal = PURPOSES[purpose] + (f" The client: {name}." if name else "")
         context = client_context(settings, calendar, name)
         if about:
             context += f"\n\nFor this call: {about}"

@@ -102,6 +102,11 @@ class CallStore:
     def get(self, call_id: str) -> CallRecord | None:
         return self._calls.get(call_id)
 
+    def live(self) -> list[CallRecord]:
+        """Calls not finished yet, newest first."""
+        calls = [call for call in self._calls.values() if not call.final]
+        return sorted(calls, key=lambda call: call.created_at, reverse=True)
+
     def active(self) -> CallRecord | None:
         return next((call for call in self._calls.values() if not call.final), None)
 
@@ -150,7 +155,8 @@ class CallStore:
         record.status = status
         record.outcome = outcome or record.outcome
         record.summary = summary or record.summary
-        record.details = details or record.details
+        # A meeting booked during the call stays next to end_call's details.
+        record.details = {**record.details, **(details or {})}
         record.error = error or record.error
         record.ended_at = time.time()
         self._save(record)

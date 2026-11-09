@@ -209,6 +209,25 @@ def site_url(name: str) -> str | None:
     return None
 
 
+# "Call me", "mujhe call karo": the owner's own phone, with no model, which
+# could only promise it ("abhi call lagati hoon") and not dial.
+CALL_VERB = r"(?:call|phone|ring|kol|कॉल|फोन|फ़ोन)"
+CALL_DO = r"(?:karo|kar do|kardo|krdo|kijiye|kariye|lagao|laga do|करो|कर दो|कीजिए|लगाओ)"
+CALL_ME = re.compile(
+    r"\b(?:call|ring|phone) me(?: (?:back|now|right now|on my (?:phone|mobile)|jaldi|abhi|immediately|asap))*$"
+    r"|\bgive me a (?:call|ring)(?: now| right now)?$"
+    rf"|(?:\b(?:mujhe|muje|mujhko|mereko|mere ko)|मुझे|मुझको)\b.*{CALL_VERB} {CALL_DO}"
+    rf"|(?:मुझे|मुझको).*{CALL_VERB} {CALL_DO}"
+    rf"|^{CALL_VERB} {CALL_DO}(?: (?:jaldi|abhi|please|जल्दी|अभी))*$"
+)
+# Not now, not the owner, or not asking: left to the model.
+NOT_CALL_ME = re.compile(
+    r"\b(?:mat|don t|don't|do not|never|why|what|who|did|when|whatsapp|video|baje|baad|kal|"
+    r"tomorrow|later|tonight|minutes?|hours?|ghante|subah|shaam|raat|morning|evening|at \d)\b"
+    r"|\b(?!mujh|mere)\w+ ko (?:\w+ )?" + CALL_VERB + r"|\S+ को (?:\S+ )?" + CALL_VERB + r"|मत"
+)
+
+
 def plain(text: str) -> str:
     """Spoken request -> its core words: "Hey Friday, can you open Spotify please?" -> "open spotify"."""
     t = re.sub(r"[,;!?।]|:(?!//)|(?<!\w)\.|\.(?!\w)", "", text.lower().strip(" .!?")).strip()
@@ -502,6 +521,7 @@ class Instant:
 
         for rule in (
             self._mail,
+            self._call_me,
             self._briefing,
             self._who,
             self._status,
@@ -549,6 +569,20 @@ class Instant:
             return None
         result = await self._call("gmail_new", {}, done)
         return {"say": result.get("friday_say") or "Done.", "calls": done}
+
+    async def _call_me(self, t: str, _text: str):
+        """ "Call me", "mujhe call karo": rings the owner's phone now."""
+        if MORE.search(t) or not CALL_ME.search(t) or NOT_CALL_ME.search(t):
+            return None
+        done: list = []
+        try:
+            result = await self._call(
+                "call_me", {"message": "The owner asked Friday to call them just now."}, done
+            )
+        except Exception as error:  # the model would only promise the call
+            why = str(error).split(": ", 1)[-1] if "Error executing" in str(error) else str(error)
+            return {"say": why, "calls": [], "failed": True}
+        return {"say": result.get("friday_say") or "Calling your phone now.", "calls": done}
 
     async def _briefing(self, t: str, _text: str):
         """ "Aaj ka briefing do", "brief me", "what is my day like"."""

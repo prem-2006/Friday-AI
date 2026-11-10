@@ -6,11 +6,10 @@
 
 Speak in English, Hindi, Hinglish or another Indian language. Friday understands which one it is, answers in it, and gets the job done on your PC, your phone and your phone calls.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![Platform: Windows](https://img.shields.io/badge/Platform-Windows-blue.svg)
 ![Voice: Gnani](https://img.shields.io/badge/Voice-Gnani%20Prisma%20%26%20Timbre-orange.svg)
 
-Built for the **Gnani AI #GreatIndianAIInternshipChallenge** by **Prem and Ruchi**
+Built for the **Gnani AI #GreatIndianAIInternshipChallenge** by **Prem and Aarohi**
 
 [Solution](#the-solution) · [Features](#what-friday-can-do) · [Architecture](#architecture) · [Getting started](#getting-started) · [One-page pitch](PITCH.md)
 
@@ -26,6 +25,14 @@ Most voice assistants stop at answering questions. They rarely finish a task acr
 
 ## The solution
 
+<div align="center">
+
+[![Read the one-page solution pitch](https://img.shields.io/badge/Read%20the-One--Page%20Solution%20Pitch-0b7fab?style=for-the-badge)](PITCH.md)
+
+**[Open the one-page solution pitch](PITCH.md)**: the problem, the solution, the technology and what comes next, on a single page.
+
+</div>
+
 Friday lives in a small notch above the Windows taskbar. Hold Caps Lock, say what you need, and Friday hears your language, replies in it out loud, and does the work.
 
 | For                  | What Friday changes                                                                            |
@@ -34,8 +41,6 @@ Friday lives in a small notch above the Windows taskbar. Hold Caps Lock, say wha
 | **Elders**           | Reminders, messages and calls by voice, in their own language                                  |
 | **Students**         | Background research with sources, meeting notes, and coding practice                           |
 | **Small businesses** | Client calls in the client's language, meetings booked into the calendar, and every lead saved |
-
-The short version for reviewers is the [one-page solution pitch](PITCH.md).
 
 ## What Friday can do
 
@@ -95,7 +100,7 @@ Friday is a team of agents. The one you talk to does quick jobs itself and hands
 | Text to speech  | Gnani Timbre v3.0, one voice across every language                                |
 | Language model  | Gnani Evon or any OpenAI-compatible model, with automatic failover between models |
 | Voice pipeline  | Pipecat, WebRTC, Silero VAD, offline Vosk wake word                               |
-| Agent platform  | [OpenDots](https://github.com/CopilotKit/OpenDots), TypeScript, Node.js, MCP      |
+| Agent platform  | Multi-agent runtime, TypeScript, Node.js, MCP                                     |
 | Services        | Python, FastAPI                                                                   |
 | Desktop and web | Electron, React, Vite                                                             |
 | Browser         | Hermes Agent, ego lite, Obscura for background research                           |
@@ -204,7 +209,7 @@ With an Exotel number and an ngrok domain in `.env`, Friday places and answers r
 | ----------------------------------- | -------------------------------------------------------------- |
 | `src/friday/client/`                | Notch, voice screen, main page, admin and business dashboards  |
 | `src/friday/server/`                | Model settings, failover, voice, hand-offs, memory             |
-| `src/server/`, `src/client/`        | Agent runtime, chat and workspace, from OpenDots               |
+| `src/server/`, `src/client/`        | Agent runtime, chat and workspace                              |
 | `friday/services/`                  | Python services: browser, desktop, WhatsApp, calls, live voice |
 | `friday/desktop/`                   | The desktop notch app                                          |
 | `friday/hermes-agent/`              | Navigator's browser engine                                     |
@@ -219,26 +224,3 @@ npm run typecheck; npx vitest run tests/friday
 cd friday/services; python -m uv run pytest; cd ../..
 cd friday/hermes-agent; python -m uv run pytest
 ```
-
-## Known limits
-
-- Windows only for now.
-- Exotel trial accounts can call only verified numbers.
-- WhatsApp automation depends on WhatsApp Desktop's control names, which an update can change. Friday starts WhatsApp calls but does not speak on them.
-- Some custom-drawn Windows apps do not expose enough UI Automation for Operator.
-- Headphones work best; speakers can still be picked up by the mic.
-
-## Roadmap
-
-- More regional languages, as Gnani adds them
-- A mobile app, beyond control over USB
-- A family care mode with medicine reminders and check-in calls
-- CRM integrations for business calls
-- On-device models for offline use
-- macOS and Linux
-
-## Credits and license
-
-Friday is a fork of [OpenDots](https://github.com/CopilotKit/OpenDots) by CopilotKit. Speech is by [Gnani](https://gnani.ai). Every project and library Friday builds on is listed in [friday/CREDITS.md](friday/CREDITS.md), and changes to the OpenDots code are listed in [friday/CHANGES-TO-OPENDOTS.md](friday/CHANGES-TO-OPENDOTS.md).
-
-Released under the [MIT License](LICENSE).

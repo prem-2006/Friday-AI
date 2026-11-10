@@ -2,204 +2,243 @@
 
 # Friday
 
-### Your voice-first AI assistant for India.
+### The voice assistant that does the work, in your language.
 
-Talk to Friday in Hindi, English or Hinglish, and it gets things done on your own PC: it opens apps, works websites in a browser you can watch, sends WhatsApp messages, answers your phone calls and remembers what matters to you.
+Speak in English, Hindi, Hinglish or another Indian language. Friday understands which one it is, answers in it, and gets the job done on your PC, your phone and your phone calls.
 
-Built for the **Gnani AI #GreatIndianAIInternshipChallenge**.
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+![Platform: Windows](https://img.shields.io/badge/Platform-Windows-blue.svg)
+![Voice: Gnani](https://img.shields.io/badge/Voice-Gnani%20Prisma%20%26%20Timbre-orange.svg)
 
-**[Read the one-page solution pitch](PITCH.md)**
+Built for the **Gnani AI #GreatIndianAIInternshipChallenge** by **Prem and Ruchi**
+
+[Solution](#the-solution) · [Features](#what-friday-can-do) · [Architecture](#architecture) · [Getting started](#getting-started) · [One-page pitch](PITCH.md)
 
 </div>
 
 ---
 
+## The problem
+
+Computers still expect people to know which app to open, where a setting lives and how to type in English. For millions of Indians, that is the barrier to using technology at all.
+
+Most voice assistants stop at answering questions. They rarely finish a task across apps, the browser and the phone. Small businesses face the same gap from the other side: they lose customers because nobody can answer every call, in every language.
+
+## The solution
+
+Friday lives in a small notch above the Windows taskbar. Hold Caps Lock, say what you need, and Friday hears your language, replies in it out loud, and does the work.
+
+| For                  | What Friday changes                                                                            |
+| -------------------- | ---------------------------------------------------------------------------------------------- |
+| **Everyday users**   | A computer you can use by talking, without knowing menus or typing English                     |
+| **Elders**           | Reminders, messages and calls by voice, in their own language                                  |
+| **Students**         | Background research with sources, meeting notes, and coding practice                           |
+| **Small businesses** | Client calls in the client's language, meetings booked into the calendar, and every lead saved |
+
+The short version for reviewers is the [one-page solution pitch](PITCH.md).
+
 ## What Friday can do
 
-- **Talk naturally.** Say **"Hey Friday"** or hold Caps Lock anywhere and speak. Friday answers out loud, sentence by sentence, and stops the moment you talk over it. Clap twice to bring up the voice screen. The wake word is heard on your PC by a small offline model; nothing is sent until you speak your request.
-- **Instant, with no AI call.** "Open Notepad", "chrome kholo", "Chrome left, Notepad right", "full screen Chrome on my big screen", "search YouTube for lofi", "Arijit Singh bajao", "volume 40" run straight away.
-- **Learns as you use it.** When Friday finishes an action once, it remembers the steps; next time the same ask (in any order, or about another app) runs instantly. Teach your own: "When I say focus mode, open Spotify and put Chrome on the left."
-- **Says hi when you call it.** "Hey Friday" or a double clap, and Friday answers about what's on your screen ("Hi! You're on Two Sum in Chrome. Want me to explain this problem?"), then listens.
-- **Hermes Agent drives the browser.** Multi-step web jobs go to [Hermes Agent](https://github.com/NousResearch/hermes-agent) in Friday's own Chrome window, using your Evon model. It keeps its own memory and skills, so it gets better at sites it has used before.
-- **Watch for me.** "Tell me when the download is done" or "let me know when the build says succeeded": Friday checks the window every few seconds on your PC and speaks up when it happens.
-- **Windows across screens.** Halves, quarters, center or full screen, on the laptop's own screen or the external monitor.
-- **Work the web.** Multi-step browser tasks run in a real Chrome window on your screen, with Friday narrating each step.
-- **Use your desktop apps.** Friday opens and types into Windows apps like Notepad or Calculator.
-- **WhatsApp for you.** It finds the right chat, reads your message back and sends it or starts a call only after you say "yes" or "haan".
-- **Answer and make phone calls.** Call Friday's number and it does what you ask. Anyone else who calls is greeted politely, and Friday takes a message without sharing anything about you. Friday can also call you or your contacts, now or on a schedule.
-- **Google account.** Gmail, Calendar and Drive, with email sent only after your approval.
-- **Coding practice.** Friday reads a LeetCode or HackerRank problem, writes a solution and runs the sample tests. It refuses live contests and proctored tests.
-- **Media, files, meetings and reminders.** Control playback and volume, find files, join meetings and set reminders.
-- **Memory.** Ask Friday to remember something and it does. Memories and voice conversations are saved as Markdown notes in an Obsidian vault, and Friday searches them to recall earlier context.
+| Area                   | Capabilities                                                                                                                                   |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Conversation**       | Streams its reply sentence by sentence, stops when you talk over it, and answers small talk at once with no model call                         |
+| **Your PC**            | Opens and types into apps, arranges windows across screens, controls media and volume, finds files, reads what is on screen                    |
+| **The web**            | Multi-step browser tasks you can watch, and background research reports with sources                                                           |
+| **Your Android phone** | Opens apps and reads the screen over USB                                                                                                       |
+| **Messages and mail**  | WhatsApp messages and calls, Gmail summaries and drafts, Calendar and Drive                                                                    |
+| **Phone calls**        | Places and answers real calls on an Indian number, reports outcomes with a transcript                                                          |
+| **Business**           | Sales, follow-up and meeting calls, a client dashboard grouped by region, leads and booked meetings                                            |
+| **Memory**             | Remembers what matters as Markdown notes in a private Obsidian vault, and searches them for context                                            |
+| **Learning**           | A task done once replays instantly. Teach your own: "When I say focus mode, open Spotify and put Chrome on the left."                          |
+| **On-screen help**     | "Show me where" points at a control, meeting notes run during a call, dictation types into any app, and saved friends are recognised on device |
+| **Watching**           | "Tell me when the download is done": Friday watches the window and speaks up                                                                   |
 
-## How it works
+### Languages
+
+Friday uses Gnani Prisma's automatic language detection, so nobody has to choose a language first. It follows the speaker from turn to turn, including mixes such as Tamil and English.
+
+English · हिन्दी · मराठी · தமிழ் · తెలుగు · ಕನ್ನಡ · മലയാളം · বাংলা · ગુજરાતી · ਪੰਜਾਬੀ
+
+## Architecture
 
 ```mermaid
 flowchart LR
-  You((You)) -- hold Caps Lock --> Stage["Voice screen / desktop notch"]
-  Stage -- Gnani Prisma STT --> Friday["Friday agent<br/>(Gnani Evon)"]
-  Friday -- Gnani Timbre TTS --> Stage
-  Friday -- hands off --> Navigator["Navigator<br/>browser"]
-  Friday -- hands off --> Operator["Operator<br/>Windows apps"]
-  Friday -- hands off --> Coder["Coder<br/>coding sites"]
-  Friday -- after your yes --> WA["WhatsApp Desktop"]
-  Phone((Phone call)) -- Exotel --> Services["Friday services<br/>(Python)"]
-  Services --> Friday
-  Services -- live activity + screenshots --> Stage
+  You((You)) -- "hold Caps Lock" --> Notch["Desktop notch"]
+  Notch -- "Gnani Prisma<br/>finds the language" --> Instant{"Simple or<br/>learned?"}
+  Instant -- "yes: no model" --> Tools["Quick tools"]
+  Instant -- "no" --> Friday["Friday agent"]
+  Friday --> Tools
+  Friday -- "hands off" --> Helpers["Navigator · Operator<br/>Coder · Mail"]
+  Friday -- "Gnani Timbre" --> Notch
+  Caller((Phone call)) -- "Exotel" --> Pipeline["Call pipeline"]
+  Pipeline --> Friday
+  Pipeline --> Business["Business profile<br/>calendar · leads"]
+  Friday --> Vault[("Obsidian vault")]
 ```
 
-Friday is a team of agents:
+Friday is a team of agents. The one you talk to does quick jobs itself and hands bigger ones to a helper, which works in the background while you keep talking.
 
-| Agent         | Job                                                                                               |
-| ------------- | ------------------------------------------------------------------------------------------------- |
-| **Friday**    | The one you talk to. Does one-step jobs itself and hands bigger jobs to a helper.                 |
-| **Navigator** | Drives Chrome on your screen and plans multi-step web tasks.                                      |
-| **Operator**  | Opens and works Windows apps through Windows UI Automation.                                       |
-| **Coder**     | Solves problems on coding practice sites in the browser.                                          |
-| **Reception** | Answers phone calls from anyone who isn't you. It takes a message and shares nothing about you.   |
+| Agent         | Job                                                              |
+| ------------- | ---------------------------------------------------------------- |
+| **Friday**    | Talks with you, does one-step jobs and delegates the rest        |
+| **Navigator** | Plans and carries out multi-step web tasks                       |
+| **Operator**  | Works Windows apps through UI Automation                         |
+| **Coder**     | Solves problems on coding practice sites                         |
+| **Mail**      | Reads and organises Gmail; drafts wait for your approval         |
+| **Reception** | Takes a message from callers who are not you, and shares nothing |
 
-### Gnani models
+### Technology
 
-| Model           | Job                                                 |
-| --------------- | --------------------------------------------------- |
-| **Evon v3.3**   | The brain of every agent                            |
-| **Prisma v2.5** | Speech-to-text, streamed live while you speak       |
-| **Timbre v2.5** | Every word Friday says, streamed as it is generated |
+| Layer           | Used                                                                              |
+| --------------- | --------------------------------------------------------------------------------- |
+| Speech to text  | Gnani Prisma, streaming, with `indic-auto` language detection                     |
+| Text to speech  | Gnani Timbre v3.0, one voice across every language                                |
+| Language model  | Gnani Evon or any OpenAI-compatible model, with automatic failover between models |
+| Voice pipeline  | Pipecat, WebRTC, Silero VAD, offline Vosk wake word                               |
+| Agent platform  | [OpenDots](https://github.com/CopilotKit/OpenDots), TypeScript, Node.js, MCP      |
+| Services        | Python, FastAPI                                                                   |
+| Desktop and web | Electron, React, Vite                                                             |
+| Browser         | Hermes Agent, ego lite, Obscura for background research                           |
+| Phone           | Exotel and ngrok for calls, phone-harness over ADB for Android                    |
+| Memory          | Obsidian-compatible Markdown vault                                                |
+| Integrations    | Composio for Gmail, Calendar and Drive; WhatsApp Desktop                          |
 
-A backup model (for example Gemini) takes over when the main one is rate limited or unavailable.
+## Safety and privacy
+
+- Messages, emails and calls to other people are read back, and go only after your yes.
+- Helpers refuse password, card and OTP fields, never pay and never accept terms.
+- Browser helpers work in their own profile or Space, separate from your personal browsing.
+- Saying "stop", "ruko" or "bas" halts every on-screen action.
+- Callers other than you never reach your details, contacts or tools.
+- On business calls, Friday states that it is an AI and says only what the business profile contains. It never takes card, UPI or OTP details.
+- Memories, contacts and call records stay on your PC. Keys live in `.env`, which is never committed.
 
 ## Getting started
 
-### You need
+### Prerequisites
 
 - Windows, **Node.js 24+**, npm, Python and [uv](https://docs.astral.sh/uv/) (`python -m pip install uv`)
 - Google Chrome, and WhatsApp Desktop signed in to your account
-- A Gnani API key and Evon endpoint (from the challenge dashboard)
+- A Gnani API key and a model endpoint
 - A free CopilotKit account for conversation storage: `npx copilotkit@latest login`, then `npx copilotkit@latest project select`
 
-Keep the project folder **outside OneDrive**, since syncing interferes with the dependencies and the database.
+Keep the project folder **outside OneDrive**, because syncing interferes with the dependencies and the database.
 
 ### Install
 
 ```sh
 npm ci
 cd friday/services; python -m uv sync; cd ../..
-cd friday/hermes-agent; python -m uv sync; cd ../..   # Navigator's browser engine (Hermes)
-cd friday/browser-agent; python -m uv sync; cd ../..   # optional fallback (browser-use)
+cd friday/hermes-agent; python -m uv sync; cd ../..   # Navigator's browser engine
+cd friday/browser-agent; python -m uv sync; cd ../..  # optional fallback
+cd friday/desktop; npm install; npm run install-shortcuts; cd ../..
 ```
+
+### Configure
 
 Copy `.env.example` to `.env` and fill in at least:
 
-| Variable                                      | What it is                                               |
-| --------------------------------------------- | -------------------------------------------------------- |
-| `GNANI_API_KEY`                               | Gnani speech (Prisma and Timbre)                         |
-| `EVON_BASE_URL`, `EVON_API_KEY`, `EVON_MODEL` | The Evon model                                           |
-| `FRIDAY_OWNER_NAME`, `FRIDAY_OWNER_PHONE`     | Your name and number                                     |
-| `FRIDAY_SERVICES_TOKEN`                       | Any long random string shared by the app and services    |
-| `FRIDAY_WAKE_WORD`, `FRIDAY_LEARN`            | Optional: turn off "Hey Friday" or learned shortcuts     |
-| `FRIDAY_FALLBACK_*`, `FRIDAY_PRIMARY_*`       | Optional: backup model, and extra keys/models to rotate  |
-| `EXOTEL_*`, `NGROK_*`                         | Optional: phone calls                                    |
+| Variable                                      | Purpose                                                     |
+| --------------------------------------------- | ----------------------------------------------------------- |
+| `GNANI_API_KEY`                               | Gnani speech (Prisma and Timbre)                            |
+| `EVON_BASE_URL`, `EVON_API_KEY`, `EVON_MODEL` | The language model                                          |
+| `FRIDAY_OWNER_NAME`, `FRIDAY_OWNER_PHONE`     | Your name and number                                        |
+| `FRIDAY_SERVICES_TOKEN`                       | Any long random string shared by the app and services       |
+| `FRIDAY_TTS_MODEL`, `FRIDAY_VOICE`            | `timbre-v3.0` and `Shivani` for one voice in every language |
+| `FRIDAY_FALLBACK_*`, `FRIDAY_PRIMARY_*`       | Optional: a backup model, and extra keys or models          |
+| `EXOTEL_*`, `NGROK_*`                         | Optional: phone calls                                       |
+
+`.env.example` documents every other setting.
 
 ### Run
 
-In two terminals:
+Double-click **`Start Friday.cmd`** from File Explorer. It starts the notch, the app and the services. Or, in two terminals:
 
 ```sh
 npm run dev               # the app
 npm run friday:services   # browser, apps, WhatsApp, live voice
 ```
 
-The first time, and after each update to Friday, set up the agents and their tools:
+The first time, and after each update, register the agents and their tools:
 
 ```sh
 npm run friday:setup
 ```
 
-The first start of the services downloads the small offline "Hey Friday" model (about 36 MB) into `friday/services/data/wake-word`.
-
-Then open **http://127.0.0.1:5173** and hold Caps Lock to talk.
+Then hold **Caps Lock** in any app and speak. Ctrl + Caps Lock hides or shows the notch.
 
 ### Try saying
 
-- "Search for dentists near Indiranagar open this evening."
 - "Open Notepad and write my shopping list: milk, eggs, bread."
+- "YouTube pe lofi chalao aur Chrome ko left mein rakh do."
+- "உங்களால் நாளைய meeting நேரம் சொல்ல முடியுமா?"
 - "WhatsApp Priya that I'm running ten minutes late."
-- "Call Rahul on WhatsApp."
 - "Remember that I prefer window seats."
-- "Hey Friday, when I say study time, open Notepad and play lofi on YouTube." Then just: "Study time."
+- "When I say study time, open Notepad and play lofi on YouTube."
 - "Tell me when Chrome shows Download complete."
 
-## Desktop notch
+### Pages
 
-`friday/desktop` is a thin black pill that sits just above the taskbar. Hold Caps Lock in any app and it widens with bars that follow your voice; Ctrl + Caps Lock hides or shows it. It starts the app and services if they aren't running.
+| Page                             | Address                          |
+| -------------------------------- | -------------------------------- |
+| Main page                        | http://localhost:5173/           |
+| Voice screen                     | http://localhost:5173/#/friday   |
+| Business dashboard               | http://localhost:5173/#/business |
+| Admin: live status of every API  | http://localhost:5173/#/admin    |
+| Agent dashboard and classic chat | http://localhost:5173/#/chat     |
+| Services health                  | http://127.0.0.1:8765/health     |
 
-```sh
-cd friday/desktop; npm install; npm run install-shortcuts
-```
+## Phone calls and business
 
-This adds Friday to the Start menu and the desktop.
+With an Exotel number and an ngrok domain in `.env`, Friday places and answers real calls. Setup is step by step in [friday/README.md](friday/README.md#call-friday).
 
-## Phone calls
+- **Friday calls for you:** "Call the clinic and book a check-up at 6 PM." It says it is an AI assistant, keeps to the goal and reports the outcome.
+- **Friday calls you:** when you ask, and before deadlines. You can give it tasks on the call.
+- **Callers:** your own number gets the full assistant; anyone else gets Reception, which takes a message.
 
-Friday has its own phone line. With an Exotel number (an Indian number) and a free ngrok static domain set in `.env`, Friday places and answers real calls itself, hearing with Prisma, thinking with Evon and speaking with Timbre:
-
-- **Friday calls for you:** "Call the clinic and book a check-up at 6 PM." Friday says it is your AI assistant, keeps to the goal, and reports the outcome with a transcript.
-- **Friday calls you** when you ask ("call me at 5") and before deadlines, and you can ask it to do things right there on the call.
-- **From your own number** you get the full assistant: everything Friday can do on the desktop, it can do on a call. Anything that needs approval is read back, and saying "yes" on the call approves it.
-- **From any other number** you get Reception, which takes a message. The message is saved to your notes under the caller's contact name.
-
-The setup is step by step in [friday/README.md](friday/README.md#call-friday).
-
-## Pages
-
-| Page                                             | Address                              |
-| ------------------------------------------------ | ------------------------------------ |
-| Main page: your details, contacts, calls, Google | http://localhost:5173/               |
-| Voice screen                                     | http://localhost:5173/#/friday       |
-| Desktop notch                                    | http://localhost:5173/#/notch        |
-| Admin: live status of every outside API          | http://localhost:5173/#/admin        |
-| Agent dashboard and classic chat                 | http://localhost:5173/#/chat         |
-| Friday services (`/health`)                      | http://127.0.0.1:8765                |
-
-## Safety
-
-- WhatsApp messages and calls always need your yes, and Friday checks it opened the right chat.
-- The browser and app helpers refuse password, card and OTP fields, never pay and never accept terms.
-- Friday's browser uses its own Chrome profile, so your personal logins are untouched.
-- The stop button, or saying "stop", "ruko" or "bas", halts every on-screen action.
-- Phone callers other than you never reach your details, contacts or tools.
+**For a business,** describe what you sell in [friday/business.md](friday/business.md). A made-up example, [friday/business.demo.md](friday/business.demo.md), is included for demonstrations. Add clients on the dashboard and press Call, or say "call this client to follow up". Set `FRIDAY_BUSINESS=true` to have the business assistant answer incoming calls too.
 
 ## Project layout
 
-| Path                         | What it is                                                     |
-| ---------------------------- | -------------------------------------------------------------- |
-| `src/friday/client/`         | Voice screen, orb, notch, main page and admin page             |
-| `src/friday/server/`         | Model settings, Gnani voice, hand-offs, memory, phone routes   |
-| `src/server/`, `src/client/` | Agent runtime, chat and workspace                              |
-| `friday/services/`           | Python services: browser, desktop, WhatsApp, calls, live voice |
-| `friday/hermes-agent/`       | Navigator's browser engine: Hermes Agent                      |
-| `friday/browser-agent/`      | Fallback browser engine (browser-use)                          |
-| `friday/desktop/`            | The desktop notch app                                          |
-| `friday/persona.md`, `friday/dots/` | Personas for each agent                                 |
-| `friday/docs/ARCHITECTURE.md` | Design notes                                                  |
-| `tests/`, `friday/services/tests/` | Tests                                                    |
+| Path                                | Contents                                                       |
+| ----------------------------------- | -------------------------------------------------------------- |
+| `src/friday/client/`                | Notch, voice screen, main page, admin and business dashboards  |
+| `src/friday/server/`                | Model settings, failover, voice, hand-offs, memory             |
+| `src/server/`, `src/client/`        | Agent runtime, chat and workspace, from OpenDots               |
+| `friday/services/`                  | Python services: browser, desktop, WhatsApp, calls, live voice |
+| `friday/desktop/`                   | The desktop notch app                                          |
+| `friday/hermes-agent/`              | Navigator's browser engine                                     |
+| `friday/persona.md`, `friday/dots/` | Personas for each agent                                        |
+| `friday/docs/ARCHITECTURE.md`       | Design notes                                                   |
+| `tests/`, `friday/services/tests/`  | Tests                                                          |
 
-## Tests
+## Testing
 
 ```sh
 npm run typecheck; npx vitest run tests/friday
 cd friday/services; python -m uv run pytest; cd ../..
-cd friday/browser-agent; python -m uv run pytest; cd ../..
 cd friday/hermes-agent; python -m uv run pytest
 ```
 
 ## Known limits
 
-- WhatsApp automation depends on WhatsApp Desktop's control names, which an update can change.
-- Friday starts WhatsApp calls but doesn't speak on them; you do.
-- Some custom-drawn Windows apps don't expose enough UI Automation for Operator.
-- Headphones work best; echo cancellation helps, but speakers can still be picked up.
+- Windows only for now.
+- Exotel trial accounts can call only verified numbers.
+- WhatsApp automation depends on WhatsApp Desktop's control names, which an update can change. Friday starts WhatsApp calls but does not speak on them.
+- Some custom-drawn Windows apps do not expose enough UI Automation for Operator.
+- Headphones work best; speakers can still be picked up by the mic.
 
-## License
+## Roadmap
 
-MIT. See [LICENSE](LICENSE) and [friday/CREDITS.md](friday/CREDITS.md).
+- More regional languages, as Gnani adds them
+- A mobile app, beyond control over USB
+- A family care mode with medicine reminders and check-in calls
+- CRM integrations for business calls
+- On-device models for offline use
+- macOS and Linux
+
+## Credits and license
+
+Friday is a fork of [OpenDots](https://github.com/CopilotKit/OpenDots) by CopilotKit. Speech is by [Gnani](https://gnani.ai). Every project and library Friday builds on is listed in [friday/CREDITS.md](friday/CREDITS.md), and changes to the OpenDots code are listed in [friday/CHANGES-TO-OPENDOTS.md](friday/CHANGES-TO-OPENDOTS.md).
+
+Released under the [MIT License](LICENSE).

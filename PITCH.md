@@ -22,14 +22,14 @@ A dashboard lists clients by region. One click and Friday calls a client in thei
 
 ## How it works
 
-| Layer | Technology |
-| --- | --- |
-| Hearing | Gnani Prisma, streaming, automatic language detection (`indic-auto`) |
-| Voice | Gnani Timbre v3.0, one voice across 10 Indian languages |
-| Thinking | Gnani Evon or any OpenAI-compatible model (the demo uses Gemini Flash Lite) |
-| Agents | OpenDots: Friday delegates to Navigator, Operator, Coder, Mail and Reception over MCP |
-| Calls | Exotel and Pipecat |
-| App | Electron, React, TypeScript, Python FastAPI |
+| Layer    | Technology                                                                            |
+| -------- | ------------------------------------------------------------------------------------- |
+| Hearing  | Gnani Prisma, streaming, automatic language detection (`indic-auto`)                  |
+| Voice    | Gnani Timbre v3.0, one voice across 10 Indian languages                               |
+| Thinking | Gnani Evon or any OpenAI-compatible model (the demo uses Gemini Flash Lite)           |
+| Agents   | OpenDots: Friday delegates to Navigator, Operator, Coder, Mail and Reception over MCP |
+| Calls    | Exotel and Pipecat                                                                    |
+| App      | Electron, React, TypeScript, Python FastAPI                                           |
 
 ## Why it is safe
 

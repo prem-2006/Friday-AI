@@ -8,6 +8,8 @@ Talk to Friday in Hindi, English or Hinglish, and it gets things done on your ow
 
 Built for the **Gnani AI #GreatIndianAIInternshipChallenge**.
 
+**[Read the one-page solution pitch](PITCH.md)**
+
 </div>
 
 ---

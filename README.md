@@ -2,6 +2,8 @@
 
 # Friday
 
+<img src="docs/images/friday-voice.svg" alt="Friday's voice: an animated glowing orb with sound waves" width="560" />
+
 ### The voice assistant that does the work, in your language.
 
 Speak in English, Hindi, Hinglish or another Indian language. Friday understands which one it is, answers in it, and gets the job done on your PC, your phone and your phone calls.
@@ -14,6 +16,12 @@ Built for the **Gnani AI #GreatIndianAIInternshipChallenge** by **Prem and Aaroh
 [Solution](#the-solution) · [Features](#what-friday-can-do) · [Architecture](#architecture) · [Getting started](#getting-started) · [One-page pitch](PITCH.md)
 
 </div>
+
+<p align="center">
+  <img src="docs/images/friday-business-dashboard.png" alt="Friday's business dashboard: clients grouped by region across India, each with their language in its own script and a Call button" width="100%" />
+  <br />
+  <sub>The business dashboard, shown with example clients and a demo business.</sub>
+</p>
 
 ---
 

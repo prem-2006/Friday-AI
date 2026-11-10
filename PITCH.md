@@ -39,4 +39,4 @@ Friday reads messages back and sends only after a "yes". It never enters passwor
 
 More regional languages, a mobile app, a family care mode with medicine reminders and check-in calls, and on-device models for offline use.
 
-**Repository:** https://github.com/prem-2006/friday123 (branch `friday`)
+**Repository:** https://github.com/prem-2006/Friday-AI
